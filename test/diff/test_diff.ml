@@ -5,7 +5,7 @@
     decoding random bytes through the OCaml codec. *)
 
 module Cr = Crowbar
-module D = D3t_diff.Diff
+module D = Wire_diff.Diff
 
 let truncate buf =
   let max_len = 256 in

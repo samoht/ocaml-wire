@@ -4,44 +4,44 @@
    Stage 1 — compile C roundtrip binary + start subprocess
    Stage 2 — Crowbar tests: OCaml roundtrip_struct vs C subprocess
 
-   The subprocess protocol is itself defined using d3t record codecs:
-   - Request:  D3tReq { index : uint32; length : uint32 } ++ data[length]
-   - Response: D3tResp { result : uint32 } ++ data[result]  (result < 0 = error)
+   The subprocess protocol is itself defined using wire record codecs:
+   - Request:  WireReq { index : uint32; length : uint32 } ++ data[length]
+   - Response: WireResp { result : uint32 } ++ data[result]  (result < 0 = error)
 
-   Both sides use d3t-generated read/write functions. *)
+   Both sides use wire-generated read/write functions. *)
 
 module Cr = Crowbar
 module Bs = Bytesrw.Bytes.Slice
 
 (* Helper: encode record to string using slice-based API *)
 let encode_to_string codec =
-  let encode = D3t.Staged.unstage (D3t.Record.encode codec) in
+  let encode = Wire.Staged.unstage (Wire.Record.encode codec) in
   fun v ->
     let slice = encode v in
     Bytes.sub_string (Bs.bytes slice) (Bs.first slice) (Bs.length slice)
 
 (* Helper: decode record from bytes using slice-based API *)
 let decode_from_bytes codec =
-  let decode = D3t.Staged.unstage (D3t.Record.decode codec) in
+  let decode = Wire.Staged.unstage (Wire.Record.decode codec) in
   fun b ->
     if Bytes.length b = 0 then
-      Error (D3t.Unexpected_eof { expected = 1; got = 0 })
+      Error (Wire.Unexpected_eof { expected = 1; got = 0 })
     else
       let slice = Bs.of_bytes b ~first:0 ~last:(Bytes.length b - 1) in
       Ok (decode slice)
 
-(* ---- One-space protocol (defined with d3t) ---- *)
+(* ---- One-space protocol (defined with wire) ---- *)
 
 type request_hdr = { req_index : int32; req_length : int32 }
 
 let request_hdr_codec =
-  D3t.Record.record "D3tReq"
+  Wire.Record.record "WireReq"
     ~default:{ req_index = 0l; req_length = 0l }
     [
-      D3t.Record.field "index" D3t.uint32
+      Wire.Record.field "index" Wire.uint32
         ~get:(fun r -> r.req_index)
         ~set:(fun v r -> { r with req_index = v });
-      D3t.Record.field "length" D3t.uint32
+      Wire.Record.field "length" Wire.uint32
         ~get:(fun r -> r.req_length)
         ~set:(fun v r -> { r with req_length = v });
     ]
@@ -49,15 +49,15 @@ let request_hdr_codec =
 type response_hdr = { resp_result : int32 }
 
 let response_hdr_codec =
-  D3t.Record.record "D3tResp" ~default:{ resp_result = 0l }
+  Wire.Record.record "WireResp" ~default:{ resp_result = 0l }
     [
-      D3t.Record.field "result" D3t.uint32
+      Wire.Record.field "result" Wire.uint32
         ~get:(fun r -> r.resp_result)
         ~set:(fun v _r -> { resp_result = v });
     ]
 
-let request_hdr_struct = D3t.Record.to_struct request_hdr_codec
-let response_hdr_struct = D3t.Record.to_struct response_hdr_codec
+let request_hdr_struct = Wire.Record.to_struct request_hdr_codec
+let response_hdr_struct = Wire.Record.to_struct response_hdr_codec
 
 (* Stage the protocol encoders/decoders once *)
 let encode_request_hdr = encode_to_string request_hdr_codec
@@ -66,45 +66,45 @@ let decode_response_hdr = decode_from_bytes response_hdr_codec
 (* ---- Field type metadata ---- *)
 
 type ft = {
-  make_field : string -> bool D3t.expr option -> D3t.field;
+  make_field : string -> bool Wire.expr option -> Wire.field;
   wire_size : int;
 }
 
 let field_types =
   [|
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint8);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint8);
       wire_size = 1;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint16);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint16);
       wire_size = 2;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint16be);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint16be);
       wire_size = 2;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint32);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint32);
       wire_size = 4;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint32be);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint32be);
       wire_size = 4;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint64);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint64);
       wire_size = 8;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint64be);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint64be);
       wire_size = 8;
     };
   |]
 
 (* ---- Random schema generation ---- *)
 
-type random_schema = { struct_ : D3t.struct_; wire_size : int }
+type random_schema = { struct_ : Wire.struct_; wire_size : int }
 
 let gen_constraint_val rng wire_size =
   match wire_size with
@@ -127,15 +127,15 @@ let random_struct rng i =
         let constraint_ =
           if Random.State.int rng 4 = 0 then
             let k = gen_constraint_val rng ft.wire_size in
-            Some D3t.Expr.(D3t.ref name <= D3t.int k)
+            Some Wire.Expr.(Wire.ref name <= Wire.int k)
           else None
         in
         (ft.make_field name constraint_, ft.wire_size))
   in
-  let d3t_fields = List.map fst fields_data in
+  let wire_fields = List.map fst fields_data in
   let wire_size = List.fold_left (fun acc (_, ws) -> acc + ws) 0 fields_data in
   let struct_name = Fmt.str "Fuzz%d" i in
-  { struct_ = D3t.struct_ struct_name d3t_fields; wire_size }
+  { struct_ = Wire.struct_ struct_name wire_fields; wire_size }
 
 (* ---- Stage 0: Generate C code ---- *)
 
@@ -147,12 +147,12 @@ let generate_c_main schemas =
   p "#include <stdlib.h>";
   p "#include <stdint.h>";
   p "#include <string.h>";
-  p "#include \"d3t.h\"";
-  p "#include \"D3tReq.h\"";
-  p "#include \"D3tResp.h\"";
+  p "#include \"wire.h\"";
+  p "#include \"WireReq.h\"";
+  p "#include \"WireResp.h\"";
   List.iter
     (fun rs ->
-      let name = D3t.struct_name rs.struct_ in
+      let name = Wire.struct_name rs.struct_ in
       p "#include \"%s.h\"" name)
     schemas;
   p "";
@@ -162,7 +162,7 @@ let generate_c_main schemas =
   p "  switch (idx) {";
   List.iteri
     (fun i rs ->
-      let name = D3t.struct_name rs.struct_ in
+      let name = Wire.struct_name rs.struct_ in
       p "  case %d: {" i;
       p "    %s val;" name;
       p "    int32_t rc = %s_read(buf, len, &val);" name;
@@ -178,8 +178,8 @@ let generate_c_main schemas =
   p "  uint8_t hdr_buf[8];";
   p "  for (;;) {";
   p "    if (fread(hdr_buf, 1, 8, stdin) != 8) break;";
-  p "    D3tReq req;";
-  p "    if (D3tReq_read(hdr_buf, 8, &req) < 0) break;";
+  p "    WireReq req;";
+  p "    if (WireReq_read(hdr_buf, 8, &req) < 0) break;";
   p "    uint8_t *data = malloc(req.length > 0 ? req.length : 1);";
   p
     "    if (req.length > 0 && fread(data, 1, req.length, stdin) != \
@@ -189,10 +189,10 @@ let generate_c_main schemas =
     "    int32_t result = roundtrip((int)req.index, data, req.length, out, \
      sizeof(out));";
   p "    free(data);";
-  p "    D3tResp resp;";
+  p "    WireResp resp;";
   p "    resp.result = (uint32_t)result;";
   p "    uint8_t resp_buf[4];";
-  p "    D3tResp_write(&resp, resp_buf, 4);";
+  p "    WireResp_write(&resp, resp_buf, 4);";
   p "    fwrite(resp_buf, 1, 4, stdout);";
   p "    if (result > 0) fwrite(out, 1, (size_t)result, stdout);";
   p "    fflush(stdout);";
@@ -252,25 +252,27 @@ let () =
   let schemas = List.init num_schemas (fun i -> random_struct rng i) in
 
   (* Stage 0: write C code to temp dir *)
-  let tmpdir = Filename.temp_dir "d3t_fuzz" "" in
+  let tmpdir = Filename.temp_dir "wire_fuzz" "" in
 
   let write_file path contents =
     let oc = open_out path in
     output_string oc contents;
     close_out oc
   in
-  write_file (Filename.concat tmpdir "d3t.h") (D3t.to_c_runtime ());
+  write_file (Filename.concat tmpdir "wire.h") (Wire.to_c_runtime ());
 
-  (* Protocol headers — generated by d3t *)
-  D3t.to_c_header_file (Filename.concat tmpdir "D3tReq.h") request_hdr_struct;
-  D3t.to_c_header_file (Filename.concat tmpdir "D3tResp.h") response_hdr_struct;
+  (* Protocol headers — generated by wire *)
+  Wire.to_c_header_file (Filename.concat tmpdir "WireReq.h") request_hdr_struct;
+  Wire.to_c_header_file
+    (Filename.concat tmpdir "WireResp.h")
+    response_hdr_struct;
 
   List.iter
     (fun rs ->
-      let name = D3t.struct_name rs.struct_ in
+      let name = Wire.struct_name rs.struct_ in
       write_file
         (Filename.concat tmpdir (name ^ ".h"))
-        (D3t.to_c_header rs.struct_))
+        (Wire.to_c_header rs.struct_))
     schemas;
 
   let c_main = generate_c_main schemas in
@@ -295,10 +297,10 @@ let () =
   (* Stage 2: register Crowbar tests *)
   List.iteri
     (fun idx rs ->
-      let name = D3t.struct_name rs.struct_ in
+      let name = Wire.struct_name rs.struct_ in
       Cr.add_test ~name:(name ^ " fuzz-diff") [ Cr.bytes ] (fun buf ->
           let buf = pad rs.wire_size buf in
-          let ocaml_result = D3t_diff.Diff.roundtrip_struct rs.struct_ buf in
+          let ocaml_result = Wire_diff.Diff.roundtrip_struct rs.struct_ buf in
           let c_result = c_roundtrip sub idx buf in
           match (ocaml_result, c_result) with
           | Ok ocaml_bytes, Some c_bytes ->
@@ -314,5 +316,5 @@ let () =
           | Error e, Some _ ->
               Cr.fail
                 (Fmt.str "%s: C succeeded but OCaml failed: %a" name
-                   D3t.pp_parse_error e)))
+                   Wire.pp_parse_error e)))
     schemas

@@ -1,4 +1,4 @@
-(* Generate .3d files from random d3t schemas for EverParse.
+(* Generate .3d files from random wire schemas for EverParse.
 
    All schemas are randomly generated with deterministic seeds. Fields of any
    type may get constraints (~25% probability per field). *)
@@ -6,9 +6,10 @@
 (* ---- Field type metadata ---- *)
 
 type ft = {
-  make_field : string -> bool D3t.expr option -> D3t.field;
+  make_field : string -> bool Wire.expr option -> Wire.field;
   wire_size : int;
   gen_constraint : Random.State.t -> int;
+  big_endian : bool;
 }
 
 let gen_uint8 rng = Random.State.int rng 256
@@ -23,48 +24,60 @@ let gen_uint64 rng =
 let field_types =
   [|
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint8);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint8);
       wire_size = 1;
       gen_constraint = gen_uint8;
+      big_endian = false;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint16);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint16);
       wire_size = 2;
       gen_constraint = gen_uint16;
+      big_endian = false;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint16be);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint16be);
       wire_size = 2;
       gen_constraint = gen_uint16;
+      big_endian = true;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint32);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint32);
       wire_size = 4;
       gen_constraint = gen_uint32;
+      big_endian = false;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint32be);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint32be);
       wire_size = 4;
       gen_constraint = gen_uint32;
+      big_endian = true;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint64);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint64);
       wire_size = 8;
       gen_constraint = gen_uint64;
+      big_endian = false;
     };
     {
-      make_field = (fun n c -> D3t.field n ?constraint_:c D3t.uint64be);
+      make_field = (fun n c -> Wire.field n ?constraint_:c Wire.uint64be);
       wire_size = 8;
       gen_constraint = gen_uint64;
+      big_endian = true;
     };
   |]
 
 (* ---- Random schema generation ---- *)
 
-type random_field = { name : string; ft : ft; constraint_val : int option }
+type random_field = {
+  name : string;
+  ft : ft;
+  constraint_val : int option;
+  big_endian : bool;
+}
 
 type random_schema = {
-  struct_ : D3t.struct_;
+  struct_ : Wire.struct_;
   fields : random_field list;
   total_wire_size : int;
 }
@@ -82,15 +95,15 @@ let random_struct seed =
           if Random.State.int rng 4 = 0 then Some (ft.gen_constraint rng)
           else None
         in
-        { name; ft; constraint_val })
+        { name; ft; constraint_val; big_endian = ft.big_endian })
   in
   let struct_name = Fmt.str "Random%d" seed in
-  let d3t_fields =
+  let wire_fields =
     List.map
       (fun rf ->
         let constraint_ =
           Option.map
-            (fun k -> D3t.Expr.(D3t.ref rf.name <= D3t.int k))
+            (fun k -> Wire.Expr.(Wire.ref rf.name <= Wire.int k))
             rf.constraint_val
         in
         rf.ft.make_field rf.name constraint_)
@@ -99,21 +112,217 @@ let random_struct seed =
   let total_wire_size =
     List.fold_left (fun acc rf -> acc + rf.ft.wire_size) 0 fields
   in
-  { struct_ = D3t.struct_ struct_name d3t_fields; fields; total_wire_size }
+  { struct_ = Wire.struct_ struct_name wire_fields; fields; total_wire_size }
+
+(* ---- Code generation for differential testing ---- *)
+
+let generate_c_stubs ~schema_dir outdir schemas =
+  let oc = open_out (Filename.concat outdir "stubs.c") in
+  let pr fmt = Printf.fprintf oc fmt in
+  pr "#include <caml/mlvalues.h>\n";
+  pr "#include <caml/memory.h>\n";
+  pr "#include <caml/alloc.h>\n";
+  pr "#include <stdint.h>\n\n";
+  (* Include all wrapper headers - they declare the check functions *)
+  List.iter
+    (fun rs ->
+      let name = Wire.struct_name rs.struct_ in
+      pr "#include \"%s/%sWrapper.h\"\n" schema_dir name)
+    schemas;
+  pr "\n";
+  (* Include wrapper implementations with unique error handlers *)
+  List.iteri
+    (fun i rs ->
+      let name = Wire.struct_name rs.struct_ in
+      (* Include EverParse.h and parser *)
+      if i = 0 then pr "#include \"%s/EverParse.h\"\n" schema_dir;
+      pr "#include \"%s/%s.h\"\n" schema_dir name;
+      pr "#include \"%s/%s.c\"\n" schema_dir name;
+      (* Inline wrapper with renamed error handler *)
+      pr
+        "void %sEverParseError(const char *s, const char *f, const char *r) { \
+         (void)s; (void)f; (void)r; }\n"
+        name;
+      pr "static void %s_ErrorHandler(\n" name;
+      pr "  const char *t, const char *f, const char *r,\n";
+      pr "  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {\n";
+      pr "  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;\n";
+      pr "}\n";
+      pr "BOOLEAN %sCheck%s(uint8_t *base, uint32_t len) {\n" name name;
+      pr
+        "  uint64_t result = %sValidate%s(NULL, %s_ErrorHandler, base, len, 0);\n"
+        name name name;
+      pr "  return EverParseIsSuccess(result);\n";
+      pr "}\n\n")
+    schemas;
+  (* Generate OCaml stubs *)
+  List.iter
+    (fun rs ->
+      let name = Wire.struct_name rs.struct_ in
+      pr "CAMLprim value caml_%s_check(value v_bytes) {\n"
+        (String.lowercase_ascii name);
+      pr "  CAMLparam1(v_bytes);\n";
+      pr "  uint8_t *data = (uint8_t *)Bytes_val(v_bytes);\n";
+      pr "  uint32_t len = caml_string_length(v_bytes);\n";
+      pr "  BOOLEAN result = %sCheck%s(data, len);\n" name name;
+      pr "  CAMLreturn(Val_bool(result));\n";
+      pr "}\n\n")
+    schemas;
+  close_out oc
+
+let generate_ml_stubs outdir schemas =
+  let oc = open_out (Filename.concat outdir "stubs.ml") in
+  let pr fmt = Printf.fprintf oc fmt in
+  List.iter
+    (fun rs ->
+      let name = Wire.struct_name rs.struct_ in
+      let lower = String.lowercase_ascii name in
+      pr "external %s_check : bytes -> bool = \"caml_%s_check\"\n" lower lower)
+    schemas;
+  close_out oc
+
+let generate_test_runner outdir schemas =
+  let oc = open_out (Filename.concat outdir "diff_test.ml") in
+  let pr fmt = Printf.fprintf oc fmt in
+  pr "(* Auto-generated differential test runner *)\n\n";
+  pr "let num_values = 100\n\n";
+  (* Generate schema info: name, wire_size, wire decoder, C checker *)
+  pr "type schema = {\n";
+  pr "  name : string;\n";
+  pr "  wire_size : int;\n";
+  pr "  wire_check : bytes -> bool;\n";
+  pr "  c_check : bytes -> bool;\n";
+  pr "}\n\n";
+  (* Generate wire validators for each schema using stdlib Bytes *)
+  List.iter
+    (fun rs ->
+      let name = Wire.struct_name rs.struct_ in
+      let lower = String.lowercase_ascii name in
+      pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
+      pr "let %s_wire_check (buf : bytes) : bool =\n" lower;
+      pr "  if Bytes.length buf < %d then false else\n" rs.total_wire_size;
+      (* Generate constraint checks with proper offsets *)
+      let has_constraints =
+        List.exists (fun rf -> rf.constraint_val <> None) rs.fields
+      in
+      if has_constraints then begin
+        (* Calculate offset for each field *)
+        let fields_with_offsets =
+          let rec aux offset = function
+            | [] -> []
+            | rf :: rest -> (rf, offset) :: aux (offset + rf.ft.wire_size) rest
+          in
+          aux 0 rs.fields
+        in
+        List.iter
+          (fun (rf, offset) ->
+            match rf.constraint_val with
+            | Some k -> (
+                let endian = if rf.big_endian then "be" else "le" in
+                match rf.ft.wire_size with
+                | 1 ->
+                    pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
+                    pr "  if %s > %d then false else\n" rf.name k
+                | 2 ->
+                    pr "  let %s = Bytes.get_uint16_%s buf %d in\n" rf.name
+                      endian offset;
+                    pr "  if %s > %d then false else\n" rf.name k
+                | 4 ->
+                    (* Use unsigned comparison for 32-bit values *)
+                    pr "  let %s = Bytes.get_int32_%s buf %d in\n" rf.name
+                      endian offset;
+                    pr
+                      "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n"
+                      rf.name (Int32.of_int k)
+                | 8 ->
+                    (* Use unsigned comparison for 64-bit values *)
+                    pr "  let %s = Bytes.get_int64_%s buf %d in\n" rf.name
+                      endian offset;
+                    pr
+                      "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n"
+                      rf.name (Int64.of_int k)
+                | _ ->
+                    pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
+                    pr "  if %s > %d then false else\n" rf.name k)
+            | None -> ())
+          fields_with_offsets;
+        pr "  true\n\n"
+      end
+      else pr "  true\n\n")
+    schemas;
+  (* Generate schema list *)
+  pr "let schemas = [\n";
+  List.iter
+    (fun rs ->
+      let name = Wire.struct_name rs.struct_ in
+      let lower = String.lowercase_ascii name in
+      pr
+        "  { name = %S; wire_size = %d; wire_check = %s_wire_check; c_check = \
+         Stubs.%s_check };\n"
+        name rs.total_wire_size lower lower)
+    schemas;
+  pr "]\n\n";
+  (* Test runner *)
+  pr "let () =\n";
+  pr "  let seed = 42 in\n";
+  pr "  let rng = Random.State.make [| seed |] in\n";
+  pr "  let total_tests = ref 0 in\n";
+  pr "  let mismatches = ref 0 in\n";
+  pr "  List.iter (fun schema ->\n";
+  pr "    for _ = 1 to num_values do\n";
+  pr "      let buf = Bytes.create schema.wire_size in\n";
+  pr "      for i = 0 to schema.wire_size - 1 do\n";
+  pr "        Bytes.set buf i (Char.chr (Random.State.int rng 256))\n";
+  pr "      done;\n";
+  pr "      let wire_ok = schema.wire_check buf in\n";
+  pr "      let c_ok = schema.c_check buf in\n";
+  pr "      incr total_tests;\n";
+  pr "      if wire_ok <> c_ok then begin\n";
+  pr "        incr mismatches;\n";
+  pr
+    "        Printf.printf \"MISMATCH %%s: wire=%%b c=%%b\\n\" schema.name \
+     wire_ok c_ok\n";
+  pr "      end\n";
+  pr "    done\n";
+  pr "  ) schemas;\n";
+  pr
+    "  Printf.printf \"Tested %%d values across %%d schemas, %%d mismatches\\n\"\n";
+  pr "    !total_tests (List.length schemas) !mismatches;\n";
+  pr "  if !mismatches > 0 then exit 1\n";
+  close_out oc
+
+let run_everparse schema_dir =
+  let cmd =
+    Fmt.str
+      "cd %s && for f in *.3d; do ~/.local/everparse/bin/3d.exe --batch \"$f\" \
+       || exit 1; done"
+      schema_dir
+  in
+  let ret = Sys.command cmd in
+  if ret <> 0 then failwith (Fmt.str "EverParse failed with code %d" ret)
 
 (* ---- Main ---- *)
 
 let () =
-  let outdir = if Array.length Sys.argv > 1 then Sys.argv.(1) else "." in
+  let schema_dir =
+    if Array.length Sys.argv > 1 then Sys.argv.(1) else "schemas"
+  in
   let num_random =
     if Array.length Sys.argv > 2 then int_of_string Sys.argv.(2) else 20
   in
-  (try Unix.mkdir outdir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+  (try Unix.mkdir schema_dir 0o755
+   with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
   let schemas = List.init num_random (fun i -> random_struct i) in
-  (* Generate .3d files for EverParse *)
+  (* Generate .3d files for EverParse into schema_dir *)
   List.iter
     (fun rs ->
-      let name = D3t.struct_name rs.struct_ in
-      let m = D3t.module_ name [ D3t.typedef ~entrypoint:true rs.struct_ ] in
-      D3t.to_3d_file (Filename.concat outdir (name ^ ".3d")) m)
-    schemas
+      let name = Wire.struct_name rs.struct_ in
+      let m = Wire.module_ name [ Wire.typedef ~entrypoint:true rs.struct_ ] in
+      Wire.to_3d_file (Filename.concat schema_dir (name ^ ".3d")) m)
+    schemas;
+  (* Run EverParse to generate C parsers *)
+  run_everparse schema_dir;
+  (* Generate FFI stubs and test runner in current dir *)
+  generate_c_stubs ~schema_dir "." schemas;
+  generate_ml_stubs "." schemas;
+  generate_test_runner "." schemas

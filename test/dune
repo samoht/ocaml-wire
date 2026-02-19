@@ -1,10 +1,10 @@
 (test
  (name test)
- (libraries d3t alcotest re))
+ (libraries wire alcotest re))
 
 (executable
  (name gen_3d)
- (libraries d3t))
+ (libraries wire))
 
 ; EverParse integration tests
 ; First generate .3d files, then run EverParse on them
@@ -22,10 +22,7 @@
  (alias 3d)
  (deps Bitfields.3d Enumerations.3d FieldDependence.3d)
  (action
-  (progn
-   (run 3d --version)
-   (run 3d --batch Bitfields.3d)
-   (run 3d --batch Enumerations.3d)
-   (run 3d --batch FieldDependence.3d))))
+  (bash
+   "~/.local/everparse/bin/3d.exe --version && for f in *.3d; do ~/.local/everparse/bin/3d.exe --batch \"$f\" || exit 1; done")))
 
 ; Note: C code generation for differential testing is in the diff/ directory

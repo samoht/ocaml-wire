@@ -1,6 +1,6 @@
-(* Test d3t library *)
+(* Test wire library *)
 
-open D3t
+open Wire
 
 let contains ~sub s = Re.execp (Re.compile (Re.str sub)) s
 
@@ -116,13 +116,13 @@ let test_parse_uint16_be () =
 let test_parse_uint32_le () =
   let input = "\x01\x02\x03\x04" in
   match parse_string uint32 input with
-  | Ok v -> Alcotest.(check int32) "uint32 le value" 0x04030201l v
+  | Ok v -> Alcotest.(check int) "uint32 le value" 0x04030201 v
   | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e)
 
 let test_parse_uint32_be () =
   let input = "\x01\x02\x03\x04" in
   match parse_string uint32be input with
-  | Ok v -> Alcotest.(check int32) "uint32 be value" 0x01020304l v
+  | Ok v -> Alcotest.(check int) "uint32 be value" 0x01020304 v
   | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e)
 
 let test_parse_uint64_le () =
@@ -251,11 +251,11 @@ let test_encode_uint16_be () =
   Alcotest.(check string) "uint16 be encoding" "\x01\x02" encoded
 
 let test_encode_uint32_le () =
-  let encoded = encode_to_string uint32 0x04030201l in
+  let encoded = encode_to_string uint32 0x04030201 in
   Alcotest.(check string) "uint32 le encoding" "\x01\x02\x03\x04" encoded
 
 let test_encode_uint32_be () =
-  let encoded = encode_to_string uint32be 0x01020304l in
+  let encoded = encode_to_string uint32be 0x01020304 in
   Alcotest.(check string) "uint32 be encoding" "\x01\x02\x03\x04" encoded
 
 let test_encode_array () =
@@ -296,10 +296,10 @@ let test_roundtrip_uint16 () =
   | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e)
 
 let test_roundtrip_uint32 () =
-  let original = 0x12345678l in
+  let original = 0x12345678 in
   let encoded = encode_to_string uint32 original in
   match parse_string uint32 encoded with
-  | Ok decoded -> Alcotest.(check int32) "roundtrip uint32" original decoded
+  | Ok decoded -> Alcotest.(check int) "roundtrip uint32" original decoded
   | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e)
 
 let test_roundtrip_array () =
@@ -321,7 +321,7 @@ let test_roundtrip_byte_array () =
 
 (* Record codec tests *)
 
-type simple_record = { a : int; b : int; c : int32 }
+type simple_record = { a : int; b : int; c : int }
 
 let simple_record_codec =
   let open Codec in
@@ -332,7 +332,7 @@ let simple_record_codec =
   |> seal
 
 let test_record_encode () =
-  let v = { a = 0x42; b = 0x1234; c = 0x56789ABCl } in
+  let v = { a = 0x42; b = 0x1234; c = 0x56789ABC } in
   match encode_record_to_string simple_record_codec v with
   | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e)
   | Ok encoded ->
@@ -349,11 +349,11 @@ let test_record_decode () =
   | Ok v ->
       Alcotest.(check int) "a" 0x42 v.a;
       Alcotest.(check int) "b" 0x1234 v.b;
-      Alcotest.(check int32) "c" 0x56789ABCl v.c
+      Alcotest.(check int) "c" 0x56789ABC v.c
   | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e)
 
 let test_record_roundtrip () =
-  let original = { a = 0xAB; b = 0xCDEF; c = 0x12345678l } in
+  let original = { a = 0xAB; b = 0xCDEF; c = 0x12345678 } in
   match encode_record_to_string simple_record_codec original with
   | Error e -> Alcotest.fail (Format.asprintf "encode: %a" pp_parse_error e)
   | Ok encoded -> (
@@ -361,7 +361,7 @@ let test_record_roundtrip () =
       | Ok decoded ->
           Alcotest.(check int) "a roundtrip" original.a decoded.a;
           Alcotest.(check int) "b roundtrip" original.b decoded.b;
-          Alcotest.(check int32) "c roundtrip" original.c decoded.c
+          Alcotest.(check int) "c roundtrip" original.c decoded.c
       | Error e -> Alcotest.fail (Format.asprintf "%a" pp_parse_error e))
 
 let test_record_to_struct () =
@@ -407,13 +407,13 @@ let test_c_stubs () =
   let stubs = to_c_stubs [ s ] in
   Alcotest.(check bool)
     "contains read stub" true
-    (contains ~sub:"caml_d3t_SimpleHeader_read" stubs);
+    (contains ~sub:"caml_wire_SimpleHeader_read" stubs);
   Alcotest.(check bool)
     "contains write stub" true
-    (contains ~sub:"caml_d3t_SimpleHeader_write" stubs)
+    (contains ~sub:"caml_wire_SimpleHeader_write" stubs)
 
 let suite =
-  ( "d3t",
+  ( "wire",
     [
       (* generation *)
       Alcotest.test_case "generation: bitfields" `Quick test_bitfields;

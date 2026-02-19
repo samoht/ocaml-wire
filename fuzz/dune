@@ -1,15 +1,15 @@
 (executable
- (name fuzz_d3t)
- (modules fuzz_d3t)
- (libraries d3t crowbar))
+ (name fuzz_wire)
+ (modules fuzz_wire)
+ (libraries wire crowbar))
 
 ; Quick check with Crowbar (no AFL instrumentation)
 
 (rule
  (alias fuzz)
- (deps fuzz_d3t.exe)
+ (deps fuzz_wire.exe)
  (action
-  (run %{exe:fuzz_d3t.exe})))
+  (run %{exe:fuzz_wire.exe})))
 
 ; AFL-instrumented build target (use with --profile=afl)
 
@@ -17,6 +17,6 @@
  (alias fuzz-afl)
  (deps
   (source_tree input)
-  fuzz_d3t.exe)
+  fuzz_wire.exe)
  (action
-  (echo "AFL fuzzer built: %{exe:fuzz_d3t.exe}\n")))
+  (echo "AFL fuzzer built: %{exe:fuzz_wire.exe}\n")))

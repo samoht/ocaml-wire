@@ -1,4 +1,4 @@
-(* D3t: Dependent Data Descriptions for EverParse 3D *)
+(* Wire: Dependent Data Descriptions for EverParse 3D *)
 
 open Result.Syntax
 
@@ -10,6 +10,102 @@ module Staged = struct
 
   let stage x = { unstage = x }
   let unstage { unstage } = unstage
+end
+
+(* UInt32: unboxed on 64-bit (uses int), boxed on 32-bit (uses int32) *)
+module UInt32 = struct
+  type t = int (* On 64-bit, int is 63 bits - enough for uint32 *)
+
+  let () =
+    if Sys.int_size < 32 then
+      failwith "Wire.UInt32 requires 64-bit OCaml (int must be >= 32 bits)"
+
+  let get_le buf off =
+    let b0 = Bytes.get_uint8 buf off in
+    let b1 = Bytes.get_uint8 buf (off + 1) in
+    let b2 = Bytes.get_uint8 buf (off + 2) in
+    let b3 = Bytes.get_uint8 buf (off + 3) in
+    b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24)
+
+  let get_be buf off =
+    let b0 = Bytes.get_uint8 buf off in
+    let b1 = Bytes.get_uint8 buf (off + 1) in
+    let b2 = Bytes.get_uint8 buf (off + 2) in
+    let b3 = Bytes.get_uint8 buf (off + 3) in
+    (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3
+
+  let set_le buf off v =
+    Bytes.set_uint8 buf off (v land 0xFF);
+    Bytes.set_uint8 buf (off + 1) ((v lsr 8) land 0xFF);
+    Bytes.set_uint8 buf (off + 2) ((v lsr 16) land 0xFF);
+    Bytes.set_uint8 buf (off + 3) ((v lsr 24) land 0xFF)
+
+  let set_be buf off v =
+    Bytes.set_uint8 buf off ((v lsr 24) land 0xFF);
+    Bytes.set_uint8 buf (off + 1) ((v lsr 16) land 0xFF);
+    Bytes.set_uint8 buf (off + 2) ((v lsr 8) land 0xFF);
+    Bytes.set_uint8 buf (off + 3) (v land 0xFF)
+
+  let to_int t = t
+  let of_int t = t
+end
+
+(* UInt63: unboxed on 64-bit (uses int), reads 8 bytes but masks to 63 bits *)
+module UInt63 = struct
+  type t = int (* 63-bit int on 64-bit platforms *)
+
+  let () =
+    if Sys.int_size < 63 then
+      failwith "Wire.UInt63 requires 64-bit OCaml (int must be 63 bits)"
+
+  let get_le buf off =
+    let b0 = Bytes.get_uint8 buf off in
+    let b1 = Bytes.get_uint8 buf (off + 1) in
+    let b2 = Bytes.get_uint8 buf (off + 2) in
+    let b3 = Bytes.get_uint8 buf (off + 3) in
+    let b4 = Bytes.get_uint8 buf (off + 4) in
+    let b5 = Bytes.get_uint8 buf (off + 5) in
+    let b6 = Bytes.get_uint8 buf (off + 6) in
+    let b7 = Bytes.get_uint8 buf (off + 7) in
+    b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24) lor (b4 lsl 32)
+    lor (b5 lsl 40) lor (b6 lsl 48)
+    lor ((b7 land 0x7F) lsl 56)
+
+  let get_be buf off =
+    let b0 = Bytes.get_uint8 buf off in
+    let b1 = Bytes.get_uint8 buf (off + 1) in
+    let b2 = Bytes.get_uint8 buf (off + 2) in
+    let b3 = Bytes.get_uint8 buf (off + 3) in
+    let b4 = Bytes.get_uint8 buf (off + 4) in
+    let b5 = Bytes.get_uint8 buf (off + 5) in
+    let b6 = Bytes.get_uint8 buf (off + 6) in
+    let b7 = Bytes.get_uint8 buf (off + 7) in
+    ((b0 land 0x7F) lsl 56)
+    lor (b1 lsl 48) lor (b2 lsl 40) lor (b3 lsl 32) lor (b4 lsl 24)
+    lor (b5 lsl 16) lor (b6 lsl 8) lor b7
+
+  let set_le buf off v =
+    Bytes.set_uint8 buf off (v land 0xFF);
+    Bytes.set_uint8 buf (off + 1) ((v lsr 8) land 0xFF);
+    Bytes.set_uint8 buf (off + 2) ((v lsr 16) land 0xFF);
+    Bytes.set_uint8 buf (off + 3) ((v lsr 24) land 0xFF);
+    Bytes.set_uint8 buf (off + 4) ((v lsr 32) land 0xFF);
+    Bytes.set_uint8 buf (off + 5) ((v lsr 40) land 0xFF);
+    Bytes.set_uint8 buf (off + 6) ((v lsr 48) land 0xFF);
+    Bytes.set_uint8 buf (off + 7) ((v lsr 56) land 0x7F)
+
+  let set_be buf off v =
+    Bytes.set_uint8 buf off ((v lsr 56) land 0x7F);
+    Bytes.set_uint8 buf (off + 1) ((v lsr 48) land 0xFF);
+    Bytes.set_uint8 buf (off + 2) ((v lsr 40) land 0xFF);
+    Bytes.set_uint8 buf (off + 3) ((v lsr 32) land 0xFF);
+    Bytes.set_uint8 buf (off + 4) ((v lsr 24) land 0xFF);
+    Bytes.set_uint8 buf (off + 5) ((v lsr 16) land 0xFF);
+    Bytes.set_uint8 buf (off + 6) ((v lsr 8) land 0xFF);
+    Bytes.set_uint8 buf (off + 7) (v land 0xFF)
+
+  let to_int t = t
+  let of_int t = t
 end
 
 type endian = Little | Big
@@ -52,8 +148,9 @@ and bitfield_base = BF_U8 | BF_U16 of endian | BF_U32 of endian
 and _ typ =
   | Uint8 : int typ
   | Uint16 : endian -> int typ
-  | Uint32 : endian -> int32 typ
-  | Uint64 : endian -> int64 typ
+  | Uint32 : endian -> UInt32.t typ
+  | Uint63 : endian -> UInt63.t typ
+  | Uint64 : endian -> int64 typ (* boxed, for full 64-bit *)
   | Bits : { width : int; base : bitfield_base } -> int typ
   | Unit : unit typ
   | All_bytes : string typ
@@ -153,6 +250,8 @@ let uint16 = Uint16 Little
 let uint16be = Uint16 Big
 let uint32 = Uint32 Little
 let uint32be = Uint32 Big
+let uint63 = Uint63 Little
+let uint63be = Uint63 Big
 let uint64 = Uint64 Little
 let uint64be = Uint64 Big
 
@@ -318,6 +417,7 @@ and pp_typ : type a. a typ Fmt.t =
   | Uint8 -> Fmt.string ppf "UINT8"
   | Uint16 e -> Fmt.pf ppf "UINT16%a" pp_endian e
   | Uint32 e -> Fmt.pf ppf "UINT32%a" pp_endian e
+  | Uint63 e -> Fmt.pf ppf "UINT63%a" pp_endian e
   | Uint64 e -> Fmt.pf ppf "UINT64%a" pp_endian e
   | Bits { base; _ } -> pp_bitfield_base ppf base
   | Unit -> Fmt.string ppf "unit"
@@ -531,9 +631,8 @@ let rec val_to_int : type a. a typ -> a -> int =
   match typ with
   | Uint8 -> v
   | Uint16 _ -> v
-  | Uint32 _ ->
-      (* Unsigned interpretation — on 64-bit OCaml this always succeeds *)
-      Int32.unsigned_to_int v |> Option.get
+  | Uint32 _ -> UInt32.to_int v
+  | Uint63 _ -> UInt63.to_int v
   | Uint64 _ ->
       (* Unsigned interpretation — values >= 2^62 don't fit in OCaml int,
          return max_int so constraints [value <= K] fail correctly *)
@@ -734,8 +833,10 @@ let rec parse_with_ctx : type a.
   | Uint8 -> parse_int dec 1 Bytes.get_uint8 ctx
   | Uint16 Little -> parse_int dec 2 Bytes.get_uint16_le ctx
   | Uint16 Big -> parse_int dec 2 Bytes.get_uint16_be ctx
-  | Uint32 Little -> parse_int dec 4 Bytes.get_int32_le ctx
-  | Uint32 Big -> parse_int dec 4 Bytes.get_int32_be ctx
+  | Uint32 Little -> parse_int dec 4 UInt32.get_le ctx
+  | Uint32 Big -> parse_int dec 4 UInt32.get_be ctx
+  | Uint63 Little -> parse_int dec 8 UInt63.get_le ctx
+  | Uint63 Big -> parse_int dec 8 UInt63.get_be ctx
   | Uint64 Little -> parse_int dec 8 Bytes.get_int64_le ctx
   | Uint64 Big -> parse_int dec 8 Bytes.get_int64_be ctx
   | Bits { width; base } -> (
@@ -917,12 +1018,28 @@ let write_int32_be enc v =
   Bytes.set_int32_be enc.buf 0 v;
   write_slice enc 4
 
+let write_uint32_le enc v =
+  UInt32.set_le enc.buf 0 v;
+  write_slice enc 4
+
+let write_uint32_be enc v =
+  UInt32.set_be enc.buf 0 v;
+  write_slice enc 4
+
 let write_int64_le enc v =
   Bytes.set_int64_le enc.buf 0 v;
   write_slice enc 8
 
 let write_int64_be enc v =
   Bytes.set_int64_be enc.buf 0 v;
+  write_slice enc 8
+
+let write_uint63_le enc v =
+  UInt63.set_le enc.buf 0 v;
+  write_slice enc 8
+
+let write_uint63_be enc v =
+  UInt63.set_be enc.buf 0 v;
   write_slice enc 8
 
 let write_string enc s = Bw.write_string enc.writer s
@@ -940,10 +1057,16 @@ let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
       write_uint16_be enc v;
       ctx
   | Uint32 Little ->
-      write_int32_le enc v;
+      write_uint32_le enc v;
       ctx
   | Uint32 Big ->
-      write_int32_be enc v;
+      write_uint32_be enc v;
+      ctx
+  | Uint63 Little ->
+      write_uint63_le enc v;
+      ctx
+  | Uint63 Big ->
+      write_uint63_be enc v;
       ctx
   | Uint64 Little ->
       write_int64_le enc v;
@@ -1064,12 +1187,20 @@ let rec build_field_encoder : type a. a typ -> bytes -> int -> a -> int =
         off + 2
   | Uint32 Little ->
       fun buf off v ->
-        Bytes.set_int32_le buf off v;
+        UInt32.set_le buf off v;
         off + 4
   | Uint32 Big ->
       fun buf off v ->
-        Bytes.set_int32_be buf off v;
+        UInt32.set_be buf off v;
         off + 4
+  | Uint63 Little ->
+      fun buf off v ->
+        UInt63.set_le buf off v;
+        off + 8
+  | Uint63 Big ->
+      fun buf off v ->
+        UInt63.set_be buf off v;
+        off + 8
   | Uint64 Little ->
       fun buf off v ->
         Bytes.set_int64_le buf off v;
@@ -1097,9 +1228,11 @@ let rec build_field_decoder : type a. a typ -> bytes -> int -> int -> a * int =
   | Uint16 Big ->
       fun buf base off -> (Bytes.get_uint16_be buf (base + off), off + 2)
   | Uint32 Little ->
-      fun buf base off -> (Bytes.get_int32_le buf (base + off), off + 4)
-  | Uint32 Big ->
-      fun buf base off -> (Bytes.get_int32_be buf (base + off), off + 4)
+      fun buf base off -> (UInt32.get_le buf (base + off), off + 4)
+  | Uint32 Big -> fun buf base off -> (UInt32.get_be buf (base + off), off + 4)
+  | Uint63 Little ->
+      fun buf base off -> (UInt63.get_le buf (base + off), off + 8)
+  | Uint63 Big -> fun buf base off -> (UInt63.get_be buf (base + off), off + 8)
   | Uint64 Little ->
       fun buf base off -> (Bytes.get_int64_le buf (base + off), off + 8)
   | Uint64 Big ->
@@ -1134,13 +1267,23 @@ let rec build_field_decoder_mut : type a. a typ -> bytes -> int -> int ref -> a
         v
   | Uint32 Little ->
       fun buf base off ->
-        let v = Bytes.get_int32_le buf (base + !off) in
+        let v = UInt32.get_le buf (base + !off) in
         off := !off + 4;
         v
   | Uint32 Big ->
       fun buf base off ->
-        let v = Bytes.get_int32_be buf (base + !off) in
+        let v = UInt32.get_be buf (base + !off) in
         off := !off + 4;
+        v
+  | Uint63 Little ->
+      fun buf base off ->
+        let v = UInt63.get_le buf (base + !off) in
+        off := !off + 8;
+        v
+  | Uint63 Big ->
+      fun buf base off ->
+        let v = UInt63.get_be buf (base + !off) in
+        off := !off + 8;
         v
   | Uint64 Little ->
       fun buf base off ->
@@ -1183,13 +1326,23 @@ let rec build_field_decoder_cps : type a.
         k v
   | Uint32 Little ->
       fun buf base off k ->
-        let v = Bytes.get_int32_le buf (base + !off) in
+        let v = UInt32.get_le buf (base + !off) in
         off := !off + 4;
         k v
   | Uint32 Big ->
       fun buf base off k ->
-        let v = Bytes.get_int32_be buf (base + !off) in
+        let v = UInt32.get_be buf (base + !off) in
         off := !off + 4;
+        k v
+  | Uint63 Little ->
+      fun buf base off k ->
+        let v = UInt63.get_le buf (base + !off) in
+        off := !off + 8;
+        k v
+  | Uint63 Big ->
+      fun buf base off k ->
+        let v = UInt63.get_be buf (base + !off) in
+        off := !off + 8;
         k v
   | Uint64 Little ->
       fun buf base off k ->
@@ -1445,8 +1598,10 @@ let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
   | Uint8 -> fun buf base -> Bytes.get_uint8 buf (base + field_off)
   | Uint16 Little -> fun buf base -> Bytes.get_uint16_le buf (base + field_off)
   | Uint16 Big -> fun buf base -> Bytes.get_uint16_be buf (base + field_off)
-  | Uint32 Little -> fun buf base -> Bytes.get_int32_le buf (base + field_off)
-  | Uint32 Big -> fun buf base -> Bytes.get_int32_be buf (base + field_off)
+  | Uint32 Little -> fun buf base -> UInt32.get_le buf (base + field_off)
+  | Uint32 Big -> fun buf base -> UInt32.get_be buf (base + field_off)
+  | Uint63 Little -> fun buf base -> UInt63.get_le buf (base + field_off)
+  | Uint63 Big -> fun buf base -> UInt63.get_be buf (base + field_off)
   | Uint64 Little -> fun buf base -> Bytes.get_int64_le buf (base + field_off)
   | Uint64 Big -> fun buf base -> Bytes.get_int64_be buf (base + field_off)
   | Where { inner; _ } -> build_field_reader inner field_off
@@ -1648,12 +1803,12 @@ let record_to_struct codec =
 
 (* ==================== EverParse FFI Helpers ==================== *)
 
-(* NOTE: d3t does NOT generate C parsing code. C parsers come from EverParse.
+(* NOTE: wire does NOT generate C parsing code. C parsers come from EverParse.
    This section provides helpers for generating OCaml FFI stubs that call
    EverParse-generated C code.
 
    Workflow:
-   1. Define schema in OCaml using d3t
+   1. Define schema in OCaml using wire
    2. Generate .3d file with to_3d
    3. Run EverParse to generate C parser (.h with struct + read/write)
    4. Use to_c_stubs to generate OCaml FFI bindings to call EverParse C *)
@@ -1688,7 +1843,7 @@ let wire_size_of_struct (s : struct_) =
       | _ -> None)
     (Some 0) s.fields
 
-(** OCaml type name for a d3t type (for generated external declarations). *)
+(** OCaml type name for a wire type (for generated external declarations). *)
 let rec ml_type_of : type a. a typ -> string = function
   | Uint8 -> "int"
   | Uint16 _ -> "int"
@@ -1743,7 +1898,7 @@ let named_fields (s : struct_) =
 let c_stub_read ppf (s : struct_) fields =
   let n = List.length fields in
   let has_boxed = List.exists (fun (Named (_, typ)) -> is_boxed typ) fields in
-  Fmt.pf ppf "CAMLprim value caml_d3t_%s_read(value v_buf) {@\n" s.name;
+  Fmt.pf ppf "CAMLprim value caml_wire_%s_read(value v_buf) {@\n" s.name;
   Fmt.pf ppf "  CAMLparam1(v_buf);@\n";
   if has_boxed then Fmt.pf ppf "  CAMLlocal3(v_some, v_tuple, v_tmp);@\n"
   else Fmt.pf ppf "  CAMLlocal2(v_some, v_tuple);@\n";
@@ -1772,7 +1927,7 @@ let c_stub_read ppf (s : struct_) fields =
     EverParse-generated [Name_write] function. *)
 let c_stub_write ppf (s : struct_) fields =
   let sz = match wire_size_of_struct s with Some n -> n | None -> 4096 in
-  Fmt.pf ppf "CAMLprim value caml_d3t_%s_write(value v_tuple) {@\n" s.name;
+  Fmt.pf ppf "CAMLprim value caml_wire_%s_write(value v_tuple) {@\n" s.name;
   Fmt.pf ppf "  CAMLparam1(v_tuple);@\n";
   Fmt.pf ppf "  CAMLlocal2(v_some, v_str);@\n";
   Fmt.pf ppf "  %s val;@\n" s.name;
@@ -1795,8 +1950,8 @@ let c_stub_write ppf (s : struct_) fields =
     [Name_write].
 
     For each struct [Foo] with fields [a : t1, b : t2, ...], generates:
-    - [caml_d3t_Foo_read(v_buf)] returning [(t1 * t2 * ...) option]
-    - [caml_d3t_Foo_write(v_tuple)] taking [(t1 * t2 * ...)] and returning
+    - [caml_wire_Foo_read(v_buf)] returning [(t1 * t2 * ...) option]
+    - [caml_wire_Foo_write(v_tuple)] taking [(t1 * t2 * ...)] and returning
       [string option].
 
     The generated code expects EverParse headers to be available:
@@ -1805,7 +1960,7 @@ let to_c_stubs (structs : struct_ list) =
   let buf = Buffer.create 4096 in
   let ppf = Format.formatter_of_buffer buf in
   Fmt.pf ppf
-    "/* d3t_stubs.c - OCaml FFI stubs for EverParse-generated C */@\n@\n";
+    "/* wire_stubs.c - OCaml FFI stubs for EverParse-generated C */@\n@\n";
   Fmt.pf ppf "#include <caml/mlvalues.h>@\n";
   Fmt.pf ppf "#include <caml/memory.h>@\n";
   Fmt.pf ppf "#include <caml/alloc.h>@\n";
@@ -1836,7 +1991,7 @@ let to_c_stubs (structs : struct_ list) =
 let to_ml_stubs (structs : struct_ list) =
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
-  Fmt.pf ppf "(* Generated by d3t (do not edit) *)@\n@\n";
+  Fmt.pf ppf "(* Generated by wire (do not edit) *)@\n@\n";
   List.iter
     (fun (s : struct_) ->
       let fields = named_fields s in
@@ -1846,9 +2001,9 @@ let to_ml_stubs (structs : struct_ list) =
       in
       Fmt.pf ppf "module %s = struct@\n" s.name;
       Fmt.pf ppf "  external read : string -> (%s) option@\n" tuple_type;
-      Fmt.pf ppf "    = \"caml_d3t_%s_read\"@\n" s.name;
+      Fmt.pf ppf "    = \"caml_wire_%s_read\"@\n" s.name;
       Fmt.pf ppf "  external write : (%s) -> string option@\n" tuple_type;
-      Fmt.pf ppf "    = \"caml_d3t_%s_write\"@\n" s.name;
+      Fmt.pf ppf "    = \"caml_wire_%s_write\"@\n" s.name;
       Fmt.pf ppf "end@\n@\n")
     structs;
   Format.pp_print_flush ppf ();
@@ -1870,11 +2025,11 @@ let to_ml_stub_name (s : struct_) =
 (** Generate a flat OCaml stub module for a single struct. Produces a file with
     [type t] and [external read/write] declarations:
     {[
-      (* Generated by d3t *)
+      (* Generated by wire *)
       type t = int * int * int32
 
-      external read : string -> t option = "caml_d3t_Foo_read"
-      external write : t -> string option = "caml_d3t_Foo_write"
+      external read : string -> t option = "caml_wire_Foo_read"
+      external write : t -> string option = "caml_wire_Foo_write"
     ]} *)
 let to_ml_stub (s : struct_) =
   let buf = Buffer.create 256 in
@@ -1884,12 +2039,12 @@ let to_ml_stub (s : struct_) =
     String.concat " * "
       (List.map (fun (Named (_, typ)) -> ml_type_of typ) fields)
   in
-  Fmt.pf ppf "(* Generated by d3t (do not edit) *)@\n@\n";
+  Fmt.pf ppf "(* Generated by wire (do not edit) *)@\n@\n";
   Fmt.pf ppf "type t = %s@\n@\n" tuple_type;
   Fmt.pf ppf "external read : string -> t option@\n";
-  Fmt.pf ppf "  = \"caml_d3t_%s_read\"@\n@\n" s.name;
+  Fmt.pf ppf "  = \"caml_wire_%s_read\"@\n@\n" s.name;
   Fmt.pf ppf "external write : t -> string option@\n";
-  Fmt.pf ppf "  = \"caml_d3t_%s_write\"@\n" s.name;
+  Fmt.pf ppf "  = \"caml_wire_%s_write\"@\n" s.name;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 

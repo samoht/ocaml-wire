@@ -1,6 +1,6 @@
 (** Micro-benchmark to identify Codec decode allocation sources. *)
 
-open D3t
+open Wire
 
 type r3 = { a : int; b : int; c : int }
 
@@ -165,4 +165,25 @@ let () =
       let _ =
         Int32.of_int ((b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3)
       in
+      ());
+
+  Printf.printf "\nUInt32 (unboxed on 64-bit):\n";
+  measure "Wire.UInt32.get_be" n (fun () ->
+      let _ = Wire.UInt32.get_be buf4 0 in
+      ());
+  measure "byte-by-byte int" n (fun () ->
+      let b0 = Bytes.get_uint8 buf4 0 in
+      let b1 = Bytes.get_uint8 buf4 1 in
+      let b2 = Bytes.get_uint8 buf4 2 in
+      let b3 = Bytes.get_uint8 buf4 3 in
+      let _ = (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3 in
+      ());
+
+  Printf.printf "\nUInt63 (unboxed on 64-bit):\n";
+  let buf8 = Bytes.create 8 in
+  measure "Bytes.get_int64_be (boxed)" n (fun () ->
+      let _ = Bytes.get_int64_be buf8 0 in
+      ());
+  measure "Wire.UInt63.get_be" n (fun () ->
+      let _ = Wire.UInt63.get_be buf8 0 in
       ())

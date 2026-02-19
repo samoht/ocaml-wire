@@ -1,4 +1,4 @@
 (library
- (name d3t)
- (public_name d3t)
+ (name wire)
+ (public_name wire)
  (libraries bytesrw fmt))

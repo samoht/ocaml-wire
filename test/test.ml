@@ -1,1 +1,1 @@
-let () = Alcotest.run "d3t" [ Test_d3t.suite ]
+let () = Alcotest.run "wire" [ Test_wire.suite ]

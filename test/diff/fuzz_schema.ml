@@ -4,7 +4,7 @@
     When EverParse C integration is available, we can add differential tests. *)
 
 module Cr = Crowbar
-open D3t
+open Wire
 
 let truncate buf =
   let max_len = 256 in

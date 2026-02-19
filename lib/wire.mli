@@ -1,6 +1,6 @@
 (** Dependent Data Descriptions for binary wire formats.
 
-    D3t is a GADT-based DSL for describing binary wire formats compatible with
+    Wire is a GADT-based DSL for describing binary wire formats compatible with
     EverParse's 3D language. Define your format once, then:
 
     - Use {!to_3d} to emit EverParse 3D format for verified C parser generation
@@ -46,6 +46,36 @@ module Staged : sig
   val unstage : 'a t -> 'a
   (** [unstage t] extracts the value from a staged computation. This is where
       the cost of specialization is paid. *)
+end
+
+(** {1 Unboxed Integer Types}
+
+    On 64-bit platforms, these types are unboxed (immediate) for zero-allocation
+    parsing. On 32-bit platforms, the module will fail at initialization. *)
+
+module UInt32 : sig
+  type t = int
+  (** Unsigned 32-bit integer. Unboxed on 64-bit platforms (fits in 63-bit int).
+  *)
+
+  val get_le : bytes -> int -> t
+  val get_be : bytes -> int -> t
+  val set_le : bytes -> int -> t -> unit
+  val set_be : bytes -> int -> t -> unit
+  val to_int : t -> int
+  val of_int : int -> t
+end
+
+module UInt63 : sig
+  type t = int
+  (** Unsigned 63-bit integer. Reads 8 bytes but masks to 63 bits. *)
+
+  val get_le : bytes -> int -> t
+  val get_be : bytes -> int -> t
+  val set_le : bytes -> int -> t -> unit
+  val set_be : bytes -> int -> t -> unit
+  val to_int : t -> int
+  val of_int : int -> t
 end
 
 (** {1 Endianness} *)
@@ -210,17 +240,23 @@ val uint16 : int typ
 val uint16be : int typ
 (** Unsigned 16-bit integer, big-endian. *)
 
-val uint32 : int32 typ
-(** Unsigned 32-bit integer, little-endian. *)
+val uint32 : UInt32.t typ
+(** Unsigned 32-bit integer, little-endian. Unboxed on 64-bit. *)
 
-val uint32be : int32 typ
-(** Unsigned 32-bit integer, big-endian. *)
+val uint32be : UInt32.t typ
+(** Unsigned 32-bit integer, big-endian. Unboxed on 64-bit. *)
+
+val uint63 : UInt63.t typ
+(** Unsigned 63-bit integer, little-endian. Unboxed on 64-bit. Reads 8 bytes. *)
+
+val uint63be : UInt63.t typ
+(** Unsigned 63-bit integer, big-endian. Unboxed on 64-bit. Reads 8 bytes. *)
 
 val uint64 : int64 typ
-(** Unsigned 64-bit integer, little-endian. *)
+(** Unsigned 64-bit integer, little-endian. Boxed (full 64-bit precision). *)
 
 val uint64be : int64 typ
-(** Unsigned 64-bit integer, big-endian. *)
+(** Unsigned 64-bit integer, big-endian. Boxed (full 64-bit precision). *)
 
 (** {2 Bitfields} *)
 
@@ -643,15 +679,15 @@ val decode_make4_exn :
       type packet = { version : int; length : int }
 
       let codec =
-        let open D3t.Codec in
+        let open Wire.Codec in
         record "Packet" (fun version length -> { version; length })
         |+ field "version" uint8 (fun p -> p.version)
         |+ field "length" uint16be (fun p -> p.length)
         |> seal
 
-      let decode = D3t.Codec.decode codec
-      let encode = D3t.Codec.encode codec
-      let struct_ = D3t.Codec.to_struct codec
+      let decode = Wire.Codec.decode codec
+      let encode = Wire.Codec.encode codec
+      let struct_ = Wire.Codec.to_struct codec
     ]} *)
 
 module Codec : sig
@@ -703,13 +739,13 @@ val wire_size_of_struct : struct_ -> int option
     Returns [None] if the struct contains variable-length fields. *)
 
 val ml_type_of : 'a typ -> string
-(** [ml_type_of typ] returns the OCaml type name for a d3t type (e.g., ["int"],
+(** [ml_type_of typ] returns the OCaml type name for a wire type (e.g., ["int"],
     ["int32"], ["int64"]). *)
 
 val to_c_stubs : struct_ list -> string
 (** [to_c_stubs structs] generates a C file with OCaml FFI stubs for
     differential roundtrip testing. For each struct [Foo], it generates a
-    [caml_d3t_roundtrip_foo] function that reads bytes via [Foo_read], writes
+    [caml_wire_roundtrip_foo] function that reads bytes via [Foo_read], writes
     them back via [Foo_write], and returns the result as an OCaml
     [string option]. *)
 
@@ -732,8 +768,8 @@ val to_ml_stub : struct_ -> string
     {[
       type t = int * int * int32
 
-      external read : string -> t option = "caml_d3t_Foo_read"
-      external write : t -> string option = "caml_d3t_Foo_write"
+      external read : string -> t option = "caml_wire_Foo_read"
+      external write : t -> string option = "caml_wire_Foo_write"
     ]} *)
 
 (** {1 Struct-level Read/Write}

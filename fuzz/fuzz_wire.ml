@@ -1,12 +1,12 @@
-(** Fuzz tests for d3t library.
+(** Fuzz tests for wire library.
 
-    Since d3t is primarily a code generator (OCaml -> 3D format), the main fuzz
+    Since wire is primarily a code generator (OCaml -> 3D format), the main fuzz
     targets are: 1. Pretty-printer crash safety - ensuring pp functions don't
     crash 2. Future: differential testing against EverParse parser once we add a
     bytesrw parsing backend *)
 
 module Cr = Crowbar
-open D3t
+open Wire
 
 (* Silence unused variable warnings for parse error handling *)
 let _ = pp_parse_error
@@ -317,7 +317,7 @@ let test_roundtrip_enum n =
 
 (** {1 Record Codec Tests} *)
 
-type test_record = { x : int; y : int; z : int32 }
+type test_record = { x : int; y : int; z : int }
 
 let test_record_codec =
   let open Codec in
@@ -350,60 +350,61 @@ let test_record_decode_crash buf =
 
 let () =
   (* Pretty-printing tests *)
-  Cr.add_test ~name:"d3t: pp_typ uint8" [ Cr.const () ] test_pp_uint8;
-  Cr.add_test ~name:"d3t: pp_typ uint16" [ Cr.const () ] test_pp_uint16;
-  Cr.add_test ~name:"d3t: pp_typ uint32" [ Cr.const () ] test_pp_uint32;
-  Cr.add_test ~name:"d3t: pp_bitfield" [ Cr.range 33 ] test_pp_bitfield;
-  Cr.add_test ~name:"d3t: pp_module_simple"
+  Cr.add_test ~name:"wire: pp_typ uint8" [ Cr.const () ] test_pp_uint8;
+  Cr.add_test ~name:"wire: pp_typ uint16" [ Cr.const () ] test_pp_uint16;
+  Cr.add_test ~name:"wire: pp_typ uint32" [ Cr.const () ] test_pp_uint32;
+  Cr.add_test ~name:"wire: pp_bitfield" [ Cr.range 33 ] test_pp_bitfield;
+  Cr.add_test ~name:"wire: pp_module_simple"
     [ Cr.const () ]
     test_pp_module_simple;
-  Cr.add_test ~name:"d3t: struct_random_fields"
+  Cr.add_test ~name:"wire: struct_random_fields"
     [ Cr.range 100 ]
     test_struct_random_fields;
-  Cr.add_test ~name:"d3t: enum_random_cases"
+  Cr.add_test ~name:"wire: enum_random_cases"
     [ Cr.range 100 ]
     test_enum_random_cases;
-  Cr.add_test ~name:"d3t: casetype_random" [ Cr.range 100 ] test_casetype_random;
-  Cr.add_test ~name:"d3t: constraint_expr" [ Cr.int ] test_constraint_expr;
-  Cr.add_test ~name:"d3t: bitfield_constraint"
+  Cr.add_test ~name:"wire: casetype_random"
+    [ Cr.range 100 ]
+    test_casetype_random;
+  Cr.add_test ~name:"wire: constraint_expr" [ Cr.int ] test_constraint_expr;
+  Cr.add_test ~name:"wire: bitfield_constraint"
     [ Cr.range 32 ]
     test_bitfield_constraint;
-  Cr.add_test ~name:"d3t: array_type" [ Cr.int ] test_array_type;
-  Cr.add_test ~name:"d3t: byte_array" [ Cr.int ] test_byte_array;
-  Cr.add_test ~name:"d3t: param_struct" [ Cr.range 20 ] test_param_struct;
-  Cr.add_test ~name:"d3t: action" [ Cr.const () ] test_action;
-  Cr.add_test ~name:"d3t: complex_nested" [ Cr.const () ] test_complex_nested;
+  Cr.add_test ~name:"wire: array_type" [ Cr.int ] test_array_type;
+  Cr.add_test ~name:"wire: byte_array" [ Cr.int ] test_byte_array;
+  Cr.add_test ~name:"wire: param_struct" [ Cr.range 20 ] test_param_struct;
+  Cr.add_test ~name:"wire: action" [ Cr.const () ] test_action;
+  Cr.add_test ~name:"wire: complex_nested" [ Cr.const () ] test_complex_nested;
 
   (* Parsing tests *)
-  Cr.add_test ~name:"d3t: parse uint8" [ Cr.bytes ] test_parse_uint8;
-  Cr.add_test ~name:"d3t: parse uint16" [ Cr.bytes ] test_parse_uint16;
-  Cr.add_test ~name:"d3t: parse uint32" [ Cr.bytes ] test_parse_uint32;
-  Cr.add_test ~name:"d3t: parse uint64" [ Cr.bytes ] test_parse_uint64;
-  Cr.add_test ~name:"d3t: parse bitfield" [ Cr.bytes ] test_parse_bitfield;
-  Cr.add_test ~name:"d3t: parse array" [ Cr.bytes ] test_parse_array;
-  Cr.add_test ~name:"d3t: parse byte_array" [ Cr.bytes ] test_parse_byte_array;
-  Cr.add_test ~name:"d3t: parse enum" [ Cr.bytes ] test_parse_enum;
-  Cr.add_test ~name:"d3t: parse where" [ Cr.bytes ] test_parse_where;
-  Cr.add_test ~name:"d3t: parse all_bytes" [ Cr.bytes ] test_parse_all_bytes;
-  Cr.add_test ~name:"d3t: parse all_zeros" [ Cr.bytes ] test_parse_all_zeros;
-  Cr.add_test ~name:"d3t: parse struct" [ Cr.bytes ] test_parse_struct;
-  Cr.add_test ~name:"d3t: parse struct_constrained" [ Cr.bytes ]
+  Cr.add_test ~name:"wire: parse uint8" [ Cr.bytes ] test_parse_uint8;
+  Cr.add_test ~name:"wire: parse uint16" [ Cr.bytes ] test_parse_uint16;
+  Cr.add_test ~name:"wire: parse uint32" [ Cr.bytes ] test_parse_uint32;
+  Cr.add_test ~name:"wire: parse uint64" [ Cr.bytes ] test_parse_uint64;
+  Cr.add_test ~name:"wire: parse bitfield" [ Cr.bytes ] test_parse_bitfield;
+  Cr.add_test ~name:"wire: parse array" [ Cr.bytes ] test_parse_array;
+  Cr.add_test ~name:"wire: parse byte_array" [ Cr.bytes ] test_parse_byte_array;
+  Cr.add_test ~name:"wire: parse enum" [ Cr.bytes ] test_parse_enum;
+  Cr.add_test ~name:"wire: parse where" [ Cr.bytes ] test_parse_where;
+  Cr.add_test ~name:"wire: parse all_bytes" [ Cr.bytes ] test_parse_all_bytes;
+  Cr.add_test ~name:"wire: parse all_zeros" [ Cr.bytes ] test_parse_all_zeros;
+  Cr.add_test ~name:"wire: parse struct" [ Cr.bytes ] test_parse_struct;
+  Cr.add_test ~name:"wire: parse struct_constrained" [ Cr.bytes ]
     test_parse_struct_constrained;
 
   (* Roundtrip tests *)
-  Cr.add_test ~name:"d3t: roundtrip uint8" [ Cr.int ] test_roundtrip_uint8;
-  Cr.add_test ~name:"d3t: roundtrip uint16" [ Cr.int ] test_roundtrip_uint16;
-  Cr.add_test ~name:"d3t: roundtrip uint32" [ Cr.int32 ] test_roundtrip_uint32;
-  Cr.add_test ~name:"d3t: roundtrip uint64" [ Cr.int64 ] test_roundtrip_uint64;
-  Cr.add_test ~name:"d3t: roundtrip array" [ Cr.int; Cr.int; Cr.int ]
+  Cr.add_test ~name:"wire: roundtrip uint8" [ Cr.int ] test_roundtrip_uint8;
+  Cr.add_test ~name:"wire: roundtrip uint16" [ Cr.int ] test_roundtrip_uint16;
+  Cr.add_test ~name:"wire: roundtrip uint32" [ Cr.int ] test_roundtrip_uint32;
+  Cr.add_test ~name:"wire: roundtrip uint64" [ Cr.int64 ] test_roundtrip_uint64;
+  Cr.add_test ~name:"wire: roundtrip array" [ Cr.int; Cr.int; Cr.int ]
     test_roundtrip_array;
-  Cr.add_test ~name:"d3t: roundtrip byte_array" [ Cr.bytes ]
+  Cr.add_test ~name:"wire: roundtrip byte_array" [ Cr.bytes ]
     test_roundtrip_byte_array;
-  Cr.add_test ~name:"d3t: roundtrip enum" [ Cr.int ] test_roundtrip_enum;
+  Cr.add_test ~name:"wire: roundtrip enum" [ Cr.int ] test_roundtrip_enum;
 
   (* Record codec tests *)
-  Cr.add_test ~name:"d3t: record roundtrip"
-    [ Cr.int; Cr.int; Cr.int32 ]
+  Cr.add_test ~name:"wire: record roundtrip" [ Cr.int; Cr.int; Cr.int ]
     test_record_roundtrip;
-  Cr.add_test ~name:"d3t: record decode crash" [ Cr.bytes ]
+  Cr.add_test ~name:"wire: record decode crash" [ Cr.bytes ]
     test_record_decode_crash

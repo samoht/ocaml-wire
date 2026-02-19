@@ -1,7 +1,7 @@
-(** Generic differential testing: OCaml codec vs d3t-generated C code. *)
+(** Generic differential testing: OCaml codec vs wire-generated C code. *)
 
 val roundtrip_struct :
-  D3t.struct_ -> string -> (string, D3t.parse_error) Stdlib.result
+  Wire.struct_ -> string -> (string, Wire.parse_error) Stdlib.result
 (** [roundtrip_struct s buf] parses [buf] as struct [s] and re-encodes it.
     Equivalent to [write_struct s (read_struct s buf)]. *)
 
@@ -10,7 +10,7 @@ type 'r schema
 
 val schema :
   name:string ->
-  codec:'r D3t.Codec.t ->
+  codec:'r Wire.Codec.t ->
   c_read:(string -> string option) ->
   c_write:(string -> string option) ->
   equal:('r -> 'r -> bool) ->

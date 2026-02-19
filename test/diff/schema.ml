@@ -3,7 +3,7 @@
     These schemas are used to test that our OCaml parser produces the same
     results as the EverParse-generated C parser. *)
 
-open D3t
+open Wire
 
 (* Simple header schema: version (u8) + length (u16) + flags (u8) *)
 type simple_header = { version : int; length : int; flags : int }

@@ -1,9 +1,9 @@
-(** Memtrace allocation profiling for all 3 d3t codecs.
+(** Memtrace allocation profiling for all 3 wire codecs.
 
-    Run with: MEMTRACE=d3t_clcw.ctf dune exec ./bench_d3t_memtrace.exe -- clcw
-    MEMTRACE=d3t_sp.ctf dune exec ./bench_d3t_memtrace.exe -- space-packet
-    MEMTRACE=d3t_tm.ctf dune exec ./bench_d3t_memtrace.exe -- tm
-    MEMTRACE=d3t_all.ctf dune exec ./bench_d3t_memtrace.exe -- all *)
+    Run with: MEMTRACE=wire_clcw.ctf dune exec ./bench_wire_memtrace.exe -- clcw
+    MEMTRACE=wire_sp.ctf dune exec ./bench_wire_memtrace.exe -- space-packet
+    MEMTRACE=wire_tm.ctf dune exec ./bench_wire_memtrace.exe -- tm
+    MEMTRACE=wire_all.ctf dune exec ./bench_wire_memtrace.exe -- all *)
 
 let iterations = 10_000
 
@@ -24,8 +24,8 @@ let clcw_bytes =
       Bytes.set_int32_be b 0 (Int32.of_int w);
       b)
 
-let clcw_d3t_vals =
-  Array.map (fun b -> D3t.Codec.decode Clcw_d3t.codec b 0) clcw_bytes
+let clcw_wire_vals =
+  Array.map (fun b -> Wire.Codec.decode Clcw_wire.codec b 0) clcw_bytes
 
 (** {1 Space Packet test data} *)
 
@@ -37,7 +37,8 @@ let sp_bytes =
       Bytes.set_uint16_be b 4 (i mod 256);
       b)
 
-let sp_d3t_vals = Array.map (fun b -> Space_packet_d3t.decode_exn b 0) sp_bytes
+let sp_wire_vals =
+  Array.map (fun b -> Space_packet_wire.decode_exn b 0) sp_bytes
 
 (** {1 TM test data} *)
 
@@ -54,67 +55,67 @@ let tm_bytes =
       Bytes.set_uint16_be b 4 ((1 lsl 14) lor (3 lsl 11) lor (i mod 2048));
       b)
 
-let tm_d3t_vals = Array.map (fun b -> Tm_d3t.decode_exn b 0) tm_bytes
+let tm_wire_vals = Array.map (fun b -> Tm_wire.decode_exn b 0) tm_bytes
 
 (** {1 Roundtrip loops} *)
 
 let clcw_roundtrip () =
   for i = 0 to Array.length clcw_bytes - 1 do
-    let t = D3t.Codec.decode Clcw_d3t.codec clcw_bytes.(i) 0 in
+    let t = Wire.Codec.decode Clcw_wire.codec clcw_bytes.(i) 0 in
     let buf = Bytes.create 4 in
-    D3t.Codec.encode Clcw_d3t.codec t buf 0
+    Wire.Codec.encode Clcw_wire.codec t buf 0
   done
 
 let sp_roundtrip () =
   for i = 0 to Array.length sp_bytes - 1 do
-    let t = Space_packet_d3t.decode_exn sp_bytes.(i) 0 in
+    let t = Space_packet_wire.decode_exn sp_bytes.(i) 0 in
     let buf = Bytes.create 6 in
-    Space_packet_d3t.encode t buf 0
+    Space_packet_wire.encode t buf 0
   done
 
 let tm_roundtrip () =
   for i = 0 to Array.length tm_bytes - 1 do
-    let t = Tm_d3t.decode_exn tm_bytes.(i) 0 in
+    let t = Tm_wire.decode_exn tm_bytes.(i) 0 in
     let buf = Bytes.create 6 in
-    Tm_d3t.encode t buf 0
+    Tm_wire.encode t buf 0
   done
 
 (* Decode-only loops *)
 let clcw_decode () =
   for i = 0 to Array.length clcw_bytes - 1 do
-    let _ = D3t.Codec.decode Clcw_d3t.codec clcw_bytes.(i) 0 in
+    let _ = Wire.Codec.decode Clcw_wire.codec clcw_bytes.(i) 0 in
     ()
   done
 
 let sp_decode () =
   for i = 0 to Array.length sp_bytes - 1 do
-    let _ = Space_packet_d3t.decode_exn sp_bytes.(i) 0 in
+    let _ = Space_packet_wire.decode_exn sp_bytes.(i) 0 in
     ()
   done
 
 let tm_decode () =
   for i = 0 to Array.length tm_bytes - 1 do
-    let _ = Tm_d3t.decode_exn tm_bytes.(i) 0 in
+    let _ = Tm_wire.decode_exn tm_bytes.(i) 0 in
     ()
   done
 
 (* Encode-only loops *)
 let clcw_encode () =
-  for i = 0 to Array.length clcw_d3t_vals - 1 do
+  for i = 0 to Array.length clcw_wire_vals - 1 do
     let buf = Bytes.create 4 in
-    D3t.Codec.encode Clcw_d3t.codec clcw_d3t_vals.(i) buf 0
+    Wire.Codec.encode Clcw_wire.codec clcw_wire_vals.(i) buf 0
   done
 
 let sp_encode () =
-  for i = 0 to Array.length sp_d3t_vals - 1 do
+  for i = 0 to Array.length sp_wire_vals - 1 do
     let buf = Bytes.create 6 in
-    Space_packet_d3t.encode sp_d3t_vals.(i) buf 0
+    Space_packet_wire.encode sp_wire_vals.(i) buf 0
   done
 
 let tm_encode () =
-  for i = 0 to Array.length tm_d3t_vals - 1 do
+  for i = 0 to Array.length tm_wire_vals - 1 do
     let buf = Bytes.create 6 in
-    Tm_d3t.encode tm_d3t_vals.(i) buf 0
+    Tm_wire.encode tm_wire_vals.(i) buf 0
   done
 
 let run label decode encode roundtrip =
@@ -132,11 +133,11 @@ let run label decode encode roundtrip =
   done
 
 let () =
-  Memtrace.trace_if_requested ~context:"d3t-codecs" ();
+  Memtrace.trace_if_requested ~context:"wire-codecs" ();
 
   let impl = if Array.length Sys.argv > 1 then Sys.argv.(1) else "all" in
 
-  Printf.printf "D3t Codec memtrace profiling (%s)\n%!" impl;
+  Printf.printf "Wire Codec memtrace profiling (%s)\n%!" impl;
   Printf.printf "(%d iterations x 1000 values)\n\n%!" iterations;
 
   (match impl with

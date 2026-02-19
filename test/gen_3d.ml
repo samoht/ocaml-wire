@@ -1,6 +1,6 @@
 (* Generate .3d files for EverParse integration tests *)
 
-open D3t
+open Wire
 
 let bitfields () =
   let bf =
