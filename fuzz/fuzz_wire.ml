@@ -139,7 +139,7 @@ let test_param_struct n =
 
 (** Test action generation. *)
 let test_action () =
-  let act = on_success [ assign "ptr" (int 42); return_bool (bool true) ] in
+  let act = on_success [ assign "ptr" (int 42); return_bool true_ ] in
   let s = struct_ "WithAction" [ field "x" ~action:act uint8 ] in
   let m = module_ "WithAction" [ typedef s ] in
   let _ = to_3d m in
@@ -215,7 +215,7 @@ let test_parse_enum buf =
 let test_parse_where buf =
   let buf = truncate buf in
   (* Use a constraint that always succeeds - field refs need struct context *)
-  let t = where (bool true) uint8 in
+  let t = where true_ uint8 in
   let _ = parse_string t buf in
   ()
 

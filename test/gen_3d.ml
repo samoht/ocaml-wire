@@ -20,8 +20,7 @@ let bitfields () =
       [ mutable_param "outx" uint32 ]
       [
         field "x"
-          ~action:
-            (on_success [ assign "outx" (ref "x"); return_bool (bool true) ])
+          ~action:(on_success [ assign "outx" (ref "x"); return_bool true_ ])
           (type_ref "BF");
       ]
   in

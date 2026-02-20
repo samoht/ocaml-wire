@@ -120,8 +120,11 @@ val int : int -> int expr
 val int64 : int64 -> int64 expr
 (** [int64 n] is the constant 64-bit integer [n]. *)
 
-val bool : bool -> bool expr
-(** [bool b] is the constant boolean [b]. *)
+val true_ : bool expr
+(** The constant [true] expression. *)
+
+val false_ : bool expr
+(** The constant [false] expression. *)
 
 (** {2 Field References} *)
 
@@ -281,11 +284,27 @@ val bf_uint32be : bitfield_base
 val bits : width:int -> bitfield_base -> int typ
 (** [bits ~width base] extracts [width] bits from a bitfield base type. *)
 
-val bit : bool -> int
-(** [bit b] converts a boolean to a 1-bit integer (0 or 1). *)
+(** {2 Type Combinators} *)
 
-val is_set : int -> bool
-(** [is_set n] converts a bitfield integer to boolean ([n <> 0]). *)
+val map : ('w -> 'a) -> ('a -> 'w) -> 'w typ -> 'a typ
+(** [map dec enc t] maps wire type [t] through [dec] and [enc].
+    {[
+      let status = map status_of_int int_of_status (bits ~width:3 bf_uint32be)
+    ]} *)
+
+val bool : int typ -> bool typ
+(** [bool t] maps integer type [t] to boolean (0 = false).
+    {[
+      let flag = bool (bits ~width:1 bf_uint16be)
+    ]} *)
+
+val cases : 'a list -> int typ -> 'a typ
+(** [cases variants t] maps integer type [t] through a list of variants.
+    Position in the list determines the integer value (0-indexed). Raises
+    [Invalid_argument] on unknown values.
+    {[
+      let ptype = cases [ Telemetry; Telecommand ] (bits ~width:1 bf_uint16be)
+    ]} *)
 
 (** {2 Special Types} *)
 
@@ -713,18 +732,8 @@ module Codec : sig
       [make]. *)
 
   val field : string -> 'a typ -> ('r -> 'a) -> ('a, 'r) field
-  (** [field name typ get] defines a field with type [typ] and getter [get]. *)
-
-  val cfield :
-    string ->
-    'w typ ->
-    conv:('w -> 'a) * ('a -> 'w) ->
-    ('r -> 'a) ->
-    ('a, 'r) field
-  (** [cfield name typ ~conv:(decode, encode) get] defines a converting field.
-      The wire representation uses type [typ], while the record stores values of
-      type ['a]. [decode] converts wire to field, [encode] converts field to
-      wire. *)
+  (** [field name typ get] defines a field with type [typ] and getter [get]. Use
+      {!val:Wire.map} or {!val:Wire.bool} on the type for conversions. *)
 
   val ( |+ ) : ('a -> 'b, 'r) record -> ('a, 'r) field -> ('b, 'r) record
   (** [r |+ f] adds field [f] to record codec [r]. *)
