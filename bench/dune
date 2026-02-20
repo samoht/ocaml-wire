@@ -1,7 +1,7 @@
 (executable
  (name bench_wire_memtrace)
  (modules bench_wire_memtrace)
- (libraries clcw-wire space-packet.wire tm-wire memtrace))
+ (libraries clcw space-packet tm wire memtrace))
 
 (executable
  (name bench_alloc)
