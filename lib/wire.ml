@@ -174,6 +174,7 @@ and _ typ =
   | Struct : struct_ -> unit typ
   | Type_ref : string -> 'a typ
   | Qualified_ref : { module_ : string; name : string } -> 'a typ
+  | Map : { inner : 'w typ; decode : 'w -> 'a; encode : 'a -> 'w } -> 'a typ
   | Apply : { typ : 'a typ; args : packed_expr list } -> 'a typ
 
 and packed_expr = Pack_expr : 'a expr -> packed_expr
@@ -211,7 +212,8 @@ and action_stmt =
 (* Expression constructors *)
 let int n = Int n
 let int64 n = Int64 n
-let bool b = Bool b
+let true_ = Bool true
+let false_ = Bool false
 let ref name = Ref name
 let sizeof t = Sizeof t
 let sizeof_this = Sizeof_this
@@ -264,6 +266,25 @@ let bf_uint32be = BF_U32 Big
 let bits ~width base = Bits { width; base }
 let bit b = Bool.to_int b
 let is_set n = n <> 0
+let map decode encode inner = Map { inner; decode; encode }
+let bool inner = Map { inner; decode = is_set; encode = bit }
+
+let cases variants inner =
+  let arr = Array.of_list variants in
+  let decode n =
+    if n >= 0 && n < Array.length arr then arr.(n)
+    else invalid_arg (Printf.sprintf "Wire.cases: unknown value %d" n)
+  in
+  let encode v =
+    let rec go i =
+      if i >= Array.length arr then invalid_arg "Wire.cases: unknown variant"
+      else if arr.(i) = v then i
+      else go (i + 1)
+    in
+    go 0
+  in
+  Map { inner; decode; encode }
+
 let unit = Unit
 let all_bytes = All_bytes
 let all_zeros = All_zeros
@@ -441,6 +462,7 @@ and pp_typ : type a. a typ Fmt.t =
   | Qualified_ref { module_; name } -> Fmt.pf ppf "%s::%s" module_ name
   | Apply { typ; args } ->
       Fmt.pf ppf "%a(%a)" pp_typ typ Fmt.(list ~sep:comma pp_packed_expr) args
+  | Map { inner; _ } -> pp_typ ppf inner
 
 and pp_packed_expr ppf (Pack_expr e) = pp_expr ppf e
 
@@ -644,6 +666,7 @@ let rec val_to_int : type a. a typ -> a -> int =
   | Where { inner; _ } -> val_to_int inner v
   | Single_elem { elem; _ } -> val_to_int elem v
   | Apply { typ; _ } -> val_to_int typ v
+  | Map { inner; encode; _ } -> val_to_int inner (encode v)
   | Unit | All_bytes | All_zeros | Array _ | Byte_array _ | Casetype _
   | Struct _ | Type_ref _ | Qualified_ref _ ->
       0
@@ -969,6 +992,9 @@ let rec parse_with_ctx : type a.
             | _ -> go ctx'' None rest)
       in
       go ctx None fields
+  | Map { inner; decode; _ } ->
+      parse_with_ctx ctx inner dec
+      |> Result.map (fun (v, ctx') -> (decode v, ctx'))
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
@@ -1103,6 +1129,7 @@ let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
       ctx
   | Single_elem { elem; _ } -> encode_with_ctx ctx elem v enc
   | Enum { base; _ } -> encode_with_ctx ctx base v enc
+  | Map { inner; encode; _ } -> encode_with_ctx ctx inner (encode v) enc
   | Casetype _ -> failwith "casetype encoding: use Record module"
   | Struct _ -> failwith "struct encoding: use Record module"
   | Type_ref _ -> failwith "type_ref requires a type registry"
@@ -1169,6 +1196,7 @@ let rec field_wire_size : type a. a typ -> int option = function
   | Byte_array { size = Int n } -> Some n
   | Where { inner; _ } -> field_wire_size inner
   | Enum { base; _ } -> field_wire_size base
+  | Map { inner; _ } -> field_wire_size inner
   | _ -> None
 
 (** Build a specialized field encoder: writes field value to bytes at offset.
@@ -1220,6 +1248,9 @@ let rec build_field_encoder : type a. a typ -> bytes -> int -> a -> int =
         off + n
   | Where { inner; _ } -> build_field_encoder inner
   | Enum { base; _ } -> build_field_encoder base
+  | Map { inner; encode; _ } ->
+      let enc = build_field_encoder inner in
+      fun buf off v -> enc buf off (encode v)
   | Unit -> fun _buf off () -> off
   | _ ->
       (* Fallback for complex types - not specialized *)
@@ -1250,6 +1281,11 @@ let rec build_field_decoder : type a. a typ -> bytes -> int -> int -> a * int =
       fun buf base off -> (Bytes.sub_string buf (base + off) n, off + n)
   | Where { inner; _ } -> build_field_decoder inner
   | Enum { base; _ } -> build_field_decoder base
+  | Map { inner; decode; _ } ->
+      let dec = build_field_decoder inner in
+      fun buf base off ->
+        let v, off' = dec buf base off in
+        (decode v, off')
   | Unit -> fun _buf _base off -> ((), off)
   | _ ->
       (* Fallback for complex types *)
@@ -1313,6 +1349,9 @@ let rec build_field_decoder_mut : type a. a typ -> bytes -> int -> int ref -> a
         v
   | Where { inner; _ } -> build_field_decoder_mut inner
   | Enum { base; _ } -> build_field_decoder_mut base
+  | Map { inner; decode; _ } ->
+      let dec = build_field_decoder_mut inner in
+      fun buf base off -> decode (dec buf base off)
   | Unit -> fun _buf _base _off -> ()
   | _ ->
       fun _buf _base _off ->
@@ -1377,6 +1416,9 @@ let rec build_field_decoder_cps : type a.
         k v
   | Where { inner; _ } -> build_field_decoder_cps inner
   | Enum { base; _ } -> build_field_decoder_cps base
+  | Map { inner; decode; _ } ->
+      let dec = build_field_decoder_cps inner in
+      fun buf base off k -> dec buf base off (fun v -> k (decode v))
   | Unit -> fun _buf _base _off k -> k ()
   | _ ->
       fun _buf _base _off _k ->
@@ -1629,6 +1671,9 @@ let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
       fun buf base -> Bytes.sub_string buf (base + field_off) n
   | Where { inner; _ } -> build_field_reader inner field_off
   | Enum { base; _ } -> build_field_reader base field_off
+  | Map { inner; decode; _ } ->
+      let read = build_field_reader inner field_off in
+      fun buf base -> decode (read buf base)
   | Unit -> fun _buf _base -> ()
   | _ -> fun _buf _base -> failwith "build_field_reader: unsupported type"
 
@@ -1845,6 +1890,7 @@ let rec wire_size_of_typ : type a. a typ -> int option = function
   | Byte_array { size = Int n } -> Some n
   | Enum { base; _ } -> wire_size_of_int_typ base
   | Where { inner; _ } -> wire_size_of_typ inner
+  | Map { inner; _ } -> wire_size_of_typ inner
   | _ -> None
 
 and wire_size_of_int_typ : int typ -> int option = function
@@ -1875,6 +1921,7 @@ let rec ml_type_of : type a. a typ -> string = function
   | Uint64 _ -> "int64"
   | Enum { base; _ } -> ml_type_of_int base
   | Where { inner; _ } -> ml_type_of inner
+  | Map { inner; _ } -> ml_type_of inner
   | _ -> failwith "ml_type_of: unsupported type"
 
 and ml_type_of_int : int typ -> string = function
@@ -1882,6 +1929,7 @@ and ml_type_of_int : int typ -> string = function
   | Uint16 _ -> "int"
   | Enum { base; _ } -> ml_type_of_int base
   | Where { inner; _ } -> ml_type_of_int inner
+  | Map { inner; _ } -> ml_type_of inner
   | _ -> failwith "ml_type_of_int: unsupported type"
 
 (** C expression to store a C struct field into an OCaml value. *)
@@ -2124,16 +2172,7 @@ let struct_field = field
 let struct' = struct_
 
 module Codec = struct
-  type (_, _) field =
-    | Plain : { name : string; typ : 'a typ; get : 'r -> 'a } -> ('a, 'r) field
-    | Conv : {
-        name : string;
-        typ : 'wire typ;
-        get : 'r -> 'field;
-        encode : 'field -> 'wire;
-        decode : 'wire -> 'field;
-      }
-        -> ('field, 'r) field
+  type ('a, 'r) field = { name : string; typ : 'a typ; get : 'r -> 'a }
 
   (* GADT snoc-list of typed field readers, built in forward order by |+.
      ('full, 'remaining) readers tracks:
@@ -2189,10 +2228,7 @@ module Codec = struct
         r_bf = None;
       }
 
-  let field name typ get = Plain { name; typ; get }
-
-  let cfield name typ ~conv:(decode, encode) get =
-    Conv { name; typ; get; decode; encode }
+  let field name typ get = { name; typ; get }
 
   (* Bitfield helpers *)
 
@@ -2241,20 +2277,20 @@ module Codec = struct
    fun buf off -> bf_write_base base buf (off + byte_off) 0
 
   let ( |+ ) : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record =
-   fun (Record r) f ->
-    (* Unpack the field GADT into wire-level operations.
-       [get_wire] extracts the wire value from the record (for encoding).
-       [wrap_reader] wraps a wire-level reader to produce the field value
-       (for decoding). For Plain fields these are identity; for Conv fields
-       they apply the encode/decode conversions. *)
-    let add : type w.
-        string ->
+   fun (Record r) { name; typ; get } ->
+    (* Recursively unwrap Map layers to reach the wire-level type, composing
+       encode/decode conversions along the way. *)
+    let rec add : type w.
         w typ ->
         (r -> w) ->
         ((bytes -> int -> w) -> bytes -> int -> a) ->
         (f, r) record =
-     fun name typ get_wire wrap_reader ->
+     fun typ get_wire wrap_reader ->
       match typ with
+      | Map { inner; decode; encode } ->
+          add inner
+            (fun v -> encode (get_wire v))
+            (fun reader -> wrap_reader (fun buf off -> decode (reader buf off)))
       | Bits { width; base } ->
           let total = bf_base_total_bits base in
           let need_new_group =
@@ -2323,12 +2359,7 @@ module Codec = struct
               r_bf = None;
             }
     in
-    match f with
-    | Plain { name; typ; get } -> add name typ get (fun reader -> reader)
-    | Conv { name; typ; get; decode; encode } ->
-        add name typ
-          (fun v -> encode (get v))
-          (fun reader buf off -> decode (reader buf off))
+    add typ get (fun reader -> reader)
 
   (* Chunked application: peels off up to 6 fields per recursion step.
      Cost: ceil(n/6) - 1 partial applications instead of n - 1. *)
