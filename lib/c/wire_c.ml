@@ -35,6 +35,8 @@ let copy_everparse_endianness ~outdir =
     else failwith (Fmt.str "Cannot find EverParseEndianness.h at %s" src)
   end
 
+let has_3d_exe () = Sys.command "command -v 3d.exe > /dev/null 2>&1" = 0
+
 let run_everparse ~outdir schemas =
   List.iter
     (fun s ->
@@ -171,8 +173,13 @@ let generate_3d ~outdir schemas =
 
 let generate_c ~outdir schemas =
   ensure_dir outdir;
-  run_everparse ~outdir schemas;
-  generate_test ~outdir schemas
+  if has_3d_exe () then begin
+    run_everparse ~outdir schemas;
+    generate_test ~outdir schemas
+  end
+  else
+    failwith
+      "3d.exe not found in PATH. Install EverParse to regenerate C files."
 
 let generate ~outdir schemas =
   generate_3d ~outdir schemas;
@@ -195,10 +202,10 @@ let generate_dune ~outdir ~package schemas =
   pr " (deps gen.exe)\n";
   pr " (action\n";
   pr "  (run ./gen.exe 3d)))\n\n";
-  (* Rule: .3d → C *)
+  (* Rule: .3d → C (fallback: use existing promoted files unless deleted) *)
   pr "(rule\n";
   pr " (alias gen)\n";
-  pr " (mode promote)\n";
+  pr " (mode fallback)\n";
   pr " (targets EverParse.h EverParseEndianness.h %s test.c)\n"
     (String.concat " " c_files);
   pr " (deps gen.exe %s)\n" (String.concat " " three_d_files);
