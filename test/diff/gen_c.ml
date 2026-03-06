@@ -299,7 +299,7 @@ let run_everparse schema_dir =
       schema_dir
   in
   let ret = Sys.command cmd in
-  if ret <> 0 then failwith (Fmt.str "EverParse failed with code %d" ret)
+  if ret <> 0 then Fmt.failwith "EverParse failed with code %d" ret
 
 (* ---- Main ---- *)
 

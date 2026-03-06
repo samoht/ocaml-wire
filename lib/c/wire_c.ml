@@ -32,7 +32,7 @@ let copy_everparse_endianness ~outdir =
     let ep_dir = find_everparse_dir () in
     let src = Filename.concat ep_dir "src/3d/EverParseEndianness.h" in
     if Sys.file_exists src then copy_file ~src ~dst
-    else failwith (Fmt.str "Cannot find EverParseEndianness.h at %s" src)
+    else Fmt.failwith "Cannot find EverParseEndianness.h at %s" src
   end
 
 let has_3d_exe () = Sys.command "command -v 3d.exe > /dev/null 2>&1" = 0
@@ -43,8 +43,7 @@ let run_everparse ~outdir schemas =
       let f = s.name ^ ".3d" in
       let cmd = Fmt.str "cd %s && 3d.exe --batch %s" outdir f in
       let ret = Sys.command cmd in
-      if ret <> 0 then
-        failwith (Fmt.str "EverParse failed on %s with code %d" f ret))
+      if ret <> 0 then Fmt.failwith "EverParse failed on %s with code %d" f ret)
     schemas;
   copy_everparse_endianness ~outdir
 
@@ -81,7 +80,7 @@ let extract_validate_fn ~outdir name =
   close_in ic;
   match !result with
   | Some fn -> fn
-  | None -> failwith (Fmt.str "Could not find Validate function in %s" header)
+  | None -> Fmt.failwith "Could not find Validate function in %s" header
 
 let generate_test ~outdir schemas =
   let oc = open_out (Filename.concat outdir "test.c") in

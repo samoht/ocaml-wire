@@ -26,7 +26,7 @@ let run_everparse ~schema_dir =
       schema_dir
   in
   let ret = Sys.command cmd in
-  if ret <> 0 then failwith (Fmt.str "EverParse failed with code %d" ret)
+  if ret <> 0 then Fmt.failwith "EverParse failed with code %d" ret
 
 (** {1 Extracting EverParse-generated Function Names}
 
@@ -62,7 +62,7 @@ let extract_validate_fn ~schema_dir name =
   close_in ic;
   match !result with
   | Some fn -> fn
-  | None -> failwith (Fmt.str "Could not find Validate function in %s" header)
+  | None -> Fmt.failwith "Could not find Validate function in %s" header
 
 (** {1 Code Generation} *)
 
