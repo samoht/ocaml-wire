@@ -4,6 +4,7 @@
 
 (executable
  (name gen_3d)
+ (modules gen_3d)
  (libraries wire))
 
 ; EverParse integration tests
