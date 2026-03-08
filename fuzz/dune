@@ -3,20 +3,23 @@
  (modules fuzz_wire)
  (libraries wire crowbar))
 
-; Quick check with Crowbar (no AFL instrumentation)
+(executable
+ (name gen_corpus)
+ (modules gen_corpus))
 
 (rule
- (alias fuzz)
+ (alias runtest)
  (deps fuzz_wire.exe)
  (action
   (run %{exe:fuzz_wire.exe})))
 
-; AFL-instrumented build target (use with --profile=afl)
-
 (rule
- (alias fuzz-afl)
+ (alias fuzz)
+ (enabled_if
+  (= %{profile} afl))
  (deps
-  (source_tree input)
-  fuzz_wire.exe)
+  (source_tree corpus)
+  fuzz_wire.exe
+  gen_corpus.exe)
  (action
   (echo "AFL fuzzer built: %{exe:fuzz_wire.exe}\n")))
