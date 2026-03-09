@@ -10,6 +10,8 @@
 
 (rule
  (alias runtest)
+ (enabled_if
+  (<> %{profile} afl))
  (deps fuzz_wire.exe)
  (action
   (run %{exe:fuzz_wire.exe})))
