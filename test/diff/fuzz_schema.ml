@@ -71,11 +71,17 @@ let test_constrained_packet_crash buf =
   ()
 
 let () =
-  Cr.add_test ~name:"schema: simple_header roundtrip" [ Cr.int; Cr.int; Cr.int ]
-    test_simple_header_roundtrip;
-  Cr.add_test ~name:"schema: simple_header crash" [ Cr.bytes ]
-    test_simple_header_crash;
-  Cr.add_test ~name:"schema: constrained_packet roundtrip" [ Cr.int; Cr.int ]
-    test_constrained_packet_roundtrip;
-  Cr.add_test ~name:"schema: constrained_packet crash" [ Cr.bytes ]
-    test_constrained_packet_crash
+  Cr.run "schema"
+    [
+      ( "schema",
+        [
+          Cr.test_case "simple_header roundtrip" [ Cr.int; Cr.int; Cr.int ]
+            test_simple_header_roundtrip;
+          Cr.test_case "simple_header crash" [ Cr.bytes ]
+            test_simple_header_crash;
+          Cr.test_case "constrained_packet roundtrip" [ Cr.int; Cr.int ]
+            test_constrained_packet_roundtrip;
+          Cr.test_case "constrained_packet crash" [ Cr.bytes ]
+            test_constrained_packet_crash;
+        ] );
+    ]
