@@ -350,63 +350,57 @@ let test_record_decode_crash buf =
   let _ = decode_record_from_string test_record_codec buf in
   ()
 
-let () =
-  (* Pretty-printing tests *)
-  Cr.add_test ~name:"wire: pp_typ uint8" [ Cr.const () ] test_pp_uint8;
-  Cr.add_test ~name:"wire: pp_typ uint16" [ Cr.const () ] test_pp_uint16;
-  Cr.add_test ~name:"wire: pp_typ uint32" [ Cr.const () ] test_pp_uint32;
-  Cr.add_test ~name:"wire: pp_bitfield" [ Cr.range 33 ] test_pp_bitfield;
-  Cr.add_test ~name:"wire: pp_module_simple"
-    [ Cr.const () ]
-    test_pp_module_simple;
-  Cr.add_test ~name:"wire: struct_random_fields"
-    [ Cr.range 100 ]
-    test_struct_random_fields;
-  Cr.add_test ~name:"wire: enum_random_cases"
-    [ Cr.range 100 ]
-    test_enum_random_cases;
-  Cr.add_test ~name:"wire: casetype_random"
-    [ Cr.range 100 ]
-    test_casetype_random;
-  Cr.add_test ~name:"wire: constraint_expr" [ Cr.int ] test_constraint_expr;
-  Cr.add_test ~name:"wire: bitfield_constraint"
-    [ Cr.range 32 ]
-    test_bitfield_constraint;
-  Cr.add_test ~name:"wire: array_type" [ Cr.int ] test_array_type;
-  Cr.add_test ~name:"wire: byte_array" [ Cr.int ] test_byte_array;
-  Cr.add_test ~name:"wire: param_struct" [ Cr.range 20 ] test_param_struct;
-  Cr.add_test ~name:"wire: action" [ Cr.const () ] test_action;
-  Cr.add_test ~name:"wire: complex_nested" [ Cr.const () ] test_complex_nested;
+let suite =
+  ( "wire",
+    [
+      (* Pretty-printing tests *)
+      Cr.test_case "pp_typ uint8" [ Cr.const () ] test_pp_uint8;
+      Cr.test_case "pp_typ uint16" [ Cr.const () ] test_pp_uint16;
+      Cr.test_case "pp_typ uint32" [ Cr.const () ] test_pp_uint32;
+      Cr.test_case "pp_bitfield" [ Cr.range 33 ] test_pp_bitfield;
+      Cr.test_case "pp_module_simple" [ Cr.const () ] test_pp_module_simple;
+      Cr.test_case "struct_random_fields"
+        [ Cr.range 100 ]
+        test_struct_random_fields;
+      Cr.test_case "enum_random_cases" [ Cr.range 100 ] test_enum_random_cases;
+      Cr.test_case "casetype_random" [ Cr.range 100 ] test_casetype_random;
+      Cr.test_case "constraint_expr" [ Cr.int ] test_constraint_expr;
+      Cr.test_case "bitfield_constraint"
+        [ Cr.range 32 ]
+        test_bitfield_constraint;
+      Cr.test_case "array_type" [ Cr.int ] test_array_type;
+      Cr.test_case "byte_array" [ Cr.int ] test_byte_array;
+      Cr.test_case "param_struct" [ Cr.range 20 ] test_param_struct;
+      Cr.test_case "action" [ Cr.const () ] test_action;
+      Cr.test_case "complex_nested" [ Cr.const () ] test_complex_nested;
+      (* Parsing tests *)
+      Cr.test_case "parse uint8" [ Cr.bytes ] test_parse_uint8;
+      Cr.test_case "parse uint16" [ Cr.bytes ] test_parse_uint16;
+      Cr.test_case "parse uint32" [ Cr.bytes ] test_parse_uint32;
+      Cr.test_case "parse uint64" [ Cr.bytes ] test_parse_uint64;
+      Cr.test_case "parse bitfield" [ Cr.bytes ] test_parse_bitfield;
+      Cr.test_case "parse array" [ Cr.bytes ] test_parse_array;
+      Cr.test_case "parse byte_array" [ Cr.bytes ] test_parse_byte_array;
+      Cr.test_case "parse enum" [ Cr.bytes ] test_parse_enum;
+      Cr.test_case "parse where" [ Cr.bytes ] test_parse_where;
+      Cr.test_case "parse all_bytes" [ Cr.bytes ] test_parse_all_bytes;
+      Cr.test_case "parse all_zeros" [ Cr.bytes ] test_parse_all_zeros;
+      Cr.test_case "parse struct" [ Cr.bytes ] test_parse_struct;
+      Cr.test_case "parse struct_constrained" [ Cr.bytes ]
+        test_parse_struct_constrained;
+      (* Roundtrip tests *)
+      Cr.test_case "roundtrip uint8" [ Cr.int ] test_roundtrip_uint8;
+      Cr.test_case "roundtrip uint16" [ Cr.int ] test_roundtrip_uint16;
+      Cr.test_case "roundtrip uint32" [ Cr.int ] test_roundtrip_uint32;
+      Cr.test_case "roundtrip uint64" [ Cr.int64 ] test_roundtrip_uint64;
+      Cr.test_case "roundtrip array" [ Cr.int; Cr.int; Cr.int ]
+        test_roundtrip_array;
+      Cr.test_case "roundtrip byte_array" [ Cr.bytes ] test_roundtrip_byte_array;
+      Cr.test_case "roundtrip enum" [ Cr.int ] test_roundtrip_enum;
+      (* Record codec tests *)
+      Cr.test_case "record roundtrip" [ Cr.int; Cr.int; Cr.int ]
+        test_record_roundtrip;
+      Cr.test_case "record decode crash" [ Cr.bytes ] test_record_decode_crash;
+    ] )
 
-  (* Parsing tests *)
-  Cr.add_test ~name:"wire: parse uint8" [ Cr.bytes ] test_parse_uint8;
-  Cr.add_test ~name:"wire: parse uint16" [ Cr.bytes ] test_parse_uint16;
-  Cr.add_test ~name:"wire: parse uint32" [ Cr.bytes ] test_parse_uint32;
-  Cr.add_test ~name:"wire: parse uint64" [ Cr.bytes ] test_parse_uint64;
-  Cr.add_test ~name:"wire: parse bitfield" [ Cr.bytes ] test_parse_bitfield;
-  Cr.add_test ~name:"wire: parse array" [ Cr.bytes ] test_parse_array;
-  Cr.add_test ~name:"wire: parse byte_array" [ Cr.bytes ] test_parse_byte_array;
-  Cr.add_test ~name:"wire: parse enum" [ Cr.bytes ] test_parse_enum;
-  Cr.add_test ~name:"wire: parse where" [ Cr.bytes ] test_parse_where;
-  Cr.add_test ~name:"wire: parse all_bytes" [ Cr.bytes ] test_parse_all_bytes;
-  Cr.add_test ~name:"wire: parse all_zeros" [ Cr.bytes ] test_parse_all_zeros;
-  Cr.add_test ~name:"wire: parse struct" [ Cr.bytes ] test_parse_struct;
-  Cr.add_test ~name:"wire: parse struct_constrained" [ Cr.bytes ]
-    test_parse_struct_constrained;
-
-  (* Roundtrip tests *)
-  Cr.add_test ~name:"wire: roundtrip uint8" [ Cr.int ] test_roundtrip_uint8;
-  Cr.add_test ~name:"wire: roundtrip uint16" [ Cr.int ] test_roundtrip_uint16;
-  Cr.add_test ~name:"wire: roundtrip uint32" [ Cr.int ] test_roundtrip_uint32;
-  Cr.add_test ~name:"wire: roundtrip uint64" [ Cr.int64 ] test_roundtrip_uint64;
-  Cr.add_test ~name:"wire: roundtrip array" [ Cr.int; Cr.int; Cr.int ]
-    test_roundtrip_array;
-  Cr.add_test ~name:"wire: roundtrip byte_array" [ Cr.bytes ]
-    test_roundtrip_byte_array;
-  Cr.add_test ~name:"wire: roundtrip enum" [ Cr.int ] test_roundtrip_enum;
-
-  (* Record codec tests *)
-  Cr.add_test ~name:"wire: record roundtrip" [ Cr.int; Cr.int; Cr.int ]
-    test_record_roundtrip;
-  Cr.add_test ~name:"wire: record decode crash" [ Cr.bytes ]
-    test_record_decode_crash
+let () = Cr.run "wire" [ suite ]

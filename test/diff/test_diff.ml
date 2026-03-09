@@ -28,12 +28,15 @@ let check name = function
       Cr.fail (Printf.sprintf "%s: only OCaml succeeded: %s" name msg)
 
 let () =
-  List.iter
-    (fun (t : D.packed_test) ->
-      Cr.add_test ~name:(t.name ^ " read") [ Cr.bytes ] (fun buf ->
-          check t.name (t.test_read (truncate buf)));
-      Cr.add_test ~name:(t.name ^ " write") [ Cr.bytes ] (fun buf ->
-          check t.name (t.test_write (pad t.wire_size buf)));
-      Cr.add_test ~name:(t.name ^ " roundtrip") [ Cr.bytes ] (fun buf ->
-          check t.name (t.test_roundtrip (pad t.wire_size buf))))
-    All_schemas.all
+  Cr.run "diff"
+    (List.concat_map
+       (fun (t : D.packed_test) ->
+         [
+           Cr.test_case (t.name ^ " read") [ Cr.bytes ] (fun buf ->
+               check t.name (t.test_read (truncate buf)));
+           Cr.test_case (t.name ^ " write") [ Cr.bytes ] (fun buf ->
+               check t.name (t.test_write (pad t.wire_size buf)));
+           Cr.test_case (t.name ^ " roundtrip") [ Cr.bytes ] (fun buf ->
+               check t.name (t.test_roundtrip (pad t.wire_size buf)));
+         ])
+       All_schemas.all)

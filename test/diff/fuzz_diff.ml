@@ -295,26 +295,30 @@ let () =
   let sub = { ic; oc } in
 
   (* Stage 2: register Crowbar tests *)
-  List.iteri
-    (fun idx rs ->
-      let name = Wire.struct_name rs.struct_ in
-      Cr.add_test ~name:(name ^ " fuzz-diff") [ Cr.bytes ] (fun buf ->
-          let buf = pad rs.wire_size buf in
-          let ocaml_result = Wire_diff.Diff.roundtrip_struct rs.struct_ buf in
-          let c_result = c_roundtrip sub idx buf in
-          match (ocaml_result, c_result) with
-          | Ok ocaml_bytes, Some c_bytes ->
-              if ocaml_bytes <> c_bytes then
-                Cr.fail
-                  (Fmt.str "%s: roundtrip mismatch (ocaml=%d bytes, c=%d bytes)"
-                     name
-                     (String.length ocaml_bytes)
-                     (String.length c_bytes))
-          | Error _, None -> ()
-          | Ok _, None ->
-              Cr.fail (Fmt.str "%s: OCaml succeeded but C failed" name)
-          | Error e, Some _ ->
-              Cr.fail
-                (Fmt.str "%s: C succeeded but OCaml failed: %a" name
-                   Wire.pp_parse_error e)))
-    schemas
+  Cr.run "diff"
+    (List.mapi
+       (fun idx rs ->
+         let name = Wire.struct_name rs.struct_ in
+         Cr.test_case (name ^ " fuzz-diff") [ Cr.bytes ] (fun buf ->
+             let buf = pad rs.wire_size buf in
+             let ocaml_result =
+               Wire_diff.Diff.roundtrip_struct rs.struct_ buf
+             in
+             let c_result = c_roundtrip sub idx buf in
+             match (ocaml_result, c_result) with
+             | Ok ocaml_bytes, Some c_bytes ->
+                 if ocaml_bytes <> c_bytes then
+                   Cr.fail
+                     (Fmt.str
+                        "%s: roundtrip mismatch (ocaml=%d bytes, c=%d bytes)"
+                        name
+                        (String.length ocaml_bytes)
+                        (String.length c_bytes))
+             | Error _, None -> ()
+             | Ok _, None ->
+                 Cr.fail (Fmt.str "%s: OCaml succeeded but C failed" name)
+             | Error e, Some _ ->
+                 Cr.fail
+                   (Fmt.str "%s: C succeeded but OCaml failed: %a" name
+                      Wire.pp_parse_error e)))
+       schemas)
