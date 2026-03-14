@@ -181,19 +181,45 @@ let generate_ml_stubs outdir schemas =
     schemas;
   close_out oc
 
+let emit_constraint_check pr rf offset k =
+  let endian = if rf.big_endian then "be" else "le" in
+  match rf.ft.wire_size with
+  | 1 ->
+      pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
+      pr "  if %s > %d then false else\n" rf.name k
+  | 2 ->
+      pr "  let %s = Bytes.get_uint16_%s buf %d in\n" rf.name endian offset;
+      pr "  if %s > %d then false else\n" rf.name k
+  | 4 ->
+      pr "  let %s = Bytes.get_int32_%s buf %d in\n" rf.name endian offset;
+      pr "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n" rf.name
+        (Int32.of_int k)
+  | 8 ->
+      pr "  let %s = Bytes.get_int64_%s buf %d in\n" rf.name endian offset;
+      pr "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n" rf.name
+        (Int64.of_int k)
+  | _ ->
+      pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
+      pr "  if %s > %d then false else\n" rf.name k
+
+let fields_with_offsets fields =
+  let rec aux offset = function
+    | [] -> []
+    | rf :: rest -> (rf, offset) :: aux (offset + rf.ft.wire_size) rest
+  in
+  aux 0 fields
+
 let generate_test_runner outdir schemas =
   let oc = open_out (Filename.concat outdir "diff_test.ml") in
   let pr fmt = Printf.fprintf oc fmt in
   pr "(* Auto-generated differential test runner *)\n\n";
   pr "let num_values = 100\n\n";
-  (* Generate schema info: name, wire_size, wire decoder, C checker *)
   pr "type schema = {\n";
   pr "  name : string;\n";
   pr "  wire_size : int;\n";
   pr "  wire_check : bytes -> bool;\n";
   pr "  c_check : bytes -> bool;\n";
   pr "}\n\n";
-  (* Generate wire validators for each schema using stdlib Bytes *)
   List.iter
     (fun rs ->
       let name = Wire.struct_name rs.struct_ in
@@ -201,51 +227,16 @@ let generate_test_runner outdir schemas =
       pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
       pr "let %s_wire_check (buf : bytes) : bool =\n" lower;
       pr "  if Bytes.length buf < %d then false else\n" rs.total_wire_size;
-      (* Generate constraint checks with proper offsets *)
       let has_constraints =
         List.exists (fun rf -> rf.constraint_val <> None) rs.fields
       in
       if has_constraints then begin
-        (* Calculate offset for each field *)
-        let fields_with_offsets =
-          let rec aux offset = function
-            | [] -> []
-            | rf :: rest -> (rf, offset) :: aux (offset + rf.ft.wire_size) rest
-          in
-          aux 0 rs.fields
-        in
         List.iter
           (fun (rf, offset) ->
             match rf.constraint_val with
-            | Some k -> (
-                let endian = if rf.big_endian then "be" else "le" in
-                match rf.ft.wire_size with
-                | 1 ->
-                    pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
-                    pr "  if %s > %d then false else\n" rf.name k
-                | 2 ->
-                    pr "  let %s = Bytes.get_uint16_%s buf %d in\n" rf.name
-                      endian offset;
-                    pr "  if %s > %d then false else\n" rf.name k
-                | 4 ->
-                    (* Use unsigned comparison for 32-bit values *)
-                    pr "  let %s = Bytes.get_int32_%s buf %d in\n" rf.name
-                      endian offset;
-                    pr
-                      "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n"
-                      rf.name (Int32.of_int k)
-                | 8 ->
-                    (* Use unsigned comparison for 64-bit values *)
-                    pr "  let %s = Bytes.get_int64_%s buf %d in\n" rf.name
-                      endian offset;
-                    pr
-                      "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n"
-                      rf.name (Int64.of_int k)
-                | _ ->
-                    pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
-                    pr "  if %s > %d then false else\n" rf.name k)
+            | Some k -> emit_constraint_check pr rf offset k
             | None -> ())
-          fields_with_offsets;
+          (fields_with_offsets rs.fields);
         pr "  true\n\n"
       end
       else pr "  true\n\n")
