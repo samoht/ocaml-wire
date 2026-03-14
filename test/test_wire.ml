@@ -99,58 +99,58 @@ let test_parse_uint8 () =
   let input = "\x42" in
   match parse_string uint8 input with
   | Ok v -> Alcotest.(check int) "uint8 value" 0x42 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_uint16_le () =
   let input = "\x01\x02" in
   match parse_string uint16 input with
   | Ok v -> Alcotest.(check int) "uint16 le value" 0x0201 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_uint16_be () =
   let input = "\x01\x02" in
   match parse_string uint16be input with
   | Ok v -> Alcotest.(check int) "uint16 be value" 0x0102 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_uint32_le () =
   let input = "\x01\x02\x03\x04" in
   match parse_string uint32 input with
   | Ok v -> Alcotest.(check int) "uint32 le value" 0x04030201 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_uint32_be () =
   let input = "\x01\x02\x03\x04" in
   match parse_string uint32be input with
   | Ok v -> Alcotest.(check int) "uint32 be value" 0x01020304 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_uint64_le () =
   let input = "\x01\x02\x03\x04\x05\x06\x07\x08" in
   match parse_string uint64 input with
   | Ok v -> Alcotest.(check int64) "uint64 le value" 0x0807060504030201L v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_array () =
   let input = "\x01\x02\x03" in
   let t = array ~len:(int 3) uint8 in
   match parse_string t input with
   | Ok v -> Alcotest.(check (list int)) "array values" [ 1; 2; 3 ] v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_byte_array () =
   let input = "hello" in
   let t = byte_array ~size:(int 5) in
   match parse_string t input with
   | Ok v -> Alcotest.(check string) "byte_array value" "hello" v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_enum_valid () =
   let input = "\x01" in
   let t = enum "Test" [ ("A", 0); ("B", 1); ("C", 2) ] uint8 in
   match parse_string t input with
   | Ok v -> Alcotest.(check int) "enum value" 1 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_enum_invalid () =
   let input = "\xFF" in
@@ -160,19 +160,19 @@ let test_parse_enum_invalid () =
   | Error (Invalid_enum { value; _ }) ->
       Alcotest.(check int) "invalid enum value" 255 value
   | Error e ->
-      Alcotest.fail (Fmt.str "wrong error: %a" pp_parse_error e)
+      Alcotest.failf "wrong error: %a" pp_parse_error e
 
 let test_parse_all_bytes () =
   let input = "hello world" in
   match parse_string all_bytes input with
   | Ok v -> Alcotest.(check string) "all_bytes value" "hello world" v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_all_zeros_valid () =
   let input = "\x00\x00\x00" in
   match parse_string all_zeros input with
   | Ok _ -> ()
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_all_zeros_invalid () =
   let input = "\x00\x01\x00" in
@@ -181,14 +181,14 @@ let test_parse_all_zeros_invalid () =
   | Error (All_zeros_failed { offset }) ->
       Alcotest.(check int) "non-zero offset" 1 offset
   | Error e ->
-      Alcotest.fail (Fmt.str "wrong error: %a" pp_parse_error e)
+      Alcotest.failf "wrong error: %a" pp_parse_error e
 
 let test_parse_bitfield () =
   let input = "\xFF\xFF\xFF\xFF" in
   let t = bits ~width:6 bf_uint32 in
   match parse_string t input with
   | Ok v -> Alcotest.(check int) "bitfield value (6 bits)" 63 v
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_eof () =
   let input = "\x01" in
@@ -198,7 +198,7 @@ let test_parse_eof () =
       Alcotest.(check int) "expected bytes" 2 expected;
       Alcotest.(check int) "got bytes" 1 got
   | Error e ->
-      Alcotest.fail (Fmt.str "wrong error: %a" pp_parse_error e)
+      Alcotest.failf "wrong error: %a" pp_parse_error e
 
 let test_parse_struct () =
   let input = "\x01\x02\x03" in
@@ -208,7 +208,7 @@ let test_parse_struct () =
   let t = struct_typ s in
   match parse_string t input with
   | Ok () -> ()
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_struct_constraint () =
   (* Test struct with constraint that should pass *)
@@ -220,7 +220,7 @@ let test_parse_struct_constraint () =
   let t = struct_typ s in
   match parse_string t input with
   | Ok () -> ()
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_struct_constraint_fail () =
   (* Test struct with constraint that should fail *)
@@ -234,7 +234,7 @@ let test_parse_struct_constraint_fail () =
   | Ok _ -> Alcotest.fail "expected constraint failure"
   | Error (Constraint_failed _) -> ()
   | Error e ->
-      Alcotest.fail (Fmt.str "wrong error: %a" pp_parse_error e)
+      Alcotest.failf "wrong error: %a" pp_parse_error e
 
 (* Encoding tests *)
 
@@ -286,21 +286,21 @@ let test_roundtrip_uint8 () =
   let encoded = encode_to_string uint8 original in
   match parse_string uint8 encoded with
   | Ok decoded -> Alcotest.(check int) "roundtrip uint8" original decoded
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_roundtrip_uint16 () =
   let original = 0x1234 in
   let encoded = encode_to_string uint16 original in
   match parse_string uint16 encoded with
   | Ok decoded -> Alcotest.(check int) "roundtrip uint16" original decoded
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_roundtrip_uint32 () =
   let original = 0x12345678 in
   let encoded = encode_to_string uint32 original in
   match parse_string uint32 encoded with
   | Ok decoded -> Alcotest.(check int) "roundtrip uint32" original decoded
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_roundtrip_array () =
   let original = [ 1; 2; 3; 4; 5 ] in
@@ -308,7 +308,7 @@ let test_roundtrip_array () =
   let encoded = encode_to_string t original in
   match parse_string t encoded with
   | Ok decoded -> Alcotest.(check (list int)) "roundtrip array" original decoded
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_roundtrip_byte_array () =
   let original = "hello" in
@@ -317,7 +317,7 @@ let test_roundtrip_byte_array () =
   match parse_string t encoded with
   | Ok decoded ->
       Alcotest.(check string) "roundtrip byte_array" original decoded
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 (* Record codec tests *)
 
@@ -334,7 +334,7 @@ let simple_record_codec =
 let test_record_encode () =
   let v = { a = 0x42; b = 0x1234; c = 0x56789ABC } in
   match encode_record_to_string simple_record_codec v with
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
   | Ok encoded ->
       (* uint8 + uint16_le + uint32_le *)
       Alcotest.(check int) "length" 7 (String.length encoded);
@@ -350,19 +350,19 @@ let test_record_decode () =
       Alcotest.(check int) "a" 0x42 v.a;
       Alcotest.(check int) "b" 0x1234 v.b;
       Alcotest.(check int) "c" 0x56789ABC v.c
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_record_roundtrip () =
   let original = { a = 0xAB; b = 0xCDEF; c = 0x12345678 } in
   match encode_record_to_string simple_record_codec original with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded -> (
       match decode_record_from_string simple_record_codec encoded with
       | Ok decoded ->
           Alcotest.(check int) "a roundtrip" original.a decoded.a;
           Alcotest.(check int) "b roundtrip" original.b decoded.b;
           Alcotest.(check int) "c roundtrip" original.c decoded.c
-      | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e))
+      | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
 let test_record_to_struct () =
   let s = Codec.to_struct simple_record_codec in
@@ -388,14 +388,14 @@ let multi_record_codec =
 let test_record_with_multi () =
   let original = { x = 0x1234; y = 0x5678 } in
   match encode_record_to_string multi_record_codec original with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded -> (
       Alcotest.(check int) "length" 4 (String.length encoded);
       match decode_record_from_string multi_record_codec encoded with
       | Ok decoded ->
           Alcotest.(check int) "x" original.x decoded.x;
           Alcotest.(check int) "y" original.y decoded.y
-      | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e))
+      | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
 (* Record with byte_array field *)
 type ba_record = { id : int; uuid : string; tag : int }
@@ -411,7 +411,7 @@ let ba_record_codec =
 let test_record_byte_array_roundtrip () =
   let original = { id = 0x12345678; uuid = "0123456789abcdef"; tag = 0xABCD } in
   match encode_record_to_string ba_record_codec original with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded -> (
       Alcotest.(check int) "wire size" 22 (String.length encoded);
       match decode_record_from_string ba_record_codec encoded with
@@ -419,13 +419,13 @@ let test_record_byte_array_roundtrip () =
           Alcotest.(check int) "id" original.id decoded.id;
           Alcotest.(check string) "uuid" original.uuid decoded.uuid;
           Alcotest.(check int) "tag" original.tag decoded.tag
-      | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e))
+      | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
 let test_record_byte_array_padding () =
   (* Short string should be zero-padded *)
   let original = { id = 1; uuid = "short"; tag = 2 } in
   match encode_record_to_string ba_record_codec original with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded -> (
       Alcotest.(check int) "wire size" 22 (String.length encoded);
       (* Verify zero padding: bytes 9..19 should be zero *)
@@ -442,7 +442,7 @@ let test_record_byte_array_padding () =
           Alcotest.(check string)
             "uuid prefix" "short"
             (String.sub decoded.uuid 0 5)
-      | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e))
+      | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
 (* Codec bitfield tests *)
 
@@ -489,7 +489,7 @@ let test_codec_bitfield_wire_size () =
 let test_codec_bitfield_roundtrip () =
   let original = { bf_a = 5; bf_b = 20; bf_c = 0x1234; bf_d = 0xAB } in
   match encode_record_to_string bf32_codec original with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded -> (
       match decode_record_from_string bf32_codec encoded with
       | Ok decoded ->
@@ -497,7 +497,7 @@ let test_codec_bitfield_roundtrip () =
           Alcotest.(check int) "b" original.bf_b decoded.bf_b;
           Alcotest.(check int) "c" original.bf_c decoded.bf_c;
           Alcotest.(check int) "d" original.bf_d decoded.bf_d
-      | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e))
+      | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
 let test_codec_bitfield_byte_layout () =
   (* a=5 (3b), b=20 (5b), c=0x1234 (16b), d=0xAB (8b)
@@ -505,7 +505,7 @@ let test_codec_bitfield_byte_layout () =
      = 0xB4 0x12 0x34 0xAB *)
   let v = { bf_a = 5; bf_b = 20; bf_c = 0x1234; bf_d = 0xAB } in
   match encode_record_to_string bf32_codec v with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded ->
       Alcotest.(check int) "length" 4 (String.length encoded);
       Alcotest.(check int) "byte 0" 0xB4 (Char.code encoded.[0]);
@@ -522,7 +522,7 @@ let test_codec_bitfield_decode () =
       Alcotest.(check int) "b" 20 v.bf_b;
       Alcotest.(check int) "c" 0x1234 v.bf_c;
       Alcotest.(check int) "d" 0xAB v.bf_d
-  | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_codec_bitfield_multi_group () =
   (* Two bf_uint16be groups: (3+2+11=16) + (14+2=16) = 32 bits = 4 bytes *)
@@ -530,7 +530,7 @@ let test_codec_bitfield_multi_group () =
     { bf_ver = 5; bf_flags = 2; bf_id = 0x7FF; bf_count = 0x3FFF; bf_len = 3 }
   in
   match encode_record_to_string bf16_codec v with
-  | Error e -> Alcotest.fail (Fmt.str "encode: %a" pp_parse_error e)
+  | Error e -> Alcotest.failf "encode: %a" pp_parse_error e
   | Ok encoded -> (
       Alcotest.(check int) "length" 4 (String.length encoded);
       (* First group: 101_10_11111111111 = 0xB7FF *)
@@ -547,7 +547,7 @@ let test_codec_bitfield_multi_group () =
           Alcotest.(check int) "id" v.bf_id decoded.bf_id;
           Alcotest.(check int) "count" v.bf_count decoded.bf_count;
           Alcotest.(check int) "len" v.bf_len decoded.bf_len
-      | Error e -> Alcotest.fail (Fmt.str "%a" pp_parse_error e))
+      | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
 let test_codec_bitfield_to_struct () =
   let s = Codec.to_struct bf32_codec in
