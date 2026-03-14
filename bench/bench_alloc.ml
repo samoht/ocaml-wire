@@ -78,29 +78,29 @@ let measure name n f =
   done;
   let after = (Gc.quick_stat ()).minor_words in
   let per_call = (after -. before) /. float_of_int n in
-  Printf.printf "  %-30s %6.1f words/call\n" name per_call
+  Fmt.pr "  %-30s %6.1f words/call\n" name per_call
 
 let () =
   let n = 1_000_000 in
-  Printf.printf "Codec decode allocation breakdown (%d calls)\n\n" n;
+  Fmt.pr "Codec decode allocation breakdown (%d calls)\n\n" n;
 
-  Printf.printf "Measurement baseline:\n";
+  Fmt.pr "Measurement baseline:\n";
   measure "noop" n (fun () -> ());
   measure "Bytes.length" n (fun () ->
       let _ = Bytes.length buf6 in
       ());
 
-  Printf.printf "\n1-field record (no intermediate closures):\n";
+  Fmt.pr "\n1-field record (no intermediate closures):\n";
   measure "Codec.decode codec1" n (fun () ->
       let _ = Codec.decode codec1 buf2 0 in
       ());
 
-  Printf.printf "\n3-field record (2 intermediate closures):\n";
+  Fmt.pr "\n3-field record (2 intermediate closures):\n";
   measure "Codec.decode codec3" n (fun () ->
       let _ = Codec.decode codec3 buf6 0 in
       ());
 
-  Printf.printf "\nBaseline (hand-written, same record):\n";
+  Fmt.pr "\nBaseline (hand-written, same record):\n";
   measure "hand-written decode" n (fun () ->
       let a = Bytes.get_uint16_be buf6 0 in
       let b = Bytes.get_uint16_be buf6 2 in
@@ -108,7 +108,7 @@ let () =
       let _ = { a; b; c } in
       ());
 
-  Printf.printf "\n7-field record (chunked fallback, 1 PA):\n";
+  Fmt.pr "\n7-field record (chunked fallback, 1 PA):\n";
   measure "Codec.decode codec7" n (fun () ->
       let _ = Codec.decode codec7 buf14 0 in
       ());
@@ -123,7 +123,7 @@ let () =
       let _ = { f1; f2; f3; f4; f5; f6; f7 } in
       ());
 
-  Printf.printf "\n8-field record (chunked fallback, 1 PA):\n";
+  Fmt.pr "\n8-field record (chunked fallback, 1 PA):\n";
   measure "Codec.decode codec8" n (fun () ->
       let _ = Codec.decode codec8 buf16 0 in
       ());
@@ -139,7 +139,7 @@ let () =
       let _ = { g1; g2; g3; g4; g5; g6; g7; g8 } in
       ());
 
-  Printf.printf "\nEncode:\n";
+  Fmt.pr "\nEncode:\n";
   let v = { a = 1; b = 2; c = 3 } in
   measure "Codec.encode codec3" n (fun () -> Codec.encode codec3 v buf6 0);
   measure "hand-written encode" n (fun () ->
@@ -152,7 +152,7 @@ let () =
       let _ = b in
       ());
 
-  Printf.printf "\nInt32 boxing (CLCW-like):\n";
+  Fmt.pr "\nInt32 boxing (CLCW-like):\n";
   let buf4 = Bytes.create 4 in
   measure "Bytes.get_int32_be" n (fun () ->
       let _ = Bytes.get_int32_be buf4 0 in
@@ -167,7 +167,7 @@ let () =
       in
       ());
 
-  Printf.printf "\nUInt32 (unboxed on 64-bit):\n";
+  Fmt.pr "\nUInt32 (unboxed on 64-bit):\n";
   measure "Wire.UInt32.get_be" n (fun () ->
       let _ = Wire.UInt32.get_be buf4 0 in
       ());
@@ -179,7 +179,7 @@ let () =
       let _ = (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3 in
       ());
 
-  Printf.printf "\nUInt63 (unboxed on 64-bit):\n";
+  Fmt.pr "\nUInt63 (unboxed on 64-bit):\n";
   let buf8 = Bytes.create 8 in
   measure "Bytes.get_int64_be (boxed)" n (fun () ->
       let _ = Bytes.get_int64_be buf8 0 in

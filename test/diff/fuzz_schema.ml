@@ -4,6 +4,7 @@
     When EverParse C integration is available, we can add differential tests. *)
 
 module Cr = Crowbar
+module Cu = Crowbar_util
 open Wire
 
 let truncate buf =
@@ -71,17 +72,17 @@ let test_constrained_packet_crash buf =
   ()
 
 let () =
-  Cr.run "schema"
+  Cu.run "schema"
     [
       ( "schema",
         [
-          Cr.test_case "simple_header roundtrip" [ Cr.int; Cr.int; Cr.int ]
+          Cu.test_case "simple_header roundtrip" [ Cr.int; Cr.int; Cr.int ]
             test_simple_header_roundtrip;
-          Cr.test_case "simple_header crash" [ Cr.bytes ]
+          Cu.test_case "simple_header crash" [ Cr.bytes ]
             test_simple_header_crash;
-          Cr.test_case "constrained_packet roundtrip" [ Cr.int; Cr.int ]
+          Cu.test_case "constrained_packet roundtrip" [ Cr.int; Cr.int ]
             test_constrained_packet_roundtrip;
-          Cr.test_case "constrained_packet crash" [ Cr.bytes ]
+          Cu.test_case "constrained_packet crash" [ Cr.bytes ]
             test_constrained_packet_crash;
         ] );
     ]

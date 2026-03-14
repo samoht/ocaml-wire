@@ -1,1 +1,1 @@
-val suite : string * Crowbar.test_case list
+val suite : string * Crowbar_util.test_case list

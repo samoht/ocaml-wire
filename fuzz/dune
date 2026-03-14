@@ -1,20 +1,25 @@
+(library
+ (name crowbar_util)
+ (modules crowbar_util)
+ (libraries crowbar))
+
 (executable
- (name fuzz_wire)
- (modules fuzz_wire)
- (libraries wire crowbar))
+ (name fuzz)
+ (modules fuzz fuzz_wire)
+ (libraries wire crowbar crowbar_util))
 
 (executable
  (name gen_corpus)
  (modules gen_corpus)
- (libraries unix))
+ (libraries unix fmt))
 
 (rule
  (alias runtest)
  (enabled_if
   (<> %{profile} afl))
- (deps fuzz_wire.exe)
+ (deps fuzz.exe)
  (action
-  (run %{exe:fuzz_wire.exe})))
+  (run %{exe:fuzz.exe})))
 
 (rule
  (alias fuzz)
@@ -22,7 +27,7 @@
   (= %{profile} afl))
  (deps
   (source_tree corpus)
-  fuzz_wire.exe
+  fuzz.exe
   gen_corpus.exe)
  (action
-  (echo "AFL fuzzer built: %{exe:fuzz_wire.exe}\n")))
+  (echo "AFL fuzzer built: %{exe:fuzz.exe}\n")))

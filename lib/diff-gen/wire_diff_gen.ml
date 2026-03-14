@@ -12,7 +12,7 @@ type schema = {
 }
 
 let schema ~name ~struct_ ~module_ =
-  match Wire.wire_size_of_struct struct_ with
+  match Wire.size_of_struct struct_ with
   | Some wire_size -> Some { name; struct_; module_; wire_size }
   | None -> None
 
@@ -74,7 +74,8 @@ let generate_3d_files ~schema_dir schemas =
 
 let generate_c_stubs ~schema_dir ~outdir schemas =
   let oc = open_out (Filename.concat outdir "stubs.c") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   pr "#include <caml/mlvalues.h>\n";
   pr "#include <caml/memory.h>\n";
   pr "#include <caml/alloc.h>\n";
@@ -105,21 +106,25 @@ let generate_c_stubs ~schema_dir ~outdir schemas =
       pr "  CAMLreturn(Val_bool(EverParseIsSuccess(result)));\n";
       pr "}\n\n")
     schemas;
+  Format.pp_print_flush ppf ();
   close_out oc
 
 let generate_ml_stubs ~outdir schemas =
   let oc = open_out (Filename.concat outdir "stubs.ml") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   List.iter
     (fun s ->
       let lower = String.lowercase_ascii s.name in
       pr "external %s_check : bytes -> bool = \"caml_%s_check\"\n" lower lower)
     schemas;
+  Format.pp_print_flush ppf ();
   close_out oc
 
 let generate_test_runner ~outdir ?(num_values = 1000) schemas =
   let oc = open_out (Filename.concat outdir "diff_test.ml") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   pr "(* Auto-generated differential test runner *)\n\n";
   pr "let num_values = %d\n\n" num_values;
   pr "type schema = {\n";
@@ -161,6 +166,7 @@ let generate_test_runner ~outdir ?(num_values = 1000) schemas =
     "  Printf.printf \"Tested %%d values across %%d schemas\\n\" !total_tests \
      (List.length schemas);\n";
   pr "  Printf.printf \"All %%d tests passed\\n\" !passed\n";
+  Format.pp_print_flush ppf ();
   close_out oc
 
 (** {1 Full Pipeline} *)
@@ -169,10 +175,10 @@ let generate ~schema_dir ~outdir ?(num_values = 1000) schemas =
   (try Unix.mkdir schema_dir 0o755
    with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
   generate_3d_files ~schema_dir schemas;
-  Printf.printf "Generated %d .3d files in %s/\n" (List.length schemas)
+  Fmt.pr "Generated %d .3d files in %s/\n" (List.length schemas)
     schema_dir;
   run_everparse ~schema_dir;
   generate_c_stubs ~schema_dir ~outdir schemas;
   generate_ml_stubs ~outdir schemas;
   generate_test_runner ~outdir ~num_values schemas;
-  Printf.printf "Generated stubs.c, stubs.ml, diff_test.ml\n"
+  Fmt.pr "Generated stubs.c, stubs.ml, diff_test.ml\n"

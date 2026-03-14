@@ -14,4 +14,4 @@ let () =
   write "seed_003" (String.make 16 '\x00');
   write "seed_004" (String.make 16 '\xff');
   write "seed_005" (String.init 256 Char.chr);
-  Printf.printf "gen_corpus: wrote 6 seed files\n"
+  Fmt.pr "gen_corpus: wrote 6 seed files@."

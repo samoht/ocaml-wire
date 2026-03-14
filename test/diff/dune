@@ -88,7 +88,7 @@
 (executable
  (name fuzz_schema)
  (modules fuzz_schema)
- (libraries schema crowbar))
+ (libraries schema crowbar crowbar_util))
 
 (rule
  (alias fuzz)

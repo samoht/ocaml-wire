@@ -1,9 +1,68 @@
+; Shared schema definitions for benchmarks (always builds)
+(library
+ (name bench_schemas)
+ (modules bench_schemas)
+ (libraries wire))
+
+; Memtrace allocation profiling (always builds)
 (executable
  (name bench_wire_memtrace)
  (modules bench_wire_memtrace)
- (libraries clcw space-packet tm wire memtrace))
+ (libraries bench_schemas wire memtrace))
 
+; Simple allocation benchmark (always builds)
 (executable
  (name bench_alloc)
  (modules bench_alloc)
  (libraries wire))
+
+; ── EverParse benchmark infrastructure (BUILD_EVERPARSE=1 only) ──
+
+; Step 1: Generator — produces .3d files, runs EverParse, generates C/ML stubs
+(executable
+ (name gen_bench_stubs)
+ (modules gen_bench_stubs)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries bench_schemas wire unix))
+
+; Step 2: Run the generator to produce all artifacts
+(rule
+ (alias gen_bench)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (targets
+  (dir ep_schemas)
+  bench_ep_stubs.c
+  bench_ep_stubs.ml
+  bench_ep_dispatch.ml)
+ (deps gen_bench_stubs.exe)
+ (action
+  (run ./gen_bench_stubs.exe ep_schemas)))
+
+; Step 3: EverParse stubs library (C validation + timed loops + OCaml externals)
+(library
+ (name bench_ep_stubs_lib)
+ (modules bench_ep_stubs)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (foreign_stubs
+  (language c)
+  (names bench_ep_stubs)
+  (flags :standard -I ep_schemas)))
+
+; Step 4: Dispatch module (generated, maps names to functions)
+(library
+ (name bench_ep_dispatch_lib)
+ (modules bench_ep_dispatch)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries bench_ep_stubs_lib))
+
+; Step 5: Performance benchmark — all 3 columns
+(executable
+ (name bench_perf)
+ (modules bench_perf)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries bench_schemas bench_ep_dispatch_lib wire unix))

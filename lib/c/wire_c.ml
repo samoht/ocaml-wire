@@ -20,7 +20,7 @@ let copy_file ~src ~dst =
   output_bytes oc buf;
   close_out oc
 
-let find_everparse_dir () =
+let get_everparse_dir () =
   let ic = Unix.open_process_in "which 3d.exe" in
   let path = input_line ic in
   ignore (Unix.close_process_in ic);
@@ -29,7 +29,7 @@ let find_everparse_dir () =
 let copy_everparse_endianness ~outdir =
   let dst = Filename.concat outdir "EverParseEndianness.h" in
   if not (Sys.file_exists dst) then begin
-    let ep_dir = find_everparse_dir () in
+    let ep_dir = get_everparse_dir () in
     let src = Filename.concat ep_dir "src/3d/EverParseEndianness.h" in
     if Sys.file_exists src then copy_file ~src ~dst
     else Fmt.failwith "Cannot find EverParseEndianness.h at %s" src
@@ -84,7 +84,8 @@ let extract_validate_fn ~outdir name =
 
 let generate_test ~outdir schemas =
   let oc = open_out (Filename.concat outdir "test.c") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   pr "#include <stdio.h>\n";
   pr "#include <stdlib.h>\n";
   pr "#include <stdint.h>\n";
@@ -161,6 +162,7 @@ let generate_test ~outdir schemas =
   pr "    printf(\"%%d test(s) failed.\\n\", failures);\n";
   pr "  return failures ? 1 : 0;\n";
   pr "}\n";
+  Format.pp_print_flush ppf ();
   close_out oc
 
 let ensure_dir outdir =
@@ -186,7 +188,8 @@ let generate ~outdir schemas =
 
 let generate_dune ~outdir ~package schemas =
   let oc = open_out (Filename.concat outdir "dune.inc") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   let names = List.map (fun s -> s.name) schemas in
   let c_files = List.concat_map (fun n -> [ n ^ ".h"; n ^ ".c" ]) names in
   let three_d_files = List.map (fun n -> n ^ ".3d") names in
@@ -231,6 +234,7 @@ let generate_dune ~outdir ~package schemas =
   List.iter (fun f -> pr "  (%s as c/%s)\n" f f) c_files;
   pr "  (EverParse.h as c/EverParse.h)\n";
   pr "  (EverParseEndianness.h as c/EverParseEndianness.h)))\n";
+  Format.pp_print_flush ppf ();
   close_out oc
 
 let main ~package schemas =

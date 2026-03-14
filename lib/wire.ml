@@ -1886,36 +1886,57 @@ let record_to_struct codec =
    4. Use to_c_stubs to generate OCaml FFI bindings to call EverParse C *)
 
 (** Compute the fixed wire size of a struct (None if variable-length) *)
-let rec wire_size_of_typ : type a. a typ -> int option = function
+let rec size_of_typ : type a. a typ -> int option = function
   | Uint8 -> Some 1
   | Uint16 _ -> Some 2
   | Uint32 _ -> Some 4
   | Uint64 _ -> Some 8
   | Byte_array { size = Int n } -> Some n
-  | Enum { base; _ } -> wire_size_of_int_typ base
-  | Where { inner; _ } -> wire_size_of_typ inner
-  | Map { inner; _ } -> wire_size_of_typ inner
+  | Enum { base; _ } -> size_of_int_typ base
+  | Where { inner; _ } -> size_of_typ inner
+  | Map { inner; _ } -> size_of_typ inner
   | _ -> None
 
-and wire_size_of_int_typ : int typ -> int option = function
+and size_of_int_typ : int typ -> int option = function
   | Uint8 -> Some 1
   | Uint16 _ -> Some 2
-  | Enum { base; _ } -> wire_size_of_int_typ base
-  | Where { inner; _ } -> wire_size_base inner
+  | Enum { base; _ } -> size_of_int_typ base
+  | Where { inner; _ } -> size_base inner
   | _ -> None
 
-and wire_size_base : type a. a typ -> int option = function
+and size_base : type a. a typ -> int option = function
   | Uint8 -> Some 1
   | Uint16 _ -> Some 2
   | _ -> None
 
-let wire_size_of_struct (s : struct_) =
+let size_of_struct (s : struct_) =
   List.fold_left
     (fun acc (Field f) ->
-      match (acc, wire_size_of_typ f.field_typ) with
+      match (acc, size_of_typ f.field_typ) with
       | Some a, Some b -> Some (a + b)
       | _ -> None)
     (Some 0) s.fields
+
+(** Compute the EverParse-normalized identifier for a struct name.
+
+    EverParse 3D normalizes C identifiers: names that start with two or more
+    consecutive uppercase letters are lowercased with only the first letter
+    capitalized (e.g., [CLCW] becomes [Clcw], [TMFrame] becomes [Tmframe]).
+    Names with standard camelCase are preserved (e.g., [AllInts] stays
+    [AllInts]). *)
+let everparse_name name =
+  let is_upper c =
+    Char.uppercase_ascii c = c && Char.lowercase_ascii c <> c
+  in
+  let len = String.length name in
+  let rec count_upper i =
+    if i < len && is_upper name.[i] then count_upper (i + 1) else i
+  in
+  if len > 0 && count_upper 0 >= 2 then
+    String.init len (fun i ->
+        let c = Char.lowercase_ascii name.[i] in
+        if i = 0 then Char.uppercase_ascii c else c)
+  else name
 
 (** OCaml type name for a wire type (for generated external declarations). *)
 let rec ml_type_of : type a. a typ -> string = function
@@ -1923,9 +1944,11 @@ let rec ml_type_of : type a. a typ -> string = function
   | Uint16 _ -> "int"
   | Uint32 _ -> "int32"
   | Uint64 _ -> "int64"
+  | Bits _ -> "int"
   | Enum { base; _ } -> ml_type_of_int base
   | Where { inner; _ } -> ml_type_of inner
   | Map { inner; _ } -> ml_type_of inner
+  | Apply { typ; _ } -> ml_type_of typ
   | _ -> failwith "ml_type_of: unsupported type"
 
 and ml_type_of_int : int typ -> string = function
@@ -1969,69 +1992,28 @@ let named_fields (s : struct_) =
       | None -> None)
     s.fields
 
-(** Generate C read stub: [string -> (t1 * t2 * ...) option]. Calls
-    EverParse-generated [Name_read] function. *)
-let c_stub_read ppf (s : struct_) fields =
-  let n = List.length fields in
-  let has_boxed = List.exists (fun (Named (_, typ)) -> is_boxed typ) fields in
-  Fmt.pf ppf "CAMLprim value caml_wire_%s_read(value v_buf) {@\n" s.name;
+(** Generate C check stub: [bytes -> bool]. Calls EverParse-generated
+    [FooCheckFoo] validation function. *)
+let c_stub_check ppf (s : struct_) =
+  let ep = everparse_name s.name in
+  let lower = String.lowercase_ascii s.name in
+  Fmt.pf ppf "CAMLprim value caml_wire_%s_check(value v_buf) {@\n" lower;
   Fmt.pf ppf "  CAMLparam1(v_buf);@\n";
-  if has_boxed then Fmt.pf ppf "  CAMLlocal3(v_some, v_tuple, v_tmp);@\n"
-  else Fmt.pf ppf "  CAMLlocal2(v_some, v_tuple);@\n";
-  Fmt.pf ppf "  const uint8_t *buf = (const uint8_t *)String_val(v_buf);@\n";
+  Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
   Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
-  Fmt.pf ppf "  %s val;@\n" s.name;
-  Fmt.pf ppf "  int32_t rc = %s_read(buf, len, &val);@\n" s.name;
-  Fmt.pf ppf "  if (rc <= 0) { CAMLreturn(Val_none); }@\n";
-  Fmt.pf ppf "  v_tuple = caml_alloc_tuple(%d);@\n" n;
-  List.iteri
-    (fun i (Named (name, typ)) ->
-      if is_boxed typ then begin
-        Fmt.pf ppf "  v_tmp = %s;@\n" (c_to_ml typ ("val." ^ name));
-        Fmt.pf ppf "  Store_field(v_tuple, %d, v_tmp);@\n" i
-      end
-      else
-        Fmt.pf ppf "  Store_field(v_tuple, %d, %s);@\n" i
-          (c_to_ml typ ("val." ^ name)))
-    fields;
-  Fmt.pf ppf "  v_some = caml_alloc(1, 0);@\n";
-  Fmt.pf ppf "  Store_field(v_some, 0, v_tuple);@\n";
-  Fmt.pf ppf "  CAMLreturn(v_some);@\n";
+  Fmt.pf ppf "  BOOLEAN result = %sCheck%s(data, len);@\n" ep ep;
+  Fmt.pf ppf "  CAMLreturn(Val_bool(result));@\n";
   Fmt.pf ppf "}@\n@\n"
 
-(** Generate C write stub: [(t1 * t2 * ...) -> string option]. Calls
-    EverParse-generated [Name_write] function. *)
-let c_stub_write ppf (s : struct_) fields =
-  let sz = match wire_size_of_struct s with Some n -> n | None -> 4096 in
-  Fmt.pf ppf "CAMLprim value caml_wire_%s_write(value v_tuple) {@\n" s.name;
-  Fmt.pf ppf "  CAMLparam1(v_tuple);@\n";
-  Fmt.pf ppf "  CAMLlocal2(v_some, v_str);@\n";
-  Fmt.pf ppf "  %s val;@\n" s.name;
-  List.iteri
-    (fun i (Named (name, typ)) ->
-      Fmt.pf ppf "  val.%s = %s;@\n" name
-        (ml_to_c typ (Fmt.str "Field(v_tuple, %d)" i)))
-    fields;
-  Fmt.pf ppf "  uint8_t out[%d];@\n" sz;
-  Fmt.pf ppf "  int32_t wc = %s_write(&val, out, sizeof(out));@\n" s.name;
-  Fmt.pf ppf "  if (wc <= 0) { CAMLreturn(Val_none); }@\n";
-  Fmt.pf ppf "  v_str = caml_alloc_string(wc);@\n";
-  Fmt.pf ppf "  memcpy((char *)String_val(v_str), out, wc);@\n";
-  Fmt.pf ppf "  v_some = caml_alloc(1, 0);@\n";
-  Fmt.pf ppf "  Store_field(v_some, 0, v_str);@\n";
-  Fmt.pf ppf "  CAMLreturn(v_some);@\n";
-  Fmt.pf ppf "}@\n@\n"
+(** Generate C FFI stubs that call EverParse-generated validators.
 
-(** Generate C FFI stubs that call EverParse-generated [Name_read] and
-    [Name_write].
+    For each struct [Foo], generates:
+    - Error handler: [FooEverParseError]
+    - Validation stub: [caml_wire_foo_check(v_buf)] returning [bool]
 
-    For each struct [Foo] with fields [a : t1, b : t2, ...], generates:
-    - [caml_wire_Foo_read(v_buf)] returning [(t1 * t2 * ...) option]
-    - [caml_wire_Foo_write(v_tuple)] taking [(t1 * t2 * ...)] and returning
-      [string option].
-
-    The generated code expects EverParse headers to be available:
-    - [Foo.h] with struct typedef and [Foo_read]/[Foo_write] functions *)
+    The generated code expects EverParse headers and sources to be available
+    via [-I] include path. EverParse identifier normalization is handled
+    automatically (e.g., [CLCW] becomes [ClcwCheckClcw]). *)
 let to_c_stubs (structs : struct_ list) =
   let buf = Buffer.create 4096 in
   let ppf = Format.formatter_of_buffer buf in
@@ -2039,30 +2021,32 @@ let to_c_stubs (structs : struct_ list) =
     "/* wire_stubs.c - OCaml FFI stubs for EverParse-generated C */@\n@\n";
   Fmt.pf ppf "#include <caml/mlvalues.h>@\n";
   Fmt.pf ppf "#include <caml/memory.h>@\n";
-  Fmt.pf ppf "#include <caml/alloc.h>@\n";
-  Fmt.pf ppf "#include <string.h>@\n@\n";
-  Fmt.pf ppf "/* Include EverParse-generated headers */@\n";
-  List.iter
-    (fun (s : struct_) -> Fmt.pf ppf "#include \"%s.h\"@\n" s.name)
+  Fmt.pf ppf "#include <stdint.h>@\n@\n";
+  Fmt.pf ppf "/* EverParse headers and sources */@\n";
+  List.iteri
+    (fun i (s : struct_) ->
+      if i = 0 then Fmt.pf ppf "#include \"EverParse.h\"@\n";
+      Fmt.pf ppf "#include \"%s.h\"@\n" s.name;
+      Fmt.pf ppf "#include \"%s.c\"@\n" s.name;
+      Fmt.pf ppf "#include \"%sWrapper.h\"@\n" s.name)
     structs;
-  Fmt.pf ppf "@\n";
+  Fmt.pf ppf "@\n/* Error handlers */@\n";
   List.iter
     (fun (s : struct_) ->
-      let fields = named_fields s in
-      c_stub_read ppf s fields;
-      c_stub_write ppf s fields)
+      Fmt.pf ppf
+        "void %sEverParseError(const char *s, const char *f, const char *r) \
+         { (void)s; (void)f; (void)r; }@\n"
+        s.name)
     structs;
+  Fmt.pf ppf "@\n/* Validation stubs */@\n";
+  List.iter (fun (s : struct_) -> c_stub_check ppf s) structs;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
 (** Generate OCaml [external] declarations matching the C stubs from
-    {!to_c_stubs}. For each struct [Foo] with fields [a : t1, b : t2, ...],
-    generates a module:
+    {!to_c_stubs}. For each struct [Foo], generates:
     {[
-      module Foo : sig
-        val read : string -> (t1 * t2 * ...) option
-        val write : (t1 * t2 * ...) -> string option
-      end
+      external foo_check : bytes -> bool = "caml_wire_foo_check"
     ]} *)
 let to_ml_stubs (structs : struct_ list) =
   let buf = Buffer.create 256 in
@@ -2070,17 +2054,9 @@ let to_ml_stubs (structs : struct_ list) =
   Fmt.pf ppf "(* Generated by wire (do not edit) *)@\n@\n";
   List.iter
     (fun (s : struct_) ->
-      let fields = named_fields s in
-      let tuple_type =
-        String.concat " * "
-          (List.map (fun (Named (_, typ)) -> ml_type_of typ) fields)
-      in
-      Fmt.pf ppf "module %s = struct@\n" s.name;
-      Fmt.pf ppf "  external read : string -> (%s) option@\n" tuple_type;
-      Fmt.pf ppf "    = \"caml_wire_%s_read\"@\n" s.name;
-      Fmt.pf ppf "  external write : (%s) -> string option@\n" tuple_type;
-      Fmt.pf ppf "    = \"caml_wire_%s_write\"@\n" s.name;
-      Fmt.pf ppf "end@\n@\n")
+      let lower = String.lowercase_ascii s.name in
+      Fmt.pf ppf "external %s_check : bytes -> bool@\n" lower;
+      Fmt.pf ppf "  = \"caml_wire_%s_check\"@\n@\n" lower)
     structs;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
@@ -2099,28 +2075,18 @@ let to_ml_stub_name (s : struct_) =
   Buffer.contents buf
 
 (** Generate a flat OCaml stub module for a single struct. Produces a file with
-    [type t] and [external read/write] declarations:
+    an [external check] declaration:
     {[
       (* Generated by wire *)
-      type t = int * int * int32
-
-      external read : string -> t option = "caml_wire_Foo_read"
-      external write : t -> string option = "caml_wire_Foo_write"
+      external check : bytes -> bool = "caml_wire_foo_check"
     ]} *)
 let to_ml_stub (s : struct_) =
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
-  let fields = named_fields s in
-  let tuple_type =
-    String.concat " * "
-      (List.map (fun (Named (_, typ)) -> ml_type_of typ) fields)
-  in
+  let lower = String.lowercase_ascii s.name in
   Fmt.pf ppf "(* Generated by wire (do not edit) *)@\n@\n";
-  Fmt.pf ppf "type t = %s@\n@\n" tuple_type;
-  Fmt.pf ppf "external read : string -> t option@\n";
-  Fmt.pf ppf "  = \"caml_wire_%s_read\"@\n@\n" s.name;
-  Fmt.pf ppf "external write : t -> string option@\n";
-  Fmt.pf ppf "  = \"caml_wire_%s_write\"@\n" s.name;
+  Fmt.pf ppf "external check : bytes -> bool@\n";
+  Fmt.pf ppf "  = \"caml_wire_%s_check\"@\n" lower;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 

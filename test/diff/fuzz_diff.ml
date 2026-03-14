@@ -302,7 +302,7 @@ let () =
          Cr.test_case (name ^ " fuzz-diff") [ Cr.bytes ] (fun buf ->
              let buf = pad rs.wire_size buf in
              let ocaml_result =
-               Wire_diff.Diff.roundtrip_struct rs.struct_ buf
+               Wire_diff.roundtrip_struct rs.struct_ buf
              in
              let c_result = c_roundtrip sub idx buf in
              match (ocaml_result, c_result) with
