@@ -889,6 +889,15 @@ let check_constraint ctx cond =
       Error (Constraint_failed "field constraint")
   | _ -> Ok ()
 
+let parse_all_zeros dec ctx =
+  let s = read_all dec in
+  let rec check i =
+    if i >= String.length s then Ok (s, ctx)
+    else if s.[i] <> '\000' then Error (All_zeros_failed { offset = i })
+    else check (i + 1)
+  in
+  check 0
+
 let rec parse_with_ctx : type a.
     ctx -> a typ -> decoder -> (a * ctx, parse_error) result =
  fun ctx typ dec ->
@@ -910,14 +919,7 @@ let rec parse_with_ctx : type a.
   | All_bytes ->
       let s = read_all dec in
       Ok (s, ctx)
-  | All_zeros ->
-      let s = read_all dec in
-      let rec check i =
-        if i >= String.length s then Ok (s, ctx)
-        else if s.[i] <> '\000' then Error (All_zeros_failed { offset = i })
-        else check (i + 1)
-      in
-      check 0
+  | All_zeros -> parse_all_zeros dec ctx
   | Where { cond; inner } -> (
       match parse_with_ctx ctx inner dec with
       | Ok (v, ctx') ->
@@ -961,43 +963,45 @@ let rec parse_with_ctx : type a.
           in
           find_case cases)
   | Struct { fields; _ } ->
-      let parse_field_with_bf : type a.
-          bf_accum option -> a typ -> (a * bf_accum option, parse_error) result
-          =
-       fun accum_opt typ ->
-        match typ with
-        | Bits { width; base } -> parse_bf_field dec accum_opt base width
-        | _ ->
-            let* v, _ = parse_with_ctx ctx typ dec in
-            Ok (v, None)
-      in
-      let rec go ctx' accum_opt = function
-        | [] -> Ok ((), ctx')
-        | Field { field_name; field_typ = Bits _ as ft; constraint_; _ }
-          :: rest ->
-            let* v, accum_opt' = parse_field_with_bf accum_opt ft in
-            let ctx'' =
-              match field_name with Some n -> Ctx.add n v ctx' | None -> ctx'
-            in
-            let* () = check_constraint ctx'' constraint_ in
-            go ctx'' accum_opt' rest
-        | Field { field_name; field_typ; constraint_; _ } :: rest ->
-            let* v, ctx'' = parse_with_ctx ctx' field_typ dec in
-            let ctx'' =
-              match field_name with
-              | Some n -> Ctx.add n (val_to_int field_typ v) ctx''
-              | None -> ctx''
-            in
-            let* () = check_constraint ctx'' constraint_ in
-            go ctx'' None rest
-      in
-      go ctx None fields
+      (parse_struct_fields ctx dec fields
+        : (unit * ctx, parse_error) result)
   | Map { inner; decode; _ } ->
       parse_with_ctx ctx inner dec
       |> Result.map (fun (v, ctx') -> (decode v, ctx'))
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
+
+and parse_struct_fields ctx dec fields =
+  let parse_field_with_bf : type a.
+      bf_accum option -> a typ -> (a * bf_accum option, parse_error) result =
+   fun accum_opt typ ->
+    match typ with
+    | Bits { width; base } -> parse_bf_field dec accum_opt base width
+    | _ ->
+        let* v, _ = parse_with_ctx ctx typ dec in
+        Ok (v, None)
+  in
+  let rec go ctx' accum_opt = function
+    | [] -> Ok ((), ctx')
+    | Field { field_name; field_typ = Bits _ as ft; constraint_; _ } :: rest ->
+        let* v, accum_opt' = parse_field_with_bf accum_opt ft in
+        let ctx'' =
+          match field_name with Some n -> Ctx.add n v ctx' | None -> ctx'
+        in
+        let* () = check_constraint ctx'' constraint_ in
+        go ctx'' accum_opt' rest
+    | Field { field_name; field_typ; constraint_; _ } :: rest ->
+        let* v, ctx'' = parse_with_ctx ctx' field_typ dec in
+        let ctx'' =
+          match field_name with
+          | Some n -> Ctx.add n (val_to_int field_typ v) ctx''
+          | None -> ctx''
+        in
+        let* () = check_constraint ctx'' constraint_ in
+        go ctx'' None rest
+  in
+  go ctx None fields
 
 let parse typ reader =
   let dec = decoder reader in
