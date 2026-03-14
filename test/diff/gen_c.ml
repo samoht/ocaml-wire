@@ -209,6 +209,23 @@ let fields_with_offsets fields =
   in
   aux 0 fields
 
+let emit_wire_checker pr rs =
+  let name = Wire.struct_name rs.struct_ in
+  let lower = String.lowercase_ascii name in
+  pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
+  pr "let %s_wire_check (buf : bytes) : bool =\n" lower;
+  pr "  if Bytes.length buf < %d then false else\n" rs.total_wire_size;
+  let constrained_fields =
+    List.filter_map
+      (fun (rf, offset) ->
+        Option.map (fun k -> (rf, offset, k)) rf.constraint_val)
+      (fields_with_offsets rs.fields)
+  in
+  List.iter
+    (fun (rf, offset, k) -> emit_constraint_check pr rf offset k)
+    constrained_fields;
+  pr "  true\n\n"
+
 let generate_test_runner outdir schemas =
   let oc = open_out (Filename.concat outdir "diff_test.ml") in
   let pr fmt = Printf.fprintf oc fmt in
@@ -220,27 +237,7 @@ let generate_test_runner outdir schemas =
   pr "  wire_check : bytes -> bool;\n";
   pr "  c_check : bytes -> bool;\n";
   pr "}\n\n";
-  List.iter
-    (fun rs ->
-      let name = Wire.struct_name rs.struct_ in
-      let lower = String.lowercase_ascii name in
-      pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
-      pr "let %s_wire_check (buf : bytes) : bool =\n" lower;
-      pr "  if Bytes.length buf < %d then false else\n" rs.total_wire_size;
-      let has_constraints =
-        List.exists (fun rf -> rf.constraint_val <> None) rs.fields
-      in
-      if has_constraints then begin
-        List.iter
-          (fun (rf, offset) ->
-            match rf.constraint_val with
-            | Some k -> emit_constraint_check pr rf offset k
-            | None -> ())
-          (fields_with_offsets rs.fields);
-        pr "  true\n\n"
-      end
-      else pr "  true\n\n")
-    schemas;
+  List.iter (emit_wire_checker pr) schemas;
   (* Generate schema list *)
   pr "let schemas = [\n";
   List.iter
