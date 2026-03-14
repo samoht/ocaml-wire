@@ -181,7 +181,8 @@ let generate_ml_stubs outdir schemas =
     schemas;
   close_out oc
 
-let emit_constraint_check pr rf offset k =
+let emit_constraint_check oc rf offset k =
+  let pr fmt = Printf.fprintf oc fmt in
   let endian = if rf.big_endian then "be" else "le" in
   match rf.ft.wire_size with
   | 1 ->
@@ -192,11 +193,13 @@ let emit_constraint_check pr rf offset k =
       pr "  if %s > %d then false else\n" rf.name k
   | 4 ->
       pr "  let %s = Bytes.get_int32_%s buf %d in\n" rf.name endian offset;
-      pr "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n" rf.name
+      Printf.fprintf oc
+        "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n" rf.name
         (Int32.of_int k)
   | 8 ->
       pr "  let %s = Bytes.get_int64_%s buf %d in\n" rf.name endian offset;
-      pr "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n" rf.name
+      Printf.fprintf oc
+        "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n" rf.name
         (Int64.of_int k)
   | _ ->
       pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
@@ -209,7 +212,8 @@ let fields_with_offsets fields =
   in
   aux 0 fields
 
-let emit_wire_checker pr rs =
+let emit_wire_checker oc rs =
+  let pr fmt = Printf.fprintf oc fmt in
   let name = Wire.struct_name rs.struct_ in
   let lower = String.lowercase_ascii name in
   pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
@@ -222,7 +226,7 @@ let emit_wire_checker pr rs =
       (fields_with_offsets rs.fields)
   in
   List.iter
-    (fun (rf, offset, k) -> emit_constraint_check pr rf offset k)
+    (fun (rf, offset, k) -> emit_constraint_check oc rf offset k)
     constrained_fields;
   pr "  true\n\n"
 
@@ -237,7 +241,7 @@ let generate_test_runner outdir schemas =
   pr "  wire_check : bytes -> bool;\n";
   pr "  c_check : bytes -> bool;\n";
   pr "}\n\n";
-  List.iter (emit_wire_checker pr) schemas;
+  List.iter (emit_wire_checker oc) schemas;
   (* Generate schema list *)
   pr "let schemas = [\n";
   List.iter
@@ -279,16 +283,6 @@ let generate_test_runner outdir schemas =
   pr "  if !mismatches > 0 then exit 1\n";
   close_out oc
 
-let run_everparse schema_dir =
-  let cmd =
-    Fmt.str
-      "cd %s && for f in *.3d; do ~/.local/everparse/bin/3d.exe --batch \"$f\" \
-       || exit 1; done"
-      schema_dir
-  in
-  let ret = Sys.command cmd in
-  if ret <> 0 then Fmt.failwith "EverParse failed with code %d" ret
-
 (* ---- Main ---- *)
 
 let () =
@@ -298,18 +292,19 @@ let () =
   let num_random =
     if Array.length Sys.argv > 2 then int_of_string Sys.argv.(2) else 20
   in
-  (try Unix.mkdir schema_dir 0o755
-   with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
   let schemas = List.init num_random (fun i -> random_struct i) in
-  (* Generate .3d files for EverParse into schema_dir *)
-  List.iter
-    (fun rs ->
-      let name = Wire.struct_name rs.struct_ in
-      let m = Wire.module_ name [ Wire.typedef ~entrypoint:true rs.struct_ ] in
-      Wire.to_3d_file (Filename.concat schema_dir (name ^ ".3d")) m)
-    schemas;
-  (* Run EverParse to generate C parsers *)
-  run_everparse schema_dir;
+  let wire_c_schemas =
+    List.map
+      (fun rs ->
+        Wire_c.schema ~name:(Wire.struct_name rs.struct_)
+          ~module_:
+            (Wire.module_ (Wire.struct_name rs.struct_)
+               [ Wire.typedef ~entrypoint:true rs.struct_ ])
+          ~wire_size:rs.total_wire_size)
+      schemas
+  in
+  Wire_c.generate_3d ~outdir:schema_dir wire_c_schemas;
+  Wire_c.run_everparse ~outdir:schema_dir wire_c_schemas;
   (* Generate FFI stubs and test runner in current dir *)
   generate_c_stubs ~schema_dir "." schemas;
   generate_ml_stubs "." schemas;

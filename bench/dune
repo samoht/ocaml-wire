@@ -24,11 +24,10 @@
  (modules gen_bench_stubs)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries bench_schemas wire unix))
+ (libraries bench_schemas wire wire.c unix))
 
 ; Step 2: Run the generator to produce all artifacts
 (rule
- (alias gen_bench)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
  (targets
@@ -42,7 +41,7 @@
 
 ; Step 3: EverParse stubs library (C validation + timed loops + OCaml externals)
 (library
- (name bench_ep_stubs_lib)
+ (name bench_ep_stubs)
  (modules bench_ep_stubs)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
@@ -53,11 +52,11 @@
 
 ; Step 4: Dispatch module (generated, maps names to functions)
 (library
- (name bench_ep_dispatch_lib)
+ (name bench_ep_dispatch)
  (modules bench_ep_dispatch)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries bench_ep_stubs_lib))
+ (libraries bench_ep_stubs))
 
 ; Step 5: Performance benchmark — all 3 columns
 (executable
@@ -65,4 +64,4 @@
  (modules bench_perf)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries bench_schemas bench_ep_dispatch_lib wire unix))
+ (libraries bench_schemas bench_ep_dispatch wire unix))

@@ -9,10 +9,7 @@
     {[
       let () =
         Wire_c.main ~package:"clcw"
-          [
-            Wire_c.schema ~name:"Clcw" ~module_:Clcw.module_
-              ~wire_size:(Wire.Codec.wire_size Clcw.codec);
-          ]
+          [ Wire_c.schema_of_struct Clcw.struct_ ]
     ]}
 
     With a minimal [dune] that includes the generated rules:
@@ -26,9 +23,14 @@
 type schema
 (** A schema bundles a name, Wire module, and wire size. *)
 
+val schema_of_struct : Wire.struct_ -> schema
+(** [schema_of_struct s] creates a schema from a fixed-size struct.
+    The name, module, and wire size are derived from the struct.
+    Raises [Failure] if the struct has variable-length fields. *)
+
 val schema : name:string -> module_:Wire.module_ -> wire_size:int -> schema
-(** [schema ~name ~module_ ~wire_size] creates a schema for C library
-    generation. *)
+(** [schema ~name ~module_ ~wire_size] creates a schema with explicit
+    parameters. Prefer {!schema_of_struct} when possible. *)
 
 val generate_3d : outdir:string -> schema list -> unit
 (** [generate_3d ~outdir schemas] generates [.3d] files from Wire modules. *)
@@ -49,3 +51,14 @@ val main : package:string -> schema list -> unit
     - [c] runs {!generate_c}
     - [dune] generates [dune.inc] with build rules, test, and install stanzas
     - otherwise runs {!generate}. *)
+
+val run_everparse : outdir:string -> schema list -> unit
+(** [run_everparse ~outdir schemas] invokes EverParse on .3d files in [outdir].
+    Requires [3d.exe] in PATH. *)
+
+val has_3d_exe : unit -> bool
+(** [has_3d_exe ()] returns [true] if [3d.exe] is available in PATH or
+    [~/.local/everparse/bin/]. *)
+
+val ensure_dir : string -> unit
+(** [ensure_dir path] creates the directory [path] if it does not exist. *)

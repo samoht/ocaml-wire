@@ -572,7 +572,7 @@ let test_c_stubs () =
     (contains ~sub:"caml_wire_simpleheader_check" stubs);
   Alcotest.(check bool)
     "contains error handler" true
-    (contains ~sub:"SimpleHeaderEverParseError" stubs)
+    (contains ~sub:"simpleheader_err" stubs)
 
 let suite =
   ( "wire",

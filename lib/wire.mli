@@ -800,8 +800,7 @@ val ml_type_of : 'a typ -> string
 val to_c_stubs : struct_ list -> string
 (** [to_c_stubs structs] generates a C file with OCaml FFI stubs that call
     EverParse-generated validators. For each struct [Foo], generates:
-    - Error handler [FooEverParseError]
-    - Validation stub [caml_wire_foo_check] returning [bool]
+    - Validation stub [caml_wire_foo_check] calling [Validate] directly
 
     The generated C code includes the EverParse headers and sources. Compile
     with [-I <schema_dir>] to find them. EverParse identifier normalization

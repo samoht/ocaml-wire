@@ -1991,19 +1991,28 @@ let named_fields (s : struct_) =
 let c_stub_check ppf (s : struct_) =
   let ep = everparse_name s.name in
   let lower = String.lowercase_ascii s.name in
+  (* Define a static error handler for this schema *)
+  Fmt.pf ppf
+    "static void %s_err(const char *t, const char *f, const char *r,@\n" lower;
+  Fmt.pf ppf
+    "  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {@\n";
+  Fmt.pf ppf
+    "  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;@\n";
+  Fmt.pf ppf "}@\n";
+  (* Call Validate directly instead of going through the Wrapper *)
   Fmt.pf ppf "CAMLprim value caml_wire_%s_check(value v_buf) {@\n" lower;
   Fmt.pf ppf "  CAMLparam1(v_buf);@\n";
   Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
   Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
-  Fmt.pf ppf "  BOOLEAN result = %sCheck%s(data, len);@\n" ep ep;
-  Fmt.pf ppf "  CAMLreturn(Val_bool(result));@\n";
+  Fmt.pf ppf "  uint64_t r = %sValidate%s(NULL, %s_err, data, len, 0);@\n" ep ep
+    lower;
+  Fmt.pf ppf "  CAMLreturn(Val_bool(EverParseIsSuccess(r)));@\n";
   Fmt.pf ppf "}@\n@\n"
 
 (** Generate C FFI stubs that call EverParse-generated validators.
 
     For each struct [Foo], generates:
-    - Error handler: [FooEverParseError]
-    - Validation stub: [caml_wire_foo_check(v_buf)] returning [bool]
+    - Validation stub: [caml_wire_foo_check(v_buf)] calling [Validate] directly
 
     The generated code expects EverParse headers and sources to be available
     via [-I] include path. EverParse identifier normalization is handled
@@ -2021,16 +2030,7 @@ let to_c_stubs (structs : struct_ list) =
     (fun i (s : struct_) ->
       if i = 0 then Fmt.pf ppf "#include \"EverParse.h\"@\n";
       Fmt.pf ppf "#include \"%s.h\"@\n" s.name;
-      Fmt.pf ppf "#include \"%s.c\"@\n" s.name;
-      Fmt.pf ppf "#include \"%sWrapper.h\"@\n" s.name)
-    structs;
-  Fmt.pf ppf "@\n/* Error handlers */@\n";
-  List.iter
-    (fun (s : struct_) ->
-      Fmt.pf ppf
-        "void %sEverParseError(const char *s, const char *f, const char *r) \
-         { (void)s; (void)f; (void)r; }@\n"
-        s.name)
+      Fmt.pf ppf "#include \"%s.c\"@\n" s.name)
     structs;
   Fmt.pf ppf "@\n/* Validation stubs */@\n";
   List.iter (fun (s : struct_) -> c_stub_check ppf s) structs;

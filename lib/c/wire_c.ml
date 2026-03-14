@@ -2,6 +2,16 @@
 
 type schema = { name : string; module_ : Wire.module_; wire_size : int }
 
+let schema_of_struct s =
+  let name = Wire.struct_name s in
+  let m = Wire.module_ name [ Wire.typedef ~entrypoint:true s ] in
+  let wire_size =
+    match Wire.size_of_struct s with
+    | Some n -> n
+    | None -> Fmt.failwith "schema %s has variable-length fields" name
+  in
+  { name; module_ = m; wire_size }
+
 let schema ~name ~module_ ~wire_size = { name; module_; wire_size }
 
 let generate_3d_files ~outdir schemas =
@@ -20,11 +30,22 @@ let copy_file ~src ~dst =
   output_bytes oc buf;
   close_out oc
 
-let everparse_dir () =
-  let ic = Unix.open_process_in "which 3d.exe" in
-  let path = input_line ic in
+let find_3d_exe () =
+  let ic = Unix.open_process_in "command -v 3d.exe 2>/dev/null" in
+  let path = try Some (input_line ic) with End_of_file -> None in
   ignore (Unix.close_process_in ic);
-  Filename.dirname path |> Filename.dirname
+  match path with
+  | Some p -> Some p
+  | None ->
+      let local =
+        Filename.concat (Sys.getenv "HOME") ".local/everparse/bin/3d.exe"
+      in
+      if Sys.file_exists local then Some local else None
+
+let everparse_dir () =
+  match find_3d_exe () with
+  | Some exe -> Filename.dirname exe |> Filename.dirname
+  | None -> failwith "3d.exe not found"
 
 let copy_everparse_endianness ~outdir =
   let dst = Filename.concat outdir "EverParseEndianness.h" in
@@ -35,56 +56,26 @@ let copy_everparse_endianness ~outdir =
     else Fmt.failwith "Cannot find EverParseEndianness.h at %s" src
   end
 
-let has_3d_exe () = Sys.command "command -v 3d.exe > /dev/null 2>&1" = 0
+let has_3d_exe () = find_3d_exe () <> None
 
 let run_everparse ~outdir schemas =
+  let exe =
+    match find_3d_exe () with
+    | Some e -> e
+    | None -> failwith "3d.exe not found in PATH or ~/.local/everparse/bin/"
+  in
   List.iter
     (fun s ->
       let f = s.name ^ ".3d" in
-      let cmd = Fmt.str "cd %s && 3d.exe --batch %s" outdir f in
+      let cmd = Fmt.str "cd %s && %s --batch %s > /dev/null" outdir exe f in
       let ret = Sys.command cmd in
       if ret <> 0 then Fmt.failwith "EverParse failed on %s with code %d" f ret)
     schemas;
   copy_everparse_endianness ~outdir
 
-(** Extract the validate function name from an EverParse-generated header.
-
-    EverParse normalizes C identifiers in a way that depends on consecutive
-    uppercase runs (e.g., [SpaceOSFrame] becomes [SpaceOsframe]). Rather than
-    replicating the algorithm, we read the generated header files. *)
-let extract_validate_fn ~outdir name =
-  let header = Filename.concat outdir (name ^ ".h") in
-  let ic = open_in header in
-  let result = ref None in
-  (try
-     while true do
-       let line = input_line ic in
-       let trimmed = String.trim line in
-       if String.length trimmed > 0 && String.contains trimmed '(' then begin
-         let fn = String.sub trimmed 0 (String.index trimmed '(') in
-         let fn = String.trim fn in
-         let has_validate =
-           let vlen = String.length "Validate" in
-           let rec check i =
-             if i + vlen > String.length fn then false
-             else if String.sub fn i vlen = "Validate" then true
-             else check (i + 1)
-           in
-           check 0
-         in
-         if has_validate && fn <> "" && fn.[0] <> '#' && fn.[0] <> '*' then
-           result := Some fn
-       end
-     done
-   with End_of_file -> ());
-  close_in ic;
-  match !result with
-  | Some fn -> fn
-  | None -> Fmt.failwith "Could not find Validate function in %s" header
-
-let emit_schema_test ppf ~outdir s =
+let emit_schema_test ppf s =
   let pr fmt = Fmt.pf ppf fmt in
-  let validate_fn = extract_validate_fn ~outdir s.name in
+  let ep = Wire.everparse_name s.name in
   let lower = String.lowercase_ascii s.name in
   pr "\n  /* %s (%d bytes) */\n" s.name s.wire_size;
   pr "  {\n";
@@ -92,13 +83,13 @@ let emit_schema_test ppf ~outdir s =
   pr "    uint8_t buf[%d];\n" s.wire_size;
   pr "    uint64_t r;\n\n";
   pr "    memset(buf, 0, %d);\n" s.wire_size;
-  pr "    r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
+  pr "    r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep ep
     s.wire_size;
   pr "    CHECK(\"zero buffer validates\", EverParseIsSuccess(r));\n";
   pr "    CHECK(\"position advanced to %d\", r == %d);\n" s.wire_size
     s.wire_size;
   pr "\n";
-  pr "    r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
+  pr "    r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep ep
     (s.wire_size * 2);
   pr "    CHECK(\"larger buffer validates\", EverParseIsSuccess(r));\n";
   pr "    CHECK(\"position is %d not %d\", r == %d);\n" s.wire_size
@@ -106,19 +97,20 @@ let emit_schema_test ppf ~outdir s =
   pr "\n";
   pr "    for (uint64_t len = 0; len < %d; len++) {\n" s.wire_size;
   pr "      error_count = 0;\n";
-  pr "      r = %s(NULL, counting_error_handler, buf, len, 0);\n" validate_fn;
+  pr "      r = %sValidate%s(NULL, counting_error_handler, buf, len, 0);\n" ep
+    ep;
   pr "      CHECK(\"truncated to len fails\", EverParseIsError(r));\n";
   pr "    }\n";
   pr "\n";
-  pr "    r = %s(NULL, counting_error_handler, buf, 0, 0);\n" validate_fn;
+  pr "    r = %sValidate%s(NULL, counting_error_handler, buf, 0, 0);\n" ep ep;
   pr "    CHECK(\"empty input fails\", EverParseIsError(r));\n";
   pr "\n";
   pr "    srand(42);\n";
   pr "    for (int i = 0; i < 1000; i++) {\n";
   pr "      for (int j = 0; j < %d; j++)\n" s.wire_size;
   pr "        buf[j] = (uint8_t)(rand() & 0xff);\n";
-  pr "      r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
-    s.wire_size;
+  pr "      r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep
+    ep s.wire_size;
   pr "      CHECK(\"random buffer validates\", EverParseIsSuccess(r));\n";
   pr "      CHECK(\"random position correct\", r == %d);\n" s.wire_size;
   pr "    }\n";
@@ -150,7 +142,7 @@ let generate_test ~outdir schemas =
   pr "} while(0)\n\n";
   pr "int main(void) {\n";
   pr "  int failures = 0;\n";
-  List.iter (emit_schema_test ppf ~outdir) schemas;
+  List.iter (emit_schema_test ppf) schemas;
   pr "\n  if (failures == 0)\n";
   pr "    printf(\"All tests passed.\\n\");\n";
   pr "  else\n";
