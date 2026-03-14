@@ -39,8 +39,14 @@ val generate :
 
 val generate_3d_files : schema_dir:string -> schema list -> unit
 val run_everparse : schema_dir:string -> unit
+(** [run_everparse ~schema_dir] invokes EverParse on all [.3d] files in [schema_dir]. *)
+
 val generate_c_stubs : schema_dir:string -> outdir:string -> schema list -> unit
+(** [generate_c_stubs ~schema_dir ~outdir schemas] generates [stubs.c] with OCaml C stubs. *)
+
 val generate_ml_stubs : outdir:string -> schema list -> unit
+(** [generate_ml_stubs ~outdir schemas] generates [stubs.ml] with OCaml externals. *)
 
 val generate_test_runner :
   outdir:string -> ?num_values:int -> schema list -> unit
+(** [generate_test_runner ~outdir schemas] generates [diff_test.ml] test runner. *)

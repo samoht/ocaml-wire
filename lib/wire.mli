@@ -59,11 +59,22 @@ module UInt32 : sig
   *)
 
   val get_le : bytes -> int -> t
+  (** [get_le buf off] reads a little-endian value from [buf] at offset [off]. *)
+
   val get_be : bytes -> int -> t
+  (** [get_be buf off] reads a big-endian value from [buf] at offset [off]. *)
+
   val set_le : bytes -> int -> t -> unit
+  (** [set_le buf off v] writes [v] in little-endian at offset [off]. *)
+
   val set_be : bytes -> int -> t -> unit
+  (** [set_be buf off v] writes [v] in big-endian at offset [off]. *)
+
   val to_int : t -> int
+  (** [to_int v] converts [v] to an OCaml int. *)
+
   val of_int : int -> t
+  (** [of_int n] converts an OCaml int to [t]. *)
 end
 
 module UInt63 : sig
@@ -71,11 +82,22 @@ module UInt63 : sig
   (** Unsigned 63-bit integer. Reads 8 bytes but masks to 63 bits. *)
 
   val get_le : bytes -> int -> t
+  (** [get_le buf off] reads a little-endian value from [buf] at offset [off]. *)
+
   val get_be : bytes -> int -> t
+  (** [get_be buf off] reads a big-endian value from [buf] at offset [off]. *)
+
   val set_le : bytes -> int -> t -> unit
+  (** [set_le buf off v] writes [v] in little-endian at offset [off]. *)
+
   val set_be : bytes -> int -> t -> unit
+  (** [set_be buf off v] writes [v] in big-endian at offset [off]. *)
+
   val to_int : t -> int
+  (** [to_int v] converts [v] to an OCaml int. *)
+
   val of_int : int -> t
+  (** [of_int n] converts an OCaml int to [t]. *)
 end
 
 (** {1 Endianness} *)

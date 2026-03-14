@@ -15,4 +15,7 @@ type 'a schema = private {
 type any_schema = Any : 'a schema -> any_schema
 
 val all_schemas : any_schema list
+(** [all_schemas] is the list of all benchmark schemas. *)
+
 val all_structs : Wire.struct_ list
+(** [all_structs] is the list of all benchmark structs. *)
