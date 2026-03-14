@@ -855,6 +855,40 @@ let parse_int dec n get ctx =
   | Error e -> Error e
 
 (* Parse a type from a decoder *)
+let parse_bf_field dec accum_opt base width =
+  match accum_opt with
+  | Some accum
+    when bf_compatible accum.bf_base base && bf_has_room accum width ->
+      let v, new_accum = bf_extract accum width in
+      let accum_opt' =
+        if new_accum.bf_bits_used = new_accum.bf_total_bits then None
+        else Some new_accum
+      in
+      Ok (v, accum_opt')
+  | _ ->
+      let* word = bf_read_word dec base in
+      let total = bf_total_bits base in
+      let accum =
+        {
+          bf_base = base;
+          bf_word = word;
+          bf_bits_used = 0;
+          bf_total_bits = total;
+        }
+      in
+      let v, new_accum = bf_extract accum width in
+      let accum_opt' =
+        if new_accum.bf_bits_used = new_accum.bf_total_bits then None
+        else Some new_accum
+      in
+      Ok (v, accum_opt')
+
+let check_constraint ctx cond =
+  match cond with
+  | Some c when not (eval_expr ctx c) ->
+      Error (Constraint_failed "field constraint")
+  | _ -> Ok ()
+
 let rec parse_with_ctx : type a.
     ctx -> a typ -> decoder -> (a * ctx, parse_error) result =
  fun ctx typ dec ->
@@ -906,7 +940,6 @@ let rec parse_with_ctx : type a.
       | Ok buf -> Ok (Bytes.to_string buf, ctx)
       | Error e -> Error e)
   | Single_elem { size = _; elem; at_most = _ } ->
-      (* TODO: handle byte size constraint *)
       parse_with_ctx ctx elem dec
   | Enum { cases; base; _ } -> (
       match parse_with_ctx ctx base dec with
@@ -916,7 +949,6 @@ let rec parse_with_ctx : type a.
           else Error (Invalid_enum { value = v; valid })
       | Error e -> Error e)
   | Casetype { cases; tag; _ } -> (
-      (* Parse the tag, then find matching case *)
       match parse_with_ctx ctx tag dec with
       | Error e -> Error e
       | Ok (tag_val, ctx') ->
@@ -929,71 +961,35 @@ let rec parse_with_ctx : type a.
           in
           find_case cases)
   | Struct { fields; _ } ->
-      (* Parse struct fields with bitfield accumulation.
-         Consecutive bitfields sharing the same base type are packed. *)
       let parse_field_with_bf : type a.
           bf_accum option -> a typ -> (a * bf_accum option, parse_error) result
           =
        fun accum_opt typ ->
         match typ with
-        | Bits { width; base } -> (
-            match accum_opt with
-            | Some accum
-              when bf_compatible accum.bf_base base && bf_has_room accum width
-              ->
-                (* Extract from existing accumulator *)
-                let v, new_accum = bf_extract accum width in
-                let accum_opt' =
-                  if new_accum.bf_bits_used = new_accum.bf_total_bits then None
-                  else Some new_accum
-                in
-                Ok (v, accum_opt')
-            | _ ->
-                (* Need new accumulator - read fresh word *)
-                let* word = bf_read_word dec base in
-                let total = bf_total_bits base in
-                let accum =
-                  {
-                    bf_base = base;
-                    bf_word = word;
-                    bf_bits_used = 0;
-                    bf_total_bits = total;
-                  }
-                in
-                let v, new_accum = bf_extract accum width in
-                let accum_opt' =
-                  if new_accum.bf_bits_used = new_accum.bf_total_bits then None
-                  else Some new_accum
-                in
-                Ok (v, accum_opt'))
+        | Bits { width; base } -> parse_bf_field dec accum_opt base width
         | _ ->
-            (* Non-bitfield: flush accumulator, parse normally *)
             let* v, _ = parse_with_ctx ctx typ dec in
             Ok (v, None)
       in
       let rec go ctx' accum_opt = function
         | [] -> Ok ((), ctx')
-        | Field { field_name; field_typ = Bits _ as ft; constraint_; _ } :: rest
-          -> (
+        | Field { field_name; field_typ = Bits _ as ft; constraint_; _ }
+          :: rest ->
             let* v, accum_opt' = parse_field_with_bf accum_opt ft in
             let ctx'' =
               match field_name with Some n -> Ctx.add n v ctx' | None -> ctx'
             in
-            match constraint_ with
-            | Some cond when not (eval_expr ctx'' cond) ->
-                Error (Constraint_failed "field constraint")
-            | _ -> go ctx'' accum_opt' rest)
-        | Field { field_name; field_typ; constraint_; _ } :: rest -> (
+            let* () = check_constraint ctx'' constraint_ in
+            go ctx'' accum_opt' rest
+        | Field { field_name; field_typ; constraint_; _ } :: rest ->
             let* v, ctx'' = parse_with_ctx ctx' field_typ dec in
             let ctx'' =
               match field_name with
               | Some n -> Ctx.add n (val_to_int field_typ v) ctx''
               | None -> ctx''
             in
-            match constraint_ with
-            | Some cond when not (eval_expr ctx'' cond) ->
-                Error (Constraint_failed "field constraint")
-            | _ -> go ctx'' None rest)
+            let* () = check_constraint ctx'' constraint_ in
+            go ctx'' None rest
       in
       go ctx None fields
   | Map { inner; decode; _ } ->
@@ -1478,11 +1474,36 @@ let bf_insert accum width value =
   { accum with bfe_word = word'; bfe_bits_used = accum.bfe_bits_used + width }
 
 (** Encode a record value to a writer with bitfield packing *)
+let encode_bf_accum enc flush_accum accum_opt base width field_val =
+  let accum_opt' =
+    match accum_opt with
+    | Some accum
+      when bf_compatible accum.bfe_base base
+           && accum.bfe_bits_used + width <= accum.bfe_total_bits ->
+        Some (bf_insert accum width field_val)
+    | _ ->
+        flush_accum accum_opt;
+        let total = bf_total_bits base in
+        let accum =
+          {
+            bfe_base = base;
+            bfe_word = 0;
+            bfe_bits_used = 0;
+            bfe_total_bits = total;
+          }
+        in
+        Some (bf_insert accum width field_val)
+  in
+  match accum_opt' with
+  | Some a when a.bfe_bits_used = a.bfe_total_bits ->
+      bf_write_word enc a.bfe_base a.bfe_word;
+      None
+  | other -> other
+
 let encode_record : type r.
     r record_codec -> r -> Bw.t -> (unit, parse_error) result =
  fun codec v writer ->
   let enc = encoder writer in
-  (* Flush pending bitfield accumulator *)
   let flush_accum = function
     | None -> ()
     | Some accum -> bf_write_word enc accum.bfe_base accum.bfe_word
@@ -1494,50 +1515,19 @@ let encode_record : type r.
     | Field_codec fc :: rest -> (
         let field_val = fc.get v in
         match fc.typ with
-        | Bits { width; base } -> (
+        | Bits { width; base } ->
             let accum_opt' =
-              match accum_opt with
-              | Some accum
-                when bf_compatible accum.bfe_base base
-                     && accum.bfe_bits_used + width <= accum.bfe_total_bits ->
-                  (* Add to existing accumulator *)
-                  Some (bf_insert accum width field_val)
-              | _ ->
-                  (* Flush old, start new *)
-                  flush_accum accum_opt;
-                  let total = bf_total_bits base in
-                  let accum =
-                    {
-                      bfe_base = base;
-                      bfe_word = 0;
-                      bfe_bits_used = 0;
-                      bfe_total_bits = total;
-                    }
-                  in
-                  Some (bf_insert accum width field_val)
-            in
-            (* Check if accumulator is full *)
-            let accum_opt'' =
-              match accum_opt' with
-              | Some a when a.bfe_bits_used = a.bfe_total_bits ->
-                  bf_write_word enc a.bfe_base a.bfe_word;
-                  None
-              | other -> other
+              encode_bf_accum enc flush_accum accum_opt base width field_val
             in
             let ctx' = Ctx.add fc.name field_val ctx in
-            match fc.constraint_ with
-            | Some cond when not (eval_expr ctx' cond) ->
-                Error (Constraint_failed "field constraint")
-            | _ -> encode_fields ctx' accum_opt'' rest)
-        | _ -> (
-            (* Non-bitfield: flush accumulator, encode normally *)
+            let* () = check_constraint ctx' fc.constraint_ in
+            encode_fields ctx' accum_opt' rest
+        | _ ->
             flush_accum accum_opt;
             let ctx' = encode_with_ctx ctx fc.typ field_val enc in
             let ctx'' = Ctx.add fc.name (val_to_int fc.typ field_val) ctx' in
-            match fc.constraint_ with
-            | Some cond when not (eval_expr ctx'' cond) ->
-                Error (Constraint_failed "field constraint")
-            | _ -> encode_fields ctx'' None rest))
+            let* () = check_constraint ctx'' fc.constraint_ in
+            encode_fields ctx'' None rest)
   in
   encode_fields empty_ctx None codec.fields
 

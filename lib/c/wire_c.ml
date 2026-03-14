@@ -82,6 +82,51 @@ let extract_validate_fn ~outdir name =
   | Some fn -> fn
   | None -> Fmt.failwith "Could not find Validate function in %s" header
 
+let emit_schema_test ppf ~outdir s =
+  let pr fmt = Fmt.pf ppf fmt in
+  let validate_fn = extract_validate_fn ~outdir s.name in
+  let lower = String.lowercase_ascii s.name in
+  pr "\n  /* %s (%d bytes) */\n" s.name s.wire_size;
+  pr "  {\n";
+  pr "    int pass = 0, fail = 0;\n";
+  pr "    uint8_t buf[%d];\n" s.wire_size;
+  pr "    uint64_t r;\n\n";
+  pr "    memset(buf, 0, %d);\n" s.wire_size;
+  pr "    r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
+    s.wire_size;
+  pr "    CHECK(\"zero buffer validates\", EverParseIsSuccess(r));\n";
+  pr "    CHECK(\"position advanced to %d\", r == %d);\n" s.wire_size
+    s.wire_size;
+  pr "\n";
+  pr "    r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
+    (s.wire_size * 2);
+  pr "    CHECK(\"larger buffer validates\", EverParseIsSuccess(r));\n";
+  pr "    CHECK(\"position is %d not %d\", r == %d);\n" s.wire_size
+    (s.wire_size * 2) s.wire_size;
+  pr "\n";
+  pr "    for (uint64_t len = 0; len < %d; len++) {\n" s.wire_size;
+  pr "      error_count = 0;\n";
+  pr "      r = %s(NULL, counting_error_handler, buf, len, 0);\n" validate_fn;
+  pr "      CHECK(\"truncated to len fails\", EverParseIsError(r));\n";
+  pr "    }\n";
+  pr "\n";
+  pr "    r = %s(NULL, counting_error_handler, buf, 0, 0);\n" validate_fn;
+  pr "    CHECK(\"empty input fails\", EverParseIsError(r));\n";
+  pr "\n";
+  pr "    srand(42);\n";
+  pr "    for (int i = 0; i < 1000; i++) {\n";
+  pr "      for (int j = 0; j < %d; j++)\n" s.wire_size;
+  pr "        buf[j] = (uint8_t)(rand() & 0xff);\n";
+  pr "      r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
+    s.wire_size;
+  pr "      CHECK(\"random buffer validates\", EverParseIsSuccess(r));\n";
+  pr "      CHECK(\"random position correct\", r == %d);\n" s.wire_size;
+  pr "    }\n";
+  pr "\n";
+  pr "    printf(\"%s: %%d passed, %%d failed\\n\", pass, fail);\n" lower;
+  pr "    failures += fail;\n";
+  pr "  }\n"
+
 let generate_test ~outdir schemas =
   let oc = open_out (Filename.concat outdir "test.c") in
   let ppf = Format.formatter_of_out_channel oc in
@@ -105,57 +150,7 @@ let generate_test ~outdir schemas =
   pr "} while(0)\n\n";
   pr "int main(void) {\n";
   pr "  int failures = 0;\n";
-  List.iter
-    (fun s ->
-      let validate_fn = extract_validate_fn ~outdir s.name in
-      let lower = String.lowercase_ascii s.name in
-      pr "\n  /* %s (%d bytes) */\n" s.name s.wire_size;
-      pr "  {\n";
-      pr "    int pass = 0, fail = 0;\n";
-      pr "    uint8_t buf[%d];\n" s.wire_size;
-      pr "    uint64_t r;\n\n";
-      (* Test 1: zero-filled buffer validates *)
-      pr "    memset(buf, 0, %d);\n" s.wire_size;
-      pr "    r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
-        s.wire_size;
-      pr "    CHECK(\"zero buffer validates\", EverParseIsSuccess(r));\n";
-      pr "    CHECK(\"position advanced to %d\", r == %d);\n" s.wire_size
-        s.wire_size;
-      pr "\n";
-      (* Test 2: exact size with non-zero start position *)
-      pr "    r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
-        (s.wire_size * 2);
-      pr "    CHECK(\"larger buffer validates\", EverParseIsSuccess(r));\n";
-      pr "    CHECK(\"position is %d not %d\", r == %d);\n" s.wire_size
-        (s.wire_size * 2) s.wire_size;
-      pr "\n";
-      (* Test 3: truncated buffers fail *)
-      pr "    for (uint64_t len = 0; len < %d; len++) {\n" s.wire_size;
-      pr "      error_count = 0;\n";
-      pr "      r = %s(NULL, counting_error_handler, buf, len, 0);\n"
-        validate_fn;
-      pr "      CHECK(\"truncated to len fails\", EverParseIsError(r));\n";
-      pr "    }\n";
-      pr "\n";
-      (* Test 4: empty input returns error *)
-      pr "    r = %s(NULL, counting_error_handler, buf, 0, 0);\n" validate_fn;
-      pr "    CHECK(\"empty input fails\", EverParseIsError(r));\n";
-      pr "\n";
-      (* Test 5: fuzz — random buffers never crash *)
-      pr "    srand(42);\n";
-      pr "    for (int i = 0; i < 1000; i++) {\n";
-      pr "      for (int j = 0; j < %d; j++)\n" s.wire_size;
-      pr "        buf[j] = (uint8_t)(rand() & 0xff);\n";
-      pr "      r = %s(NULL, counting_error_handler, buf, %d, 0);\n" validate_fn
-        s.wire_size;
-      pr "      CHECK(\"random buffer validates\", EverParseIsSuccess(r));\n";
-      pr "      CHECK(\"random position correct\", r == %d);\n" s.wire_size;
-      pr "    }\n";
-      pr "\n";
-      pr "    printf(\"%s: %%d passed, %%d failed\\n\", pass, fail);\n" lower;
-      pr "    failures += fail;\n";
-      pr "  }\n")
-    schemas;
+  List.iter (emit_schema_test ppf ~outdir) schemas;
   pr "\n  if (failures == 0)\n";
   pr "    printf(\"All tests passed.\\n\");\n";
   pr "  else\n";

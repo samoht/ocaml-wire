@@ -351,55 +351,58 @@ let test_record_decode_crash buf =
   let _ = decode_record_from_string test_record_codec buf in
   ()
 
-let suite =
-  ( "wire",
-    [
-      (* Pretty-printing tests *)
-      Cu.test_case "pp_typ uint8" [ Cr.const () ] test_pp_uint8;
-      Cu.test_case "pp_typ uint16" [ Cr.const () ] test_pp_uint16;
-      Cu.test_case "pp_typ uint32" [ Cr.const () ] test_pp_uint32;
-      Cu.test_case "pp_bitfield" [ Cr.range 33 ] test_pp_bitfield;
-      Cu.test_case "pp_module_simple" [ Cr.const () ] test_pp_module_simple;
-      Cu.test_case "struct_random_fields"
-        [ Cr.range 100 ]
-        test_struct_random_fields;
-      Cu.test_case "enum_random_cases" [ Cr.range 100 ] test_enum_random_cases;
-      Cu.test_case "casetype_random" [ Cr.range 100 ] test_casetype_random;
-      Cu.test_case "constraint_expr" [ Cr.int ] test_constraint_expr;
-      Cu.test_case "bitfield_constraint"
-        [ Cr.range 32 ]
-        test_bitfield_constraint;
-      Cu.test_case "array_type" [ Cr.int ] test_array_type;
-      Cu.test_case "byte_array" [ Cr.int ] test_byte_array;
-      Cu.test_case "param_struct" [ Cr.range 20 ] test_param_struct;
-      Cu.test_case "action" [ Cr.const () ] test_action;
-      Cu.test_case "complex_nested" [ Cr.const () ] test_complex_nested;
-      (* Parsing tests *)
-      Cu.test_case "parse uint8" [ Cr.bytes ] test_parse_uint8;
-      Cu.test_case "parse uint16" [ Cr.bytes ] test_parse_uint16;
-      Cu.test_case "parse uint32" [ Cr.bytes ] test_parse_uint32;
-      Cu.test_case "parse uint64" [ Cr.bytes ] test_parse_uint64;
-      Cu.test_case "parse bitfield" [ Cr.bytes ] test_parse_bitfield;
-      Cu.test_case "parse array" [ Cr.bytes ] test_parse_array;
-      Cu.test_case "parse byte_array" [ Cr.bytes ] test_parse_byte_array;
-      Cu.test_case "parse enum" [ Cr.bytes ] test_parse_enum;
-      Cu.test_case "parse where" [ Cr.bytes ] test_parse_where;
-      Cu.test_case "parse all_bytes" [ Cr.bytes ] test_parse_all_bytes;
-      Cu.test_case "parse all_zeros" [ Cr.bytes ] test_parse_all_zeros;
-      Cu.test_case "parse struct" [ Cr.bytes ] test_parse_struct;
-      Cu.test_case "parse struct_constrained" [ Cr.bytes ]
-        test_parse_struct_constrained;
-      (* Roundtrip tests *)
-      Cu.test_case "roundtrip uint8" [ Cr.int ] test_roundtrip_uint8;
-      Cu.test_case "roundtrip uint16" [ Cr.int ] test_roundtrip_uint16;
-      Cu.test_case "roundtrip uint32" [ Cr.int ] test_roundtrip_uint32;
-      Cu.test_case "roundtrip uint64" [ Cr.int64 ] test_roundtrip_uint64;
-      Cu.test_case "roundtrip array" [ Cr.int; Cr.int; Cr.int ]
-        test_roundtrip_array;
-      Cu.test_case "roundtrip byte_array" [ Cr.bytes ] test_roundtrip_byte_array;
-      Cu.test_case "roundtrip enum" [ Cr.int ] test_roundtrip_enum;
-      (* Record codec tests *)
-      Cu.test_case "record roundtrip" [ Cr.int; Cr.int; Cr.int ]
-        test_record_roundtrip;
-      Cu.test_case "record decode crash" [ Cr.bytes ] test_record_decode_crash;
-    ] )
+let pp_tests =
+  [
+    Cu.test_case "pp_typ uint8" [ Cr.const () ] test_pp_uint8;
+    Cu.test_case "pp_typ uint16" [ Cr.const () ] test_pp_uint16;
+    Cu.test_case "pp_typ uint32" [ Cr.const () ] test_pp_uint32;
+    Cu.test_case "pp_bitfield" [ Cr.range 33 ] test_pp_bitfield;
+    Cu.test_case "pp_module_simple" [ Cr.const () ] test_pp_module_simple;
+    Cu.test_case "struct_random_fields"
+      [ Cr.range 100 ]
+      test_struct_random_fields;
+    Cu.test_case "enum_random_cases" [ Cr.range 100 ] test_enum_random_cases;
+    Cu.test_case "casetype_random" [ Cr.range 100 ] test_casetype_random;
+    Cu.test_case "constraint_expr" [ Cr.int ] test_constraint_expr;
+    Cu.test_case "bitfield_constraint" [ Cr.range 32 ] test_bitfield_constraint;
+    Cu.test_case "array_type" [ Cr.int ] test_array_type;
+    Cu.test_case "byte_array" [ Cr.int ] test_byte_array;
+    Cu.test_case "param_struct" [ Cr.range 20 ] test_param_struct;
+    Cu.test_case "action" [ Cr.const () ] test_action;
+    Cu.test_case "complex_nested" [ Cr.const () ] test_complex_nested;
+  ]
+
+let parse_tests =
+  [
+    Cu.test_case "parse uint8" [ Cr.bytes ] test_parse_uint8;
+    Cu.test_case "parse uint16" [ Cr.bytes ] test_parse_uint16;
+    Cu.test_case "parse uint32" [ Cr.bytes ] test_parse_uint32;
+    Cu.test_case "parse uint64" [ Cr.bytes ] test_parse_uint64;
+    Cu.test_case "parse bitfield" [ Cr.bytes ] test_parse_bitfield;
+    Cu.test_case "parse array" [ Cr.bytes ] test_parse_array;
+    Cu.test_case "parse byte_array" [ Cr.bytes ] test_parse_byte_array;
+    Cu.test_case "parse enum" [ Cr.bytes ] test_parse_enum;
+    Cu.test_case "parse where" [ Cr.bytes ] test_parse_where;
+    Cu.test_case "parse all_bytes" [ Cr.bytes ] test_parse_all_bytes;
+    Cu.test_case "parse all_zeros" [ Cr.bytes ] test_parse_all_zeros;
+    Cu.test_case "parse struct" [ Cr.bytes ] test_parse_struct;
+    Cu.test_case "parse struct_constrained" [ Cr.bytes ]
+      test_parse_struct_constrained;
+  ]
+
+let roundtrip_tests =
+  [
+    Cu.test_case "roundtrip uint8" [ Cr.int ] test_roundtrip_uint8;
+    Cu.test_case "roundtrip uint16" [ Cr.int ] test_roundtrip_uint16;
+    Cu.test_case "roundtrip uint32" [ Cr.int ] test_roundtrip_uint32;
+    Cu.test_case "roundtrip uint64" [ Cr.int64 ] test_roundtrip_uint64;
+    Cu.test_case "roundtrip array" [ Cr.int; Cr.int; Cr.int ]
+      test_roundtrip_array;
+    Cu.test_case "roundtrip byte_array" [ Cr.bytes ] test_roundtrip_byte_array;
+    Cu.test_case "roundtrip enum" [ Cr.int ] test_roundtrip_enum;
+    Cu.test_case "record roundtrip" [ Cr.int; Cr.int; Cr.int ]
+      test_record_roundtrip;
+    Cu.test_case "record decode crash" [ Cr.bytes ] test_record_decode_crash;
+  ]
+
+let suite = ("wire", pp_tests @ parse_tests @ roundtrip_tests)
