@@ -121,10 +121,10 @@ val int64 : int64 -> int64 expr
 (** [int64 n] is the constant 64-bit integer [n]. *)
 
 val true_ : bool expr
-(** The constant [true] expression. *)
+(** [true_] is the constant [true] expression. *)
 
 val false_ : bool expr
-(** The constant [false] expression. *)
+(** [false_] is the constant [false] expression. *)
 
 (** {2 Field References} *)
 

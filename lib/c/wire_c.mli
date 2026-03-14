@@ -48,4 +48,4 @@ val main : package:string -> schema list -> unit
     - [3d] runs {!generate_3d}
     - [c] runs {!generate_c}
     - [dune] generates [dune.inc] with build rules, test, and install stanzas
-    - otherwise runs {!generate} *)
+    - otherwise runs {!generate}. *)
