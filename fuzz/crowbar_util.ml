@@ -5,8 +5,9 @@
 
 type test_case = unit -> unit
 
-let test_case (type f) name (gens : (f, unit) Crowbar.gens) (f : f) : test_case =
-  fun () -> Crowbar.add_test ~name gens f
+let test_case (type f) name (gens : (f, unit) Crowbar.gens) (f : f) : test_case
+    =
+ fun () -> Crowbar.add_test ~name gens f
 
 let run _suite_name (groups : (string * test_case list) list) =
   List.iter

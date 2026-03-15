@@ -175,8 +175,7 @@ let generate ~schema_dir ~outdir ?(num_values = 1000) schemas =
   (try Unix.mkdir schema_dir 0o755
    with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
   generate_3d_files ~schema_dir schemas;
-  Fmt.pr "Generated %d .3d files in %s/\n" (List.length schemas)
-    schema_dir;
+  Fmt.pr "Generated %d .3d files in %s/\n" (List.length schemas) schema_dir;
   run_everparse ~schema_dir;
   generate_c_stubs ~schema_dir ~outdir schemas;
   generate_ml_stubs ~outdir schemas;

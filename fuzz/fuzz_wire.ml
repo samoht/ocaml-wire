@@ -5,7 +5,6 @@
     3D code generation for all DSL combinators. *)
 
 module Cr = Crowbar
-
 open Crowbar_util
 open Wire
 
@@ -165,8 +164,7 @@ let test_casetype_random n =
 (** Test inline casetype. *)
 let test_casetype_inline () =
   let t =
-    casetype "Tag" uint8
-      [ case 0 uint16; case 1 uint32; default uint8 ]
+    casetype "Tag" uint8 [ case 0 uint16; case 1 uint32; default uint8 ]
   in
   let s = struct_ "WithCase" [ field "tag" uint8; field "data" t ] in
   let m = module_ "WithCase" [ typedef s ] in
@@ -196,7 +194,7 @@ let test_bitfield_constraint width =
 let test_bitwise_expr a =
   let v = abs a mod 256 in
   let open Expr in
-  let cond = (ref "x" land int 0xFF) <= int v in
+  let cond = ref "x" land int 0xFF <= int v in
   let s = struct_ "Bitwise" [ field "x" ~constraint_:cond uint16 ] in
   let m = module_ "Bitwise" [ typedef s ] in
   let _ = to_3d m in
@@ -205,7 +203,7 @@ let test_bitwise_expr a =
 (** Test logical expression operators. *)
 let test_logical_expr () =
   let open Expr in
-  let cond = (ref "x" <= int 100) && (ref "x" >= int 0) in
+  let cond = ref "x" <= int 100 && ref "x" >= int 0 in
   let s = struct_ "Logical" [ field "x" ~constraint_:cond uint8 ] in
   let m = module_ "Logical" [ typedef s ] in
   let _ = to_3d m in
@@ -226,7 +224,7 @@ let test_logical_ops () =
   let open Expr in
   let _ = true_ || false_ in
   let _ = Expr.not true_ in
-  let _ = (ref "x" = int 0) || (ref "x" <> int 1) in
+  let _ = ref "x" = int 0 || ref "x" <> int 1 in
   ()
 
 (** Test cast operators in 3D output. *)
@@ -310,9 +308,7 @@ let test_param_struct n =
 (** Test mutable_param. *)
 let test_mutable_param () =
   let ps =
-    param_struct "MutParam"
-      [ mutable_param "out" uint32 ]
-      [ field "x" uint8 ]
+    param_struct "MutParam" [ mutable_param "out" uint32 ] [ field "x" uint8 ]
   in
   let m = module_ "MutParam" [ typedef ps ] in
   let _ = to_3d m in
@@ -369,7 +365,9 @@ let test_abort () =
 (** Test action_if. *)
 let test_action_if () =
   let stmt =
-    action_if Expr.(ref "x" > int 10) [ assign "ptr" (int 1) ]
+    action_if
+      Expr.(ref "x" > int 10)
+      [ assign "ptr" (int 1) ]
       (Some [ assign "ptr" (int 0) ])
   in
   let act = on_success [ stmt ] in
@@ -388,7 +386,10 @@ let test_var () =
 
 (** Test define declaration. *)
 let test_define () =
-  let m = module_ "WithDefine" [ define "MAX_SIZE" 1024; typedef (struct_ "S" [ field "x" uint8 ]) ] in
+  let m =
+    module_ "WithDefine"
+      [ define "MAX_SIZE" 1024; typedef (struct_ "S" [ field "x" uint8 ]) ]
+  in
   let _ = to_3d m in
   ()
 
@@ -396,8 +397,10 @@ let test_define () =
 let test_extern_fn () =
   let m =
     module_ "WithExtern"
-      [ extern_fn "validate" [ param "len" uint32 ] uint8;
-        typedef (struct_ "S" [ field "x" uint8 ]) ]
+      [
+        extern_fn "validate" [ param "len" uint32 ] uint8;
+        typedef (struct_ "S" [ field "x" uint8 ]);
+      ]
   in
   let _ = to_3d m in
   ()
@@ -406,9 +409,11 @@ let test_extern_fn () =
 let test_extern_probe () =
   let m =
     module_ "WithProbe"
-      [ extern_probe "my_probe";
+      [
+        extern_probe "my_probe";
         extern_probe ~init:true "my_init_probe";
-        typedef (struct_ "S" [ field "x" uint8 ]) ]
+        typedef (struct_ "S" [ field "x" uint8 ]);
+      ]
   in
   let _ = to_3d m in
   ()
@@ -427,8 +432,12 @@ let test_complex_nested () =
 let test_be_struct () =
   let s =
     struct_ "BigEndian"
-      [ field "a" uint16be; field "b" uint32be;
-        field "c" uint64be; field "d" uint63be ]
+      [
+        field "a" uint16be;
+        field "b" uint32be;
+        field "c" uint64be;
+        field "d" uint63be;
+      ]
   in
   let m = module_ "BigEndian" [ typedef s ] in
   let _ = to_3d m in
@@ -596,10 +605,12 @@ let test_parse_struct_bitfields buf =
   let buf = truncate buf in
   let s =
     struct_ "BF"
-      [ field "a" (bits ~width:3 bf_uint8);
+      [
+        field "a" (bits ~width:3 bf_uint8);
         field "b" (bits ~width:5 bf_uint8);
         field "c" (bits ~width:10 bf_uint16);
-        field "d" (bits ~width:6 bf_uint16) ]
+        field "d" (bits ~width:6 bf_uint16);
+      ]
   in
   let t = struct_typ s in
   let _ = parse_string t buf in
@@ -608,8 +619,7 @@ let test_parse_struct_bitfields buf =
 let test_parse_anon_field buf =
   let buf = truncate buf in
   let s =
-    struct_ "Anon"
-      [ field "x" uint8; anon_field uint8; field "y" uint16 ]
+    struct_ "Anon" [ field "x" uint8; anon_field uint8; field "y" uint16 ]
   in
   let t = struct_typ s in
   let _ = parse_string t buf in
@@ -762,8 +772,8 @@ let test_record_decode_crash buf =
   let _ = decode_record_from_string test_record_codec buf in
   ()
 
-(** Record codec with big-endian fields. *)
 type be_record = { a : int; b : int }
+(** Record codec with big-endian fields. *)
 
 let be_record_codec =
   let open Codec in
@@ -785,8 +795,8 @@ let test_record_be_roundtrip a b =
           if original.b <> decoded.b then Cr.fail "be record b mismatch"
       | Error _ -> Cr.fail "be record roundtrip decode failed")
 
-(** Record codec with bool/map fields. *)
 type bool_record = { flag : bool; value : int }
+(** Record codec with bool/map fields. *)
 
 let bool_record_codec =
   let open Codec in
@@ -837,8 +847,7 @@ let pp_tests =
 
 let codegen_tests =
   [
-    test_case "struct random fields" [ Cr.range 100 ]
-      test_struct_random_fields;
+    test_case "struct random fields" [ Cr.range 100 ] test_struct_random_fields;
     test_case "enum random cases" [ Cr.range 100 ] test_enum_random_cases;
     test_case "casetype random" [ Cr.range 100 ] test_casetype_random;
     test_case "casetype inline" [ Cr.const () ] test_casetype_inline;
@@ -854,7 +863,8 @@ let codegen_tests =
     test_case "array type" [ Cr.int ] test_array_type;
     test_case "byte array" [ Cr.int ] test_byte_array;
     test_case "single elem array" [ Cr.const () ] test_single_elem_array;
-    test_case "single elem at most" [ Cr.const () ]
+    test_case "single elem at most"
+      [ Cr.const () ]
       test_single_elem_array_at_most;
     test_case "anon field" [ Cr.const () ] test_anon_field;
     test_case "param struct" [ Cr.range 20 ] test_param_struct;
@@ -903,8 +913,7 @@ let parse_tests =
     test_case "parse struct constrained" [ Cr.bytes ]
       test_parse_struct_constrained;
     test_case "parse struct be" [ Cr.bytes ] test_parse_struct_be;
-    test_case "parse struct bitfields" [ Cr.bytes ]
-      test_parse_struct_bitfields;
+    test_case "parse struct bitfields" [ Cr.bytes ] test_parse_struct_bitfields;
     test_case "parse anon field" [ Cr.bytes ] test_parse_anon_field;
     test_case "parse casetype" [ Cr.bytes ] test_parse_casetype;
   ]
@@ -922,8 +931,7 @@ let roundtrip_tests =
     test_case "roundtrip uint64be" [ Cr.int64 ] test_roundtrip_uint64be;
     test_case "roundtrip map" [ Cr.int ] test_roundtrip_map;
     test_case "roundtrip bool" [ Cr.int ] test_roundtrip_bool;
-    test_case "roundtrip array" [ Cr.int; Cr.int; Cr.int ]
-      test_roundtrip_array;
+    test_case "roundtrip array" [ Cr.int; Cr.int; Cr.int ] test_roundtrip_array;
     test_case "roundtrip byte_array" [ Cr.bytes ] test_roundtrip_byte_array;
     test_case "roundtrip enum" [ Cr.int ] test_roundtrip_enum;
   ]
@@ -933,8 +941,7 @@ let record_tests =
     test_case "record roundtrip" [ Cr.int; Cr.int; Cr.int ]
       test_record_roundtrip;
     test_case "record decode crash" [ Cr.bytes ] test_record_decode_crash;
-    test_case "record be roundtrip" [ Cr.int; Cr.int ]
-      test_record_be_roundtrip;
+    test_case "record be roundtrip" [ Cr.int; Cr.int ] test_record_be_roundtrip;
     test_case "record bool roundtrip" [ Cr.int ] test_record_bool_roundtrip;
   ]
 

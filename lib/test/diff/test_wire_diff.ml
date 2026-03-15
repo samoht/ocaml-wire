@@ -13,8 +13,7 @@ let simple_codec =
 let mock_c_read buf =
   if String.length buf < 3 then None else Some (String.sub buf 0 3)
 
-let mock_c_write buf =
-  if String.length buf < 3 then None else Some buf
+let mock_c_write buf = if String.length buf < 3 then None else Some buf
 
 let mk_schema () =
   Wire_diff.schema ~name:"Simple" ~codec:simple_codec ~c_read:mock_c_read
