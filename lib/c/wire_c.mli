@@ -8,8 +8,7 @@
     {b Typical usage} ([gen.ml]):
     {[
       let () =
-        Wire_c.main ~package:"clcw"
-          [ Wire_c.schema_of_struct Clcw.struct_ ]
+        Wire_c.main ~package:"clcw" [ Wire_c.schema_of_struct Clcw.struct_ ]
     ]}
 
     With a minimal [dune] that includes the generated rules:
@@ -24,9 +23,9 @@ type schema
 (** A schema bundles a name, Wire module, and wire size. *)
 
 val schema_of_struct : Wire.struct_ -> schema
-(** [schema_of_struct s] creates a schema from a fixed-size struct.
-    The name, module, and wire size are derived from the struct.
-    Raises [Failure] if the struct has variable-length fields. *)
+(** [schema_of_struct s] creates a schema from a fixed-size struct. The name,
+    module, and wire size are derived from the struct. Raises [Failure] if the
+    struct has variable-length fields. *)
 
 val schema : name:string -> module_:Wire.module_ -> wire_size:int -> schema
 (** [schema ~name ~module_ ~wire_size] creates a schema with explicit

@@ -109,8 +109,8 @@ let emit_schema_test ppf s =
   pr "    for (int i = 0; i < 1000; i++) {\n";
   pr "      for (int j = 0; j < %d; j++)\n" s.wire_size;
   pr "        buf[j] = (uint8_t)(rand() & 0xff);\n";
-  pr "      r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep
-    ep s.wire_size;
+  pr "      r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep ep
+    s.wire_size;
   pr "      CHECK(\"random buffer validates\", EverParseIsSuccess(r));\n";
   pr "      CHECK(\"random position correct\", r == %d);\n" s.wire_size;
   pr "    }\n";

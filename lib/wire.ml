@@ -857,8 +857,8 @@ let parse_int dec n get ctx =
 (* Parse a type from a decoder *)
 let parse_bf_field dec accum_opt base width =
   match accum_opt with
-  | Some accum
-    when bf_compatible accum.bf_base base && bf_has_room accum width ->
+  | Some accum when bf_compatible accum.bf_base base && bf_has_room accum width
+    ->
       let v, new_accum = bf_extract accum width in
       let accum_opt' =
         if new_accum.bf_bits_used = new_accum.bf_total_bits then None
@@ -941,8 +941,7 @@ let rec parse_with_ctx : type a.
       match read_bytes dec n with
       | Ok buf -> Ok (Bytes.to_string buf, ctx)
       | Error e -> Error e)
-  | Single_elem { size = _; elem; at_most = _ } ->
-      parse_with_ctx ctx elem dec
+  | Single_elem { size = _; elem; at_most = _ } -> parse_with_ctx ctx elem dec
   | Enum { cases; base; _ } -> (
       match parse_with_ctx ctx base dec with
       | Ok (v, ctx') ->
@@ -963,8 +962,7 @@ let rec parse_with_ctx : type a.
           in
           find_case cases)
   | Struct { fields; _ } ->
-      (parse_struct_fields ctx dec fields
-        : (unit * ctx, parse_error) result)
+      (parse_struct_fields ctx dec fields : (unit * ctx, parse_error) result)
   | Map { inner; decode; _ } ->
       parse_with_ctx ctx inner dec
       |> Result.map (fun (v, ctx') -> (decode v, ctx'))
@@ -1919,9 +1917,7 @@ let size_of_struct (s : struct_) =
     Names with standard camelCase are preserved (e.g., [AllInts] stays
     [AllInts]). *)
 let everparse_name name =
-  let is_upper c =
-    Char.uppercase_ascii c = c && Char.lowercase_ascii c <> c
-  in
+  let is_upper c = Char.uppercase_ascii c = c && Char.lowercase_ascii c <> c in
   let len = String.length name in
   let rec count_upper i =
     if i < len && is_upper name.[i] then count_upper (i + 1) else i
@@ -2014,8 +2010,8 @@ let c_stub_check ppf (s : struct_) =
     For each struct [Foo], generates:
     - Validation stub: [caml_wire_foo_check(v_buf)] calling [Validate] directly
 
-    The generated code expects EverParse headers and sources to be available
-    via [-I] include path. EverParse identifier normalization is handled
+    The generated code expects EverParse headers and sources to be available via
+    [-I] include path. EverParse identifier normalization is handled
     automatically (e.g., [CLCW] becomes [ClcwCheckClcw]). *)
 let to_c_stubs (structs : struct_ list) =
   let buf = Buffer.create 4096 in
@@ -2371,6 +2367,121 @@ module Codec = struct
           fun buf off ->
             make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
               (r5 buf off) (r6 buf off)
+      | Snoc
+          ( Snoc (Snoc (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5), r6),
+            r7 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off)
+      | Snoc
+          ( Snoc
+              ( Snoc
+                  ( Snoc (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5),
+                    r6 ),
+                r7 ),
+            r8 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off)
+      | Snoc
+          ( Snoc
+              ( Snoc
+                  ( Snoc
+                      ( Snoc
+                          (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5),
+                        r6 ),
+                    r7 ),
+                r8 ),
+            r9 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
+      | Snoc
+          ( Snoc
+              ( Snoc
+                  ( Snoc
+                      ( Snoc
+                          ( Snoc
+                              ( Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4),
+                                r5 ),
+                            r6 ),
+                        r7 ),
+                    r8 ),
+                r9 ),
+            r10 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
+              (r10 buf off)
+      | Snoc
+          ( Snoc
+              ( Snoc
+                  ( Snoc
+                      ( Snoc
+                          ( Snoc
+                              ( Snoc
+                                  ( Snoc
+                                      (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4),
+                                    r5 ),
+                                r6 ),
+                            r7 ),
+                        r8 ),
+                    r9 ),
+                r10 ),
+            r11 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
+              (r10 buf off) (r11 buf off)
+      | Snoc
+          ( Snoc
+              ( Snoc
+                  ( Snoc
+                      ( Snoc
+                          ( Snoc
+                              ( Snoc
+                                  ( Snoc
+                                      ( Snoc
+                                          ( Snoc (Snoc (Snoc (Nil, r1), r2), r3),
+                                            r4 ),
+                                        r5 ),
+                                    r6 ),
+                                r7 ),
+                            r8 ),
+                        r9 ),
+                    r10 ),
+                r11 ),
+            r12 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
+              (r10 buf off) (r11 buf off) (r12 buf off)
+      | Snoc
+          ( Snoc
+              ( Snoc
+                  ( Snoc
+                      ( Snoc
+                          ( Snoc
+                              ( Snoc
+                                  ( Snoc
+                                      ( Snoc
+                                          ( Snoc
+                                              ( Snoc
+                                                  (Snoc (Snoc (Nil, r1), r2), r3),
+                                                r4 ),
+                                            r5 ),
+                                        r6 ),
+                                    r7 ),
+                                r8 ),
+                            r9 ),
+                        r10 ),
+                    r11 ),
+                r12 ),
+            r13 ) ->
+          fun buf off ->
+            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
+              (r10 buf off) (r11 buf off) (r12 buf off) (r13 buf off)
       | readers -> fun buf off -> apply_readers make readers buf off
     in
     let raw_decode = build_decode r.r_make r.r_readers in

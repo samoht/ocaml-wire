@@ -184,6 +184,31 @@ let dynamic_size = ref "header_length" + ref "payload_length"
 └───────────────┘
 ```
 
+## Development
+
+```
+make build       # build the project
+make test        # run tests
+make bench       # run EverParse vs OCaml benchmarks (requires EverParse)
+make memtrace    # profile allocation hotspots with memtrace
+make clean       # clean build artifacts
+```
+
+`make bench` requires EverParse (`3d.exe` in PATH or `~/.local/everparse/bin/`).
+It compares three validation strategies for the same schemas:
+
+- **EverParse C** -- verified C validator in a tight C loop (baseline)
+- **OCaml Codec** -- pure OCaml `Wire.Codec.decode`
+- **OCaml->C FFI** -- OCaml calling the EverParse C validator via generated stubs
+
+`make memtrace` profiles all codec operations and prints the top allocation sites.
+Pass a schema name to profile a single schema:
+
+```
+MEMTRACE=trace.ctf dune exec bench/bench_wire_memtrace.exe -- clcw
+memtrace_hotspots trace.ctf
+```
+
 ## Dependencies
 
 | Library | Purpose |

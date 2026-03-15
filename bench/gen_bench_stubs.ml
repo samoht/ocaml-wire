@@ -1,13 +1,13 @@
-(** Generate EverParse .3d files, run EverParse, and generate C/OCaml FFI
-    stubs and benchmark loops from the bench schemas.
+(** Generate EverParse .3d files, run EverParse, and generate C/OCaml FFI stubs
+    and benchmark loops from the bench schemas.
 
     Usage: gen_bench_stubs.exe <schema_dir>
 
     Outputs:
-    - <schema_dir>/*.3d         -- EverParse 3D schema files
-    - bench_ep_stubs.c          -- C stubs (via Wire.to_c_stubs) + timed loops
-    - bench_ep_stubs.ml         -- OCaml externals (via Wire.to_ml_stubs) + loops
-    - bench_ep_dispatch.ml      -- dispatch table mapping names to functions *)
+    - <schema_dir>/*.3d -- EverParse 3D schema files
+    - bench_ep_stubs.c -- C stubs (via Wire.to_c_stubs) + timed loops
+    - bench_ep_stubs.ml -- OCaml externals (via Wire.to_ml_stubs) + loops
+    - bench_ep_dispatch.ml -- dispatch table mapping names to functions *)
 
 let schema_dir =
   if Array.length Sys.argv > 1 then Sys.argv.(1) else "ep_schemas"
@@ -50,7 +50,8 @@ let () =
       let name = Wire.struct_name s in
       let ep = Wire.everparse_name name in
       let lower = String.lowercase_ascii name in
-      pr "CAMLprim value bench_ep_loop_%s(value v_buf, value v_off, value v_n) {\n"
+      pr
+        "CAMLprim value bench_ep_loop_%s(value v_buf, value v_off, value v_n) {\n"
         lower;
       pr "  uint8_t *buf = (uint8_t *)Bytes_val(v_buf) + Int_val(v_off);\n";
       pr "  uint32_t len = caml_string_length(v_buf) - Int_val(v_off);\n";
@@ -76,7 +77,8 @@ let () =
   List.iter
     (fun s ->
       let lower = String.lowercase_ascii (Wire.struct_name s) in
-      pr "external %s_loop : bytes -> int -> int -> int = \"bench_ep_loop_%s\"\n\n"
+      pr
+        "external %s_loop : bytes -> int -> int -> int = \"bench_ep_loop_%s\"\n\n"
         lower lower)
     structs;
   close_out oc;

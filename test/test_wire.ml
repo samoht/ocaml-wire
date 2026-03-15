@@ -159,8 +159,7 @@ let test_parse_enum_invalid () =
   | Ok _ -> Alcotest.fail "expected error for invalid enum"
   | Error (Invalid_enum { value; _ }) ->
       Alcotest.(check int) "invalid enum value" 255 value
-  | Error e ->
-      Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
 let test_parse_all_bytes () =
   let input = "hello world" in
@@ -180,8 +179,7 @@ let test_parse_all_zeros_invalid () =
   | Ok _ -> Alcotest.fail "expected error for non-zero byte"
   | Error (All_zeros_failed { offset }) ->
       Alcotest.(check int) "non-zero offset" 1 offset
-  | Error e ->
-      Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
 let test_parse_bitfield () =
   let input = "\xFF\xFF\xFF\xFF" in
@@ -197,8 +195,7 @@ let test_parse_eof () =
   | Error (Unexpected_eof { expected; got }) ->
       Alcotest.(check int) "expected bytes" 2 expected;
       Alcotest.(check int) "got bytes" 1 got
-  | Error e ->
-      Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
 let test_parse_struct () =
   let input = "\x01\x02\x03" in
@@ -233,8 +230,7 @@ let test_parse_struct_constraint_fail () =
   match parse_string t input with
   | Ok _ -> Alcotest.fail "expected constraint failure"
   | Error (Constraint_failed _) -> ()
-  | Error e ->
-      Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
 (* Encoding tests *)
 
