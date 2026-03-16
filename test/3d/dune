@@ -17,10 +17,10 @@
   CLCW.3d
   SpacePacket.3d
   TMFrame.3d
-  Ethernet.3d
-  IPv4.3d
-  TCP.3d
-  UDP.3d)
+  NetEthernet.3d
+  NetIPv4.3d
+  NetTCP.3d
+  NetUDP.3d)
  (deps gen_3d.exe)
  (action
   (run ./gen_3d.exe)))
