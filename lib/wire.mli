@@ -797,6 +797,19 @@ module Codec : sig
   val set : 'r t -> ('a, 'r) field -> Bytesrw.Bytes.Slice.t -> 'a -> unit
   (** [set codec f slice x] writes [x] into [slice]. For bitfields, uses
       read-modify-write to preserve adjacent bits. *)
+
+  val get_raw : 'r t -> ('a, 'r) field -> bytes -> int -> 'a
+  (** [get_raw codec f buf off] reads field [f] from [buf] at offset [off]. Like
+      {!get} but works on raw bytes without a slice. No bounds checking. *)
+
+  val set_raw : 'r t -> ('a, 'r) field -> bytes -> int -> 'a -> unit
+  (** [set_raw codec f buf off x] writes [x] into [buf] at offset [off]. Like
+      {!set} but works on raw bytes without a slice. No bounds checking. *)
+
+  val sub : 'r t -> (Bytesrw.Bytes.Slice.t, 'r) field -> bytes -> int -> int
+  (** [sub codec f buf off] returns the byte offset of the sub-protocol field
+      [f] within [buf]. Zero allocation — use with {!get_raw} to traverse nested
+      protocols without intermediate slice allocations. *)
 end
 
 (** {1 FFI Code Generation}

@@ -2337,6 +2337,7 @@ module Codec = struct
     | Bf_u16_be : { byte_off : int; shift : int; mask : int } -> int accessor
     | Bf_u32_le : { byte_off : int; shift : int; mask : int } -> int accessor
     | Bf_u32_be : { byte_off : int; shift : int; mask : int } -> int accessor
+    | Sub : { field_off : int; size : int } -> Slice.t accessor
     | Fn : (bytes -> int -> 'a) -> 'a accessor
 
   type ('a, 'r) field = {
@@ -2688,7 +2689,12 @@ module Codec = struct
           let field_off = r.r_wire_size in
           let raw_reader = build_field_reader typ field_off in
           let raw_encoder = build_field_encoder typ in
-          let f_acc = Fn (wrap_reader raw_reader) in
+          let f_acc : a accessor =
+            match ((typ : w typ), (eq : (a, w) eq option)) with
+            | Byte_slice { size = Int n }, Some Refl ->
+                Sub { field_off; size = n }
+            | _ -> Fn (wrap_reader raw_reader)
+          in
           let configured =
             {
               name = fld.name;
@@ -2921,13 +2927,46 @@ module Codec = struct
         (unsafe_get_u32_le buf (off + byte_off) lsr shift) land mask
     | Bf_u32_be { byte_off; shift; mask } ->
         (unsafe_get_u32_be buf (off + byte_off) lsr shift) land mask
+    | Sub { field_off; size } ->
+        Slice.make buf ~first:(off + field_off) ~length:size
     | Fn reader -> reader buf off
+
+  let[@inline] get_raw (type a r) (codec : r t) (f : (a, r) field) (buf : bytes)
+      (off : int) : a =
+    match f.f_acc with
+    | Bf_u8 { byte_off; shift; mask } ->
+        (unsafe_get_u8 buf (off + byte_off) lsr shift) land mask
+    | Bf_u16_le { byte_off; shift; mask } ->
+        (unsafe_get_u16_le buf (off + byte_off) lsr shift) land mask
+    | Bf_u16_be { byte_off; shift; mask } ->
+        (unsafe_get_u16_be buf (off + byte_off) lsr shift) land mask
+    | Bf_u32_le { byte_off; shift; mask } ->
+        (unsafe_get_u32_le buf (off + byte_off) lsr shift) land mask
+    | Bf_u32_be { byte_off; shift; mask } ->
+        (unsafe_get_u32_be buf (off + byte_off) lsr shift) land mask
+    | Sub { field_off; size } ->
+        Slice.make buf ~first:(off + field_off) ~length:size
+    | Fn reader -> reader buf off
+
+  let[@inline] sub (type r) (codec : r t) (f : (Slice.t, r) field) (buf : bytes)
+      (off : int) : int =
+    ignore (codec : r t);
+    match f.f_acc with
+    | Sub { field_off; _ } -> off + field_off
+    | Fn reader ->
+        let slice = reader buf off in
+        Slice.first slice
+    | _ -> assert false
 
   let set (type a r) (codec : r t) (f : (a, r) field) (slice : Slice.t) (x : a)
       =
     if Slice.length slice < codec.t_wire_size then
       raise_eof ~expected:codec.t_wire_size ~got:(Slice.length slice);
     f.f_writer (Slice.bytes slice) (Slice.first slice) x
+
+  let set_raw (type a r) (_codec : r t) (f : (a, r) field) (buf : bytes)
+      (off : int) (x : a) =
+    f.f_writer buf off x
 end
 
 module Record = struct

@@ -479,6 +479,35 @@ let () =
       Fmt.str "%.0fw" three_layer_alloc;
     ];
 
+  (* 3-layer traversal using sub+get_raw: zero allocation *)
+  let three_layer_raw_ns =
+    time_ns n (fun () ->
+        for _ = 1 to n do
+          let ip_off =
+            Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0
+          in
+          let tcp_off =
+            Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip_off
+          in
+          ignore
+            (Codec.get_raw Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp_off)
+        done)
+  in
+  let three_layer_raw_alloc =
+    alloc_words n (fun () ->
+        let ip_off = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
+        let tcp_off =
+          Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip_off
+        in
+        ignore (Codec.get_raw Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp_off))
+  in
+  table_row widths
+    [
+      "3-layer: sub+get_raw -> TCP.dst_port";
+      Fmt.str "%.1f" three_layer_raw_ns;
+      Fmt.str "%.0fw" three_layer_raw_alloc;
+    ];
+
   (* In-place mutation through sub-slices *)
   let set_ns =
     time_ns n (fun () ->
@@ -491,11 +520,9 @@ let () =
 
   table_row widths
     [
-      "  speedup vs Ethernet decode";
-      Fmt.str "%.0fx" (eth_decode_ns /. three_layer_ns);
-      Fmt.str "%.0fx"
-        (if three_layer_alloc > 0.0 then eth_decode_alloc /. three_layer_alloc
-         else eth_decode_alloc);
+      "  sub+get_raw vs Ethernet decode";
+      Fmt.str "%.0fx" (eth_decode_ns /. three_layer_raw_ns);
+      Fmt.str "%.0fw->0w" eth_decode_alloc;
     ];
 
   Fmt.pr "\n";

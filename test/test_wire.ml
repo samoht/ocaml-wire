@@ -917,6 +917,132 @@ let test_view_byte_slice_nested () =
   let inner_val = Codec.get inner_codec f_val payload in
   Alcotest.(check int) "inner val via zero-copy" 0x1234 inner_val
 
+(* ── Raw access: get_raw / set_raw / sub ── *)
+
+let test_raw_get_uint () =
+  let open Codec in
+  let r, f_a =
+    record "RawU" (fun a b -> (a, b)) |+ field "a" uint16be (fun (a, _) -> a)
+  in
+  let r, f_b = r |+ field "b" uint8 (fun (_, b) -> b) in
+  let codec = seal r in
+  let buf = Bytes.create 3 in
+  Bytes.set_uint16_be buf 0 0x1234;
+  Bytes.set_uint8 buf 2 0xFF;
+  Alcotest.(check int) "get_raw a" 0x1234 (Codec.get_raw codec f_a buf 0);
+  Alcotest.(check int) "get_raw b" 0xFF (Codec.get_raw codec f_b buf 0)
+
+let test_raw_get_bitfield () =
+  let open Codec in
+  let r, f_hi =
+    record "RawBF" (fun hi lo -> (hi, lo))
+    |+ field "hi" (bits ~width:4 bf_uint8) (fun (h, _) -> h)
+  in
+  let r, f_lo = r |+ field "lo" (bits ~width:4 bf_uint8) (fun (_, l) -> l) in
+  let codec = seal r in
+  let buf = Bytes.create 1 in
+  Bytes.set_uint8 buf 0 0xA7;
+  (* hi=0xA=10, lo=0x7=7 *)
+  Alcotest.(check int) "get_raw hi" 0xA (Codec.get_raw codec f_hi buf 0);
+  Alcotest.(check int) "get_raw lo" 0x7 (Codec.get_raw codec f_lo buf 0)
+
+let test_raw_set_uint () =
+  let open Codec in
+  let r, f_a =
+    record "RawSU" (fun a b -> (a, b)) |+ field "a" uint16be (fun (a, _) -> a)
+  in
+  let r, f_b = r |+ field "b" uint8 (fun (_, b) -> b) in
+  let codec = seal r in
+  let buf = Bytes.create 3 in
+  Bytes.fill buf 0 3 '\x00';
+  Codec.set_raw codec f_a buf 0 0xABCD;
+  Codec.set_raw codec f_b buf 0 0x42;
+  Alcotest.(check int) "set_raw a" 0xABCD (Bytes.get_uint16_be buf 0);
+  Alcotest.(check int) "set_raw b" 0x42 (Bytes.get_uint8 buf 2)
+
+let test_raw_set_bitfield () =
+  let open Codec in
+  let r, f_hi =
+    record "RawSBF" (fun hi lo -> (hi, lo))
+    |+ field "hi" (bits ~width:4 bf_uint8) (fun (h, _) -> h)
+  in
+  let r, f_lo = r |+ field "lo" (bits ~width:4 bf_uint8) (fun (_, l) -> l) in
+  let codec = seal r in
+  let buf = Bytes.create 1 in
+  Bytes.set_uint8 buf 0 0x00;
+  Codec.set_raw codec f_hi buf 0 0xC;
+  Codec.set_raw codec f_lo buf 0 0x3;
+  Alcotest.(check int) "set_raw bf byte" 0xC3 (Bytes.get_uint8 buf 0)
+
+let test_raw_sub_nested () =
+  (* Two-layer nested protocol using sub + get_raw: zero alloc *)
+  let open Codec in
+  let inner_r, f_val =
+    record "Inner" (fun v -> v) |+ field "val" uint16be (fun v -> v)
+  in
+  let inner_codec = seal inner_r in
+  let r, _ =
+    record "Outer" (fun hdr payload -> (hdr, payload))
+    |+ field "hdr" uint16be (fun (h, _) -> h)
+  in
+  let r, f_payload =
+    r |+ field "payload" (byte_slice ~size:(int 2)) (fun (_, p) -> p)
+  in
+  let outer_codec = seal r in
+  let buf = Bytes.create 4 in
+  Bytes.set_uint16_be buf 0 0x0001;
+  Bytes.set_uint16_be buf 2 0x5678;
+  let inner_off = Codec.sub outer_codec f_payload buf 0 in
+  Alcotest.(check int) "sub offset" 2 inner_off;
+  let inner_val = Codec.get_raw inner_codec f_val buf inner_off in
+  Alcotest.(check int) "inner val via sub+get_raw" 0x5678 inner_val
+
+let test_raw_sub_three_layers () =
+  (* Three-layer: outer -> mid -> inner, all zero-alloc via sub+get_raw *)
+  let open Codec in
+  let inner_r, f_x = record "L3" (fun x -> x) |+ field "x" uint8 (fun x -> x) in
+  let inner = seal inner_r in
+  let mid_r, _ =
+    record "L2" (fun tag payload -> (tag, payload))
+    |+ field "tag" uint8 (fun (t, _) -> t)
+  in
+  let mid_r, f_mid_payload =
+    mid_r |+ field "data" (byte_slice ~size:(int 1)) (fun (_, p) -> p)
+  in
+  let mid = seal mid_r in
+  let outer_r, _ =
+    record "L1" (fun hdr body -> (hdr, body))
+    |+ field "hdr" uint16be (fun (h, _) -> h)
+  in
+  let outer_r, f_body =
+    outer_r |+ field "body" (byte_slice ~size:(int 2)) (fun (_, b) -> b)
+  in
+  let outer = seal outer_r in
+  let buf = Bytes.create 4 in
+  Bytes.set_uint16_be buf 0 0xAAAA;
+  Bytes.set_uint8 buf 2 0xBB;
+  Bytes.set_uint8 buf 3 0xCC;
+  let mid_off = Codec.sub outer f_body buf 0 in
+  Alcotest.(check int) "mid offset" 2 mid_off;
+  let inner_off = Codec.sub mid f_mid_payload buf mid_off in
+  Alcotest.(check int) "inner offset" 3 inner_off;
+  let x = Codec.get_raw inner f_x buf inner_off in
+  Alcotest.(check int) "3-layer get_raw" 0xCC x
+
+let test_raw_with_offset () =
+  (* get_raw / set_raw work correctly with non-zero base offset *)
+  let open Codec in
+  let r, f_v =
+    record "RawOff" (fun v -> v) |+ field "v" uint32be (fun v -> v)
+  in
+  let codec = seal r in
+  let buf = Bytes.create 20 in
+  Bytes.fill buf 0 20 '\x00';
+  Codec.set_raw codec f_v buf 10 0xDEADBEEF;
+  Alcotest.(check int)
+    "get_raw at offset 10" 0xDEADBEEF
+    (Codec.get_raw codec f_v buf 10)
+
 (* FFI stub generation tests *)
 
 let test_c_stubs () =
@@ -1105,6 +1231,14 @@ let suite =
         test_view_byte_slice_decode;
       Alcotest.test_case "view: byte_slice nested" `Quick
         test_view_byte_slice_nested;
+      (* raw access: get_raw / set_raw / sub *)
+      Alcotest.test_case "raw: get uint" `Quick test_raw_get_uint;
+      Alcotest.test_case "raw: get bitfield" `Quick test_raw_get_bitfield;
+      Alcotest.test_case "raw: set uint" `Quick test_raw_set_uint;
+      Alcotest.test_case "raw: set bitfield" `Quick test_raw_set_bitfield;
+      Alcotest.test_case "raw: sub nested" `Quick test_raw_sub_nested;
+      Alcotest.test_case "raw: sub 3 layers" `Quick test_raw_sub_three_layers;
+      Alcotest.test_case "raw: with offset" `Quick test_raw_with_offset;
       (* streaming: cross-slice boundary *)
       Alcotest.test_case "stream: uint8 chunk=1" `Quick test_stream_uint8;
       Alcotest.test_case "stream: uint16 chunk=1" `Quick
