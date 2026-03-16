@@ -719,9 +719,9 @@ let[@inline] set_slice dec slice =
     dec.is_eod <- false
   end
 
-let refill dec = set_slice dec (Br.read dec.reader)
+let[@inline] refill dec = set_slice dec (Br.read dec.reader)
 
-let read_byte dec =
+let[@inline] read_byte dec =
   if dec.i_next > dec.i_max then begin
     refill dec;
     if dec.is_eod then None
