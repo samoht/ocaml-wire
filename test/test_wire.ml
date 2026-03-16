@@ -6,6 +6,20 @@ let slice buf = Bytesrw.Bytes.Slice.make buf ~first:0 ~length:(Bytes.length buf)
 let slice_off buf off len = Bytesrw.Bytes.Slice.make buf ~first:off ~length:len
 let contains ~sub s = Re.execp (Re.compile (Re.str sub)) s
 
+(* Helper: parse from a string delivered in slices of [chunk_size] bytes.
+   Forces multi-byte values to straddle slice boundaries. *)
+let parse_chunked ~chunk_size typ s =
+  let reader = Bytesrw.Bytes.Reader.of_string ~slice_length:chunk_size s in
+  Wire.parse typ reader
+
+(* Helper: encode to string via streaming writer with [chunk_size] buffer *)
+let encode_chunked ~chunk_size typ v =
+  let buf = Buffer.create 64 in
+  let writer = Bytesrw.Bytes.Writer.of_buffer ~slice_length:chunk_size buf in
+  Wire.encode typ v writer;
+  Bytesrw.Bytes.Writer.write_eod writer;
+  Buffer.contents buf
+
 (* Helper: encode record to string using Codec API *)
 let encode_record_to_string codec v =
   let ws = Codec.wire_size codec in
@@ -918,6 +932,84 @@ let test_c_stubs () =
     "contains error handler" true
     (contains ~sub:"simpleheader_err" stubs)
 
+(* ── Streaming: cross-slice boundary tests ── *)
+
+(* Parse roundtrip with every chunk size forcing boundary straddles *)
+let test_stream_uint8 () =
+  let encoded = encode_to_string uint8 42 in
+  match parse_chunked ~chunk_size:1 uint8 encoded with
+  | Ok v -> Alcotest.(check int) "uint8 chunk=1" 42 v
+  | Error e -> Alcotest.failf "uint8 chunk=1: %a" pp_parse_error e
+
+let test_stream_uint16_chunk1 () =
+  let encoded = encode_to_string uint16 0xCAFE in
+  match parse_chunked ~chunk_size:1 uint16 encoded with
+  | Ok v -> Alcotest.(check int) "uint16 chunk=1" 0xCAFE v
+  | Error e -> Alcotest.failf "uint16 chunk=1: %a" pp_parse_error e
+
+let test_stream_uint16_chunk3 () =
+  (* chunk=3 means 2-byte value fits in one slice — fast path *)
+  let encoded = encode_to_string uint16be 0xBEEF in
+  match parse_chunked ~chunk_size:3 uint16be encoded with
+  | Ok v -> Alcotest.(check int) "uint16be chunk=3" 0xBEEF v
+  | Error e -> Alcotest.failf "uint16be chunk=3: %a" pp_parse_error e
+
+let test_stream_uint32_chunk1 () =
+  let encoded = encode_to_string uint32 0xDEADBEEF in
+  match parse_chunked ~chunk_size:1 uint32 encoded with
+  | Ok v -> Alcotest.(check int) "uint32 chunk=1" 0xDEADBEEF v
+  | Error e -> Alcotest.failf "uint32 chunk=1: %a" pp_parse_error e
+
+let test_stream_uint32_chunk3 () =
+  (* chunk=3: 4-byte value straddles at byte 3 *)
+  let encoded = encode_to_string uint32be 0x12345678 in
+  match parse_chunked ~chunk_size:3 uint32be encoded with
+  | Ok v -> Alcotest.(check int) "uint32be chunk=3" 0x12345678 v
+  | Error e -> Alcotest.failf "uint32be chunk=3: %a" pp_parse_error e
+
+let test_stream_uint64_chunk1 () =
+  let encoded = encode_to_string uint64 0x0102030405060708L in
+  match parse_chunked ~chunk_size:1 uint64 encoded with
+  | Ok v -> Alcotest.(check int64) "uint64 chunk=1" 0x0102030405060708L v
+  | Error e -> Alcotest.failf "uint64 chunk=1: %a" pp_parse_error e
+
+let test_stream_uint64_chunk3 () =
+  let encoded = encode_to_string uint64be 0xFEDCBA9876543210L in
+  match parse_chunked ~chunk_size:3 uint64be encoded with
+  | Ok v -> Alcotest.(check int64) "uint64be chunk=3" 0xFEDCBA9876543210L v
+  | Error e -> Alcotest.failf "uint64be chunk=3: %a" pp_parse_error e
+
+let test_stream_uint64_chunk5 () =
+  let encoded = encode_to_string uint64 0xAAAABBBBCCCCDDDDL in
+  match parse_chunked ~chunk_size:5 uint64 encoded with
+  | Ok v -> Alcotest.(check int64) "uint64 chunk=5" 0xAAAABBBBCCCCDDDDL v
+  | Error e -> Alcotest.failf "uint64 chunk=5: %a" pp_parse_error e
+
+let test_stream_bitfield_chunk1 () =
+  (* Bitfield: 6+10+16 bits packed in a uint32 *)
+  let bf = bits ~width:6 bf_uint32 in
+  let encoded = encode_to_string bf 42 in
+  match parse_chunked ~chunk_size:1 bf encoded with
+  | Ok v ->
+      (* 42 written in top 6 bits of uint32: 42 << 26, then read back as 6-bit *)
+      Alcotest.(check int) "bitfield chunk=1" 42 v
+  | Error e -> Alcotest.failf "bitfield chunk=1: %a" pp_parse_error e
+
+(* Encode roundtrip through chunked writer *)
+let test_stream_encode_chunk1 () =
+  let v = 0xDEADBEEF in
+  let encoded = encode_chunked ~chunk_size:1 uint32be v in
+  match parse_string uint32be encoded with
+  | Ok decoded -> Alcotest.(check int) "encode chunk=1" v decoded
+  | Error e -> Alcotest.failf "encode chunk=1: %a" pp_parse_error e
+
+let test_stream_encode_chunk3 () =
+  let v = 0x12345678 in
+  let encoded = encode_chunked ~chunk_size:3 uint32be v in
+  match parse_string uint32be encoded with
+  | Ok decoded -> Alcotest.(check int) "encode chunk=3" v decoded
+  | Error e -> Alcotest.failf "encode chunk=3: %a" pp_parse_error e
+
 let suite =
   ( "wire",
     [
@@ -1013,6 +1105,28 @@ let suite =
         test_view_byte_slice_decode;
       Alcotest.test_case "view: byte_slice nested" `Quick
         test_view_byte_slice_nested;
+      (* streaming: cross-slice boundary *)
+      Alcotest.test_case "stream: uint8 chunk=1" `Quick test_stream_uint8;
+      Alcotest.test_case "stream: uint16 chunk=1" `Quick
+        test_stream_uint16_chunk1;
+      Alcotest.test_case "stream: uint16 chunk=3" `Quick
+        test_stream_uint16_chunk3;
+      Alcotest.test_case "stream: uint32 chunk=1" `Quick
+        test_stream_uint32_chunk1;
+      Alcotest.test_case "stream: uint32 chunk=3" `Quick
+        test_stream_uint32_chunk3;
+      Alcotest.test_case "stream: uint64 chunk=1" `Quick
+        test_stream_uint64_chunk1;
+      Alcotest.test_case "stream: uint64 chunk=3" `Quick
+        test_stream_uint64_chunk3;
+      Alcotest.test_case "stream: uint64 chunk=5" `Quick
+        test_stream_uint64_chunk5;
+      Alcotest.test_case "stream: bitfield chunk=1" `Quick
+        test_stream_bitfield_chunk1;
+      Alcotest.test_case "stream: encode chunk=1" `Quick
+        test_stream_encode_chunk1;
+      Alcotest.test_case "stream: encode chunk=3" `Quick
+        test_stream_encode_chunk3;
       (* ffi stubs *)
       Alcotest.test_case "ffi: c_stubs" `Quick test_c_stubs;
     ] )

@@ -498,4 +498,67 @@ let () =
          else eth_decode_alloc);
     ];
 
+  Fmt.pr "\n";
+
+  (* ── Part 5: Streaming parse/encode (uint32be = 4B, same as CLCW) ── *)
+  let widths =
+    table_header "Streaming Parse/Encode (uint32be 4B)"
+      [ ("Operation", 42); ("ns/op", 8); ("alloc", 12) ]
+  in
+
+  let val32 = 0xDEADBEEF in
+  let str32 = encode_to_string uint32be val32 in
+
+  (* parse_string: single slice, no boundaries *)
+  let parse_ns =
+    time_ns n (fun () ->
+        for _ = 1 to n do
+          ignore (parse_string uint32be str32)
+        done)
+  in
+  let parse_alloc =
+    alloc_words n (fun () -> ignore (parse_string uint32be str32))
+  in
+  table_row widths
+    [
+      "parse_string (single slice)";
+      Fmt.str "%.1f" parse_ns;
+      Fmt.str "%.0fw" parse_alloc;
+    ];
+
+  (* parse chunked: 1 byte per slice, all boundaries straddled *)
+  let parse_chunk1_ns =
+    time_ns n (fun () ->
+        for _ = 1 to n do
+          let reader = Bytesrw.Bytes.Reader.of_string ~slice_length:1 str32 in
+          ignore (parse uint32be reader)
+        done)
+  in
+  let parse_chunk1_alloc =
+    alloc_words n (fun () ->
+        let reader = Bytesrw.Bytes.Reader.of_string ~slice_length:1 str32 in
+        ignore (parse uint32be reader))
+  in
+  table_row widths
+    [
+      "parse chunked (1B/slice, all straddle)";
+      Fmt.str "%.1f" parse_chunk1_ns;
+      Fmt.str "%.0fw" parse_chunk1_alloc;
+    ];
+
+  (* encode to string *)
+  let encode_ns =
+    time_ns n (fun () ->
+        for _ = 1 to n do
+          ignore (encode_to_string uint32be val32)
+        done)
+  in
+  let encode_alloc =
+    alloc_words n (fun () -> ignore (encode_to_string uint32be val32))
+  in
+  table_row widths
+    [
+      "encode_to_string"; Fmt.str "%.1f" encode_ns; Fmt.str "%.0fw" encode_alloc;
+    ];
+
   Fmt.pr "\n"
