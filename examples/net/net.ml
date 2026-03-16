@@ -1,0 +1,398 @@
+(** TCP/IP protocol header codecs using Wire's zero-copy [byte_slice] API.
+
+    Demonstrates nested protocol parsing: Ethernet (14B) -> IPv4 (20B) -> TCP
+    (20B) or UDP (8B)
+
+    All payload fields use [byte_slice] for zero-copy sub-slicing. Individual
+    header fields are accessed via [Codec.get] without allocating intermediate
+    records. *)
+
+open Wire
+module Slice = Bytesrw.Bytes.Slice
+
+(* ── Ethernet II frame header: 14 bytes + payload ── *)
+
+let ethernet_payload_size = 40
+
+type ethernet = {
+  eth_dst : Slice.t;
+  eth_src : Slice.t;
+  eth_ethertype : int;
+  eth_payload : Slice.t;
+}
+
+let ethernet_codec, f_eth_ethertype, f_eth_payload =
+  let open Codec in
+  let r, _ =
+    record "Ethernet" (fun dst src etype payload ->
+        {
+          eth_dst = dst;
+          eth_src = src;
+          eth_ethertype = etype;
+          eth_payload = payload;
+        })
+    |+ field "DstMAC" (byte_slice ~size:(int 6)) (fun e -> e.eth_dst)
+  in
+  let r, _ =
+    r |+ field "SrcMAC" (byte_slice ~size:(int 6)) (fun e -> e.eth_src)
+  in
+  let r, f_etype = r |+ field "EtherType" uint16be (fun e -> e.eth_ethertype) in
+  let r, f_payload =
+    r
+    |+ field "Payload"
+         (byte_slice ~size:(int ethernet_payload_size))
+         (fun e -> e.eth_payload)
+  in
+  (seal r, f_etype, f_payload)
+
+let ethernet_struct = Codec.to_struct ethernet_codec
+let ethernet_size = Codec.wire_size ethernet_codec
+
+(* ── IPv4 header: 20 bytes fixed (no options) + payload ── *)
+
+let ipv4_payload_size = 20
+
+type ipv4 = {
+  ip_version : int;
+  ip_ihl : int;
+  ip_dscp : int;
+  ip_ecn : int;
+  ip_total_length : int;
+  ip_identification : int;
+  ip_flags : int;
+  ip_fragment_offset : int;
+  ip_ttl : int;
+  ip_protocol : int;
+  ip_checksum : int;
+  ip_src : int;
+  ip_dst : int;
+  ip_payload : Slice.t;
+}
+
+let ipv4_codec, f_ip_protocol, f_ip_src, f_ip_dst, f_ip_payload =
+  let open Codec in
+  let r, _ =
+    record "IPv4"
+      (fun
+        version
+        ihl
+        dscp
+        ecn
+        total_length
+        identification
+        flags
+        fragment_offset
+        ttl
+        protocol
+        checksum
+        src
+        dst
+        payload
+      ->
+        {
+          ip_version = version;
+          ip_ihl = ihl;
+          ip_dscp = dscp;
+          ip_ecn = ecn;
+          ip_total_length = total_length;
+          ip_identification = identification;
+          ip_flags = flags;
+          ip_fragment_offset = fragment_offset;
+          ip_ttl = ttl;
+          ip_protocol = protocol;
+          ip_checksum = checksum;
+          ip_src = src;
+          ip_dst = dst;
+          ip_payload = payload;
+        })
+    |+ field "Version" (bits ~width:4 bf_uint8) (fun p -> p.ip_version)
+  in
+  let r, _ = r |+ field "IHL" (bits ~width:4 bf_uint8) (fun p -> p.ip_ihl) in
+  let r, _ = r |+ field "DSCP" (bits ~width:6 bf_uint8) (fun p -> p.ip_dscp) in
+  let r, _ = r |+ field "ECN" (bits ~width:2 bf_uint8) (fun p -> p.ip_ecn) in
+  let r, _ = r |+ field "TotalLength" uint16be (fun p -> p.ip_total_length) in
+  let r, _ =
+    r |+ field "Identification" uint16be (fun p -> p.ip_identification)
+  in
+  let r, _ =
+    r |+ field "Flags" (bits ~width:3 bf_uint16be) (fun p -> p.ip_flags)
+  in
+  let r, _ =
+    r
+    |+ field "FragmentOffset" (bits ~width:13 bf_uint16be) (fun p ->
+        p.ip_fragment_offset)
+  in
+  let r, _ = r |+ field "TTL" uint8 (fun p -> p.ip_ttl) in
+  let r, f_protocol = r |+ field "Protocol" uint8 (fun p -> p.ip_protocol) in
+  let r, _ = r |+ field "HeaderChecksum" uint16be (fun p -> p.ip_checksum) in
+  let r, f_src = r |+ field "SrcAddr" uint32be (fun p -> p.ip_src) in
+  let r, f_dst = r |+ field "DstAddr" uint32be (fun p -> p.ip_dst) in
+  let r, f_payload =
+    r
+    |+ field "Payload"
+         (byte_slice ~size:(int ipv4_payload_size))
+         (fun p -> p.ip_payload)
+  in
+  (seal r, f_protocol, f_src, f_dst, f_payload)
+
+let ipv4_struct = Codec.to_struct ipv4_codec
+let ipv4_size = Codec.wire_size ipv4_codec
+
+(* ── TCP header: 20 bytes fixed (no options) ── *)
+
+type tcp = {
+  tcp_src_port : int;
+  tcp_dst_port : int;
+  tcp_seq : int;
+  tcp_ack_num : int;
+  tcp_data_offset : int;
+  tcp_reserved : int;
+  tcp_ns : bool;
+  tcp_cwr : bool;
+  tcp_ece : bool;
+  tcp_urg : bool;
+  tcp_ack : bool;
+  tcp_psh : bool;
+  tcp_rst : bool;
+  tcp_syn : bool;
+  tcp_fin : bool;
+  tcp_window : int;
+  tcp_checksum : int;
+  tcp_urgent_ptr : int;
+}
+
+let tcp_codec, f_tcp_src_port, f_tcp_dst_port, f_tcp_syn, f_tcp_ack =
+  let open Codec in
+  let r, f_src_port =
+    record "TCP"
+      (fun
+        src_port
+        dst_port
+        seq
+        ack_num
+        data_offset
+        reserved
+        ns
+        cwr
+        ece
+        urg
+        ack
+        psh
+        rst
+        syn
+        fin
+        window
+        checksum
+        urgent_ptr
+      ->
+        {
+          tcp_src_port = src_port;
+          tcp_dst_port = dst_port;
+          tcp_seq = seq;
+          tcp_ack_num = ack_num;
+          tcp_data_offset = data_offset;
+          tcp_reserved = reserved;
+          tcp_ns = ns;
+          tcp_cwr = cwr;
+          tcp_ece = ece;
+          tcp_urg = urg;
+          tcp_ack = ack;
+          tcp_psh = psh;
+          tcp_rst = rst;
+          tcp_syn = syn;
+          tcp_fin = fin;
+          tcp_window = window;
+          tcp_checksum = checksum;
+          tcp_urgent_ptr = urgent_ptr;
+        })
+    |+ field "SrcPort" uint16be (fun t -> t.tcp_src_port)
+  in
+  let r, f_dst_port = r |+ field "DstPort" uint16be (fun t -> t.tcp_dst_port) in
+  let r, _ = r |+ field "SeqNum" uint32be (fun t -> t.tcp_seq) in
+  let r, _ = r |+ field "AckNum" uint32be (fun t -> t.tcp_ack_num) in
+  let r, _ =
+    r
+    |+ field "DataOffset" (bits ~width:4 bf_uint16be) (fun t ->
+        t.tcp_data_offset)
+  in
+  let r, _ =
+    r |+ field "Reserved" (bits ~width:3 bf_uint16be) (fun t -> t.tcp_reserved)
+  in
+  let r, _ =
+    r |+ field "NS" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_ns)
+  in
+  let r, _ =
+    r |+ field "CWR" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_cwr)
+  in
+  let r, _ =
+    r |+ field "ECE" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_ece)
+  in
+  let r, _ =
+    r |+ field "URG" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_urg)
+  in
+  let r, f_ack =
+    r |+ field "ACK" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_ack)
+  in
+  let r, _ =
+    r |+ field "PSH" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_psh)
+  in
+  let r, _ =
+    r |+ field "RST" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_rst)
+  in
+  let r, f_syn =
+    r |+ field "SYN" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_syn)
+  in
+  let r, _ =
+    r |+ field "FIN" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_fin)
+  in
+  let r, _ = r |+ field "Window" uint16be (fun t -> t.tcp_window) in
+  let r, _ = r |+ field "Checksum" uint16be (fun t -> t.tcp_checksum) in
+  let r, _ = r |+ field "UrgentPtr" uint16be (fun t -> t.tcp_urgent_ptr) in
+  (seal r, f_src_port, f_dst_port, f_syn, f_ack)
+
+let tcp_struct = Codec.to_struct tcp_codec
+let tcp_size = Codec.wire_size tcp_codec
+
+(* ── UDP header: 8 bytes ── *)
+
+type udp = {
+  udp_src_port : int;
+  udp_dst_port : int;
+  udp_length : int;
+  udp_checksum : int;
+}
+
+let udp_codec, f_udp_src_port, f_udp_dst_port, f_udp_length =
+  let open Codec in
+  let r, f_src_port =
+    record "UDP" (fun src_port dst_port length checksum ->
+        {
+          udp_src_port = src_port;
+          udp_dst_port = dst_port;
+          udp_length = length;
+          udp_checksum = checksum;
+        })
+    |+ field "SrcPort" uint16be (fun u -> u.udp_src_port)
+  in
+  let r, f_dst_port = r |+ field "DstPort" uint16be (fun u -> u.udp_dst_port) in
+  let r, f_length = r |+ field "Length" uint16be (fun u -> u.udp_length) in
+  let r, _ = r |+ field "Checksum" uint16be (fun u -> u.udp_checksum) in
+  (seal r, f_src_port, f_dst_port, f_length)
+
+let udp_struct = Codec.to_struct udp_codec
+let udp_size = Codec.wire_size udp_codec
+
+(* ── Utilities ── *)
+
+let pp_ipv4_addr ppf addr =
+  Fmt.pf ppf "%d.%d.%d.%d"
+    ((addr lsr 24) land 0xFF)
+    ((addr lsr 16) land 0xFF)
+    ((addr lsr 8) land 0xFF)
+    (addr land 0xFF)
+
+let ipv4_addr a b c d = (a lsl 24) lor (b lsl 16) lor (c lsl 8) lor d
+
+(* ── Data generators ── *)
+
+let tcp_frame_data n =
+  Array.init n (fun i ->
+      let b = Bytes.create ethernet_size in
+      (* Ethernet: dst MAC *)
+      Bytes.set_uint8 b 0 0x00;
+      Bytes.set_uint8 b 1 0x11;
+      Bytes.set_uint8 b 2 0x22;
+      Bytes.set_uint8 b 3 0x33;
+      Bytes.set_uint8 b 4 0x44;
+      Bytes.set_uint8 b 5 0x55;
+      (* Ethernet: src MAC *)
+      Bytes.set_uint8 b 6 0xAA;
+      Bytes.set_uint8 b 7 0xBB;
+      Bytes.set_uint8 b 8 0xCC;
+      Bytes.set_uint8 b 9 0xDD;
+      Bytes.set_uint8 b 10 0xEE;
+      Bytes.set_uint8 b 11 0xFF;
+      (* EtherType: IPv4 *)
+      Bytes.set_uint16_be b 12 0x0800;
+      (* IPv4 at offset 14 *)
+      let ip = 14 in
+      Bytes.set_uint8 b ip 0x45;
+      Bytes.set_uint8 b (ip + 1) 0x00;
+      Bytes.set_uint16_be b (ip + 2) 40;
+      Bytes.set_uint16_be b (ip + 4) (i mod 65536);
+      Bytes.set_uint16_be b (ip + 6) 0x4000;
+      Bytes.set_uint8 b (ip + 8) 64;
+      Bytes.set_uint8 b (ip + 9) 6;
+      Bytes.set_uint16_be b (ip + 10) 0;
+      Bytes.set_int32_be b (ip + 12) (Int32.of_int (ipv4_addr 192 168 1 100));
+      Bytes.set_int32_be b (ip + 16) (Int32.of_int (ipv4_addr 10 0 0 1));
+      (* TCP at offset 34 *)
+      let tcp = 34 in
+      Bytes.set_uint16_be b tcp (12345 + (i mod 1000));
+      Bytes.set_uint16_be b (tcp + 2) 443;
+      Bytes.set_int32_be b (tcp + 4) (Int32.of_int (i * 1000));
+      Bytes.set_int32_be b (tcp + 8) 0l;
+      Bytes.set_uint16_be b (tcp + 12) 0x5002;
+      Bytes.set_uint16_be b (tcp + 14) 65535;
+      Bytes.set_uint16_be b (tcp + 16) 0;
+      Bytes.set_uint16_be b (tcp + 18) 0;
+      b)
+
+let udp_frame_data n =
+  Array.init n (fun i ->
+      let b = Bytes.create ethernet_size in
+      Bytes.set_uint8 b 0 0x00;
+      Bytes.set_uint8 b 1 0x11;
+      Bytes.set_uint8 b 2 0x22;
+      Bytes.set_uint8 b 3 0x33;
+      Bytes.set_uint8 b 4 0x44;
+      Bytes.set_uint8 b 5 0x55;
+      Bytes.set_uint8 b 6 0xAA;
+      Bytes.set_uint8 b 7 0xBB;
+      Bytes.set_uint8 b 8 0xCC;
+      Bytes.set_uint8 b 9 0xDD;
+      Bytes.set_uint8 b 10 0xEE;
+      Bytes.set_uint8 b 11 0xFF;
+      Bytes.set_uint16_be b 12 0x0800;
+      let ip = 14 in
+      Bytes.set_uint8 b ip 0x45;
+      Bytes.set_uint8 b (ip + 1) 0x00;
+      Bytes.set_uint16_be b (ip + 2) 28;
+      Bytes.set_uint16_be b (ip + 4) (i mod 65536);
+      Bytes.set_uint16_be b (ip + 6) 0x4000;
+      Bytes.set_uint8 b (ip + 8) 64;
+      Bytes.set_uint8 b (ip + 9) 17;
+      Bytes.set_uint16_be b (ip + 10) 0;
+      Bytes.set_int32_be b (ip + 12) (Int32.of_int (ipv4_addr 192 168 1 100));
+      Bytes.set_int32_be b (ip + 16) (Int32.of_int (ipv4_addr 10 0 0 1));
+      let udp = 34 in
+      Bytes.set_uint16_be b udp (5353 + (i mod 100));
+      Bytes.set_uint16_be b (udp + 2) 53;
+      Bytes.set_uint16_be b (udp + 4) 8;
+      Bytes.set_uint16_be b (udp + 6) 0;
+      b)
+
+(* ── Schema registry (for EverParse benchmark infrastructure) ── *)
+
+type 'a schema = {
+  name : string;
+  codec : 'a Codec.t;
+  struct_ : struct_;
+  size : int;
+  decode : bytes -> int -> 'a;
+}
+
+let schema name codec struct_ size =
+  { name; codec; struct_; size; decode = Codec.decode codec }
+
+type any_schema = Any : 'a schema -> any_schema
+
+let all_schemas =
+  [
+    Any (schema "Ethernet" ethernet_codec ethernet_struct ethernet_size);
+    Any (schema "IPv4" ipv4_codec ipv4_struct ipv4_size);
+    Any (schema "TCP" tcp_codec tcp_struct tcp_size);
+    Any (schema "UDP" udp_codec udp_struct udp_size);
+  ]
+
+let all_structs = List.map (fun (Any s) -> s.struct_) all_schemas

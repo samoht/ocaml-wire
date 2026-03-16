@@ -1,17 +1,3 @@
-; Memtrace allocation profiling (always builds)
-
-(executable
- (name memtrace)
- (modules memtrace)
- (libraries demo space wire memtrace))
-
-; Timing and allocation benchmark (always builds)
-
-(executable
- (name timing)
- (modules timing)
- (libraries space net wire unix))
-
 ; ── EverParse benchmark infrastructure (BUILD_EVERPARSE=1 only) ──
 
 ; Step 1: Generator — produces .3d files, runs EverParse, generates C/ML stubs
@@ -21,7 +7,7 @@
  (modules gen_stubs)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries demo space wire wire.c unix))
+ (libraries net wire wire.c unix))
 
 ; Step 2: Run the generator to produce all artifacts
 
@@ -29,40 +15,40 @@
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
  (targets
-  (dir ep_schemas)
-  ep_stubs.c
-  ep_stubs.ml
-  ep_dispatch.ml)
+  (dir ep_tcpip)
+  tcpip_ep_stubs.c
+  tcpip_ep_stubs.ml
+  tcpip_ep_dispatch.ml)
  (deps gen_stubs.exe)
  (action
-  (run ./gen_stubs.exe ep_schemas)))
+  (run ./gen_stubs.exe ep_tcpip)))
 
 ; Step 3: EverParse stubs library (C validation + timed loops + OCaml externals)
 
 (library
- (name ep_stubs)
- (modules ep_stubs)
+ (name tcpip_ep_stubs)
+ (modules tcpip_ep_stubs)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
  (foreign_stubs
   (language c)
-  (names ep_stubs)
-  (flags :standard -I ep_schemas)))
+  (names tcpip_ep_stubs)
+  (flags :standard -I ep_tcpip)))
 
 ; Step 4: Dispatch module (generated, maps names to functions)
 
 (library
- (name ep_dispatch)
- (modules ep_dispatch)
+ (name tcpip_ep_dispatch)
+ (modules tcpip_ep_dispatch)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries ep_stubs))
+ (libraries tcpip_ep_stubs))
 
-; Step 5: Performance benchmark — all 3 columns
+; Step 5: Performance benchmark — EverParse C vs OCaml Codec vs FFI
 
 (executable
- (name perf)
- (modules perf)
+ (name bench)
+ (modules bench)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries demo space ep_dispatch wire unix))
+ (libraries net tcpip_ep_dispatch wire unix))

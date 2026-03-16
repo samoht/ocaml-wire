@@ -1,0 +1,10 @@
+(library
+ (name net)
+ (modules net)
+ (wrapped false)
+ (libraries wire))
+
+(executable
+ (name example)
+ (modules example)
+ (libraries net wire))

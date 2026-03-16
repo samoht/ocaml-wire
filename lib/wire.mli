@@ -352,7 +352,13 @@ val array : len:int expr -> 'a typ -> 'a list typ
 (** [array ~len t] is a fixed-count array of [len] elements. *)
 
 val byte_array : size:int expr -> string typ
-(** [byte_array ~size] is [UINT8[:byte-size size]] in 3D. *)
+(** [byte_array ~size] is [UINT8[:byte-size size]] in 3D. Copies bytes on
+    decode. *)
+
+val byte_slice : size:int expr -> Bytesrw.Bytes.Slice.t typ
+(** [byte_slice ~size] is the zero-copy variant of {!byte_array}. Returns a
+    {!Bytesrw.Bytes.Slice.t} pointing into the decode buffer. Same 3D wire
+    format as [byte_array]. *)
 
 val single_elem_array : size:int expr -> 'a typ -> 'a typ
 (** [single_elem_array ~size t] is a single element consuming exactly [size]
@@ -727,16 +733,17 @@ val decode_make4_exn :
     {[
       type packet = { version : int; length : int }
 
-      let codec =
+      let codec, f_length =
         let open Wire.Codec in
-        record "Packet" (fun version length -> { version; length })
-        |+ field "version" uint8 (fun p -> p.version)
-        |+ field "length" uint16be (fun p -> p.length)
-        |> seal
+        let r, _ =
+          record "Packet" (fun version length -> { version; length })
+          |+ field "version" uint8 (fun p -> p.version)
+        in
+        let r, f_length = r |+ field "length" uint16be (fun p -> p.length) in
+        (seal r, f_length)
 
-      let decode = Wire.Codec.decode codec
-      let encode = Wire.Codec.encode codec
-      let struct_ = Wire.Codec.to_struct codec
+      (* Zero-copy field access *)
+      let get_length = Wire.Codec.get codec f_length
     ]} *)
 
 module Codec : sig
@@ -756,14 +763,15 @@ module Codec : sig
       [make]. *)
 
   val field : string -> 'a typ -> ('r -> 'a) -> ('a, 'r) field
-  (** [field name typ get] defines a field with type [typ] and getter [get]. Use
-      {!val:Wire.map} or {!val:Wire.bool} on the type for conversions.
+  (** [field name typ get] defines a field specification with type [typ] and
+      getter [get]. Use {!val:Wire.map} or {!val:Wire.bool} on the type for
+      conversions. Pass the result to {!(|+)} to get a configured field for
+      zero-copy access via {!get}/{!set}. *)
 
-      The returned field can be used both in the record pipeline ({!(|+)}) and
-      as a zero-copy accessor ({!get}/{!set}). *)
-
-  val ( |+ ) : ('a -> 'b, 'r) record -> ('a, 'r) field -> ('b, 'r) record
-  (** [r |+ f] adds field [f] to record codec [r]. *)
+  val ( |+ ) :
+    ('a -> 'b, 'r) record -> ('a, 'r) field -> ('b, 'r) record * ('a, 'r) field
+  (** [r |+ f] adds field [f] to record codec [r]. Returns the updated record
+      and a configured field that can be used with {!get}/{!set}. *)
 
   val seal : ('r, 'r) record -> 'r t
   (** [seal r] finalizes the record codec, adding bounds checking. *)
@@ -781,12 +789,13 @@ module Codec : sig
   val to_struct : 'r t -> struct_
   (** [to_struct codec] converts the codec to a struct for 3D generation. *)
 
-  val get : ('a, _) field -> Bytesrw.Bytes.Slice.t -> 'a
-  (** [get f slice] reads field [f] from [slice]. Zero allocation for immediate
-      types (int, bool). Raises {!Parse_error} if the slice is too short. *)
+  val get : 'r t -> ('a, 'r) field -> Bytesrw.Bytes.Slice.t -> 'a
+  (** [get codec f slice] reads field [f] from [slice]. Zero allocation for
+      immediate types (int, bool). Raises {!Parse_error} if the slice is too
+      short for the codec's wire size. *)
 
-  val set : ('a, _) field -> Bytesrw.Bytes.Slice.t -> 'a -> unit
-  (** [set f slice x] writes [x] into [slice]. For bitfields, uses
+  val set : 'r t -> ('a, 'r) field -> Bytesrw.Bytes.Slice.t -> 'a -> unit
+  (** [set codec f slice x] writes [x] into [slice]. For bitfields, uses
       read-modify-write to preserve adjacent bits. *)
 end
 

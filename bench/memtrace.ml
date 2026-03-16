@@ -3,12 +3,66 @@
     Profiles decode, encode, and roundtrip for all benchmark schemas to identify
     allocation hotspots.
 
-    Usage: MEMTRACE=trace.ctf dune exec bench/bench_wire_memtrace.exe
-    [-- SCHEMA]
+    Usage: MEMTRACE=trace.ctf dune exec bench/memtrace.exe [-- SCHEMA]
 
     SCHEMA is one of the schema names (minimal, allints, ...) or "all". *)
 
-open Bench_schemas
+open Space
+
+type 'a schema = {
+  name : string;
+  codec : 'a Wire.Codec.t;
+  size : int;
+  default : 'a;
+  make_data : int -> bytes array;
+  decode : bytes -> int -> 'a;
+  encode : 'a -> bytes -> int -> unit;
+}
+
+type any_schema = Any : 'a schema -> any_schema
+
+let schema name codec size default make_data =
+  {
+    name;
+    codec;
+    size;
+    default;
+    make_data;
+    decode = Wire.Codec.decode codec;
+    encode = Wire.Codec.encode codec;
+  }
+
+let all_schemas =
+  [
+    Any
+      (schema "Minimal" Demo.minimal_codec Demo.minimal_size
+         Demo.minimal_default Demo.minimal_data);
+    Any
+      (schema "AllInts" Demo.all_ints_codec Demo.all_ints_size
+         Demo.all_ints_default Demo.all_ints_data);
+    Any
+      (schema "Bitfield8" Demo.bf8_codec Demo.bf8_size Demo.bf8_default
+         Demo.bf8_data);
+    Any
+      (schema "Bitfield16" Demo.bf16_codec Demo.bf16_size Demo.bf16_default
+         Demo.bf16_data);
+    Any
+      (schema "Bitfield32" Demo.bf32_codec Demo.bf32_size Demo.bf32_default
+         Demo.bf32_data);
+    Any
+      (schema "BoolFields" Demo.bool_fields_codec Demo.bool_fields_size
+         Demo.bool_fields_default Demo.bool_fields_data);
+    Any
+      (schema "SpacePacket" space_packet_codec space_packet_size
+         space_packet_default space_packet_data);
+    Any (schema "CLCW" clcw_codec clcw_size clcw_default clcw_data);
+    Any
+      (schema "TMFrame" tm_frame_codec tm_frame_size tm_frame_default
+         tm_frame_data);
+    Any
+      (schema "LargeMixed" Demo.large_mixed_codec Demo.large_mixed_size
+         Demo.large_mixed_default Demo.large_mixed_data);
+  ]
 
 let n_values = 1000
 let iterations = 10_000
@@ -47,20 +101,20 @@ let run_zero_copy () =
   Fmt.pr "  CLCW zero-copy get...\n%!";
   for _ = 1 to iterations do
     for i = 0 to Array.length slices - 1 do
-      ignore (Wire.Codec.get cw_report slices.(i))
+      ignore (Wire.Codec.get clcw_codec cw_report slices.(i))
     done
   done;
   Fmt.pr "  CLCW zero-copy set...\n%!";
   for _ = 1 to iterations do
     for i = 0 to Array.length slices - 1 do
-      Wire.Codec.set cw_report slices.(i) 42
+      Wire.Codec.set clcw_codec cw_report slices.(i) 42
     done
   done;
   Fmt.pr "  CLCW zero-copy roundtrip...\n%!";
   for _ = 1 to iterations do
     for i = 0 to Array.length slices - 1 do
-      let x = Wire.Codec.get cw_report slices.(i) in
-      Wire.Codec.set cw_report slices.(i) x
+      let x = Wire.Codec.get clcw_codec cw_report slices.(i) in
+      Wire.Codec.set clcw_codec cw_report slices.(i) x
     done
   done
 

@@ -746,11 +746,13 @@ type test_record = { x : int; y : int; z : int }
 
 let test_record_codec =
   let open Codec in
-  record "TestRecord" (fun x y z -> { x; y; z })
-  |+ field "x" uint8 (fun r -> r.x)
-  |+ field "y" uint16 (fun r -> r.y)
-  |+ field "z" uint32 (fun r -> r.z)
-  |> seal
+  let r, _ =
+    record "TestRecord" (fun x y z -> { x; y; z })
+    |+ field "x" uint8 (fun r -> r.x)
+  in
+  let r, _ = r |+ field "y" uint16 (fun r -> r.y) in
+  let r, _ = r |+ field "z" uint32 (fun r -> r.z) in
+  seal r
 
 let test_record_roundtrip x y z =
   let x = abs x mod 256 in
@@ -777,10 +779,11 @@ type be_record = { a : int; b : int }
 
 let be_record_codec =
   let open Codec in
-  record "BERecord" (fun a b -> { a; b })
-  |+ field "a" uint16be (fun r -> r.a)
-  |+ field "b" uint32be (fun r -> r.b)
-  |> seal
+  let r, _ =
+    record "BERecord" (fun a b -> { a; b }) |+ field "a" uint16be (fun r -> r.a)
+  in
+  let r, _ = r |+ field "b" uint32be (fun r -> r.b) in
+  seal r
 
 let test_record_be_roundtrip a b =
   let a = abs a mod 65536 in
@@ -800,10 +803,12 @@ type bool_record = { flag : bool; value : int }
 
 let bool_record_codec =
   let open Codec in
-  record "BoolRecord" (fun flag value -> { flag; value })
-  |+ field "flag" (bool uint8) (fun r -> r.flag)
-  |+ field "value" uint16 (fun r -> r.value)
-  |> seal
+  let r, _ =
+    record "BoolRecord" (fun flag value -> { flag; value })
+    |+ field "flag" (bool uint8) (fun r -> r.flag)
+  in
+  let r, _ = r |+ field "value" uint16 (fun r -> r.value) in
+  seal r
 
 let test_record_bool_roundtrip n =
   let flag = n mod 2 = 0 in

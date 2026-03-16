@@ -1,15 +1,50 @@
 (** Performance comparison: EverParse C vs OCaml Wire.Codec vs OCaml->C FFI.
 
-    All three paths use the same schema definitions from bench_schemas.ml: 1.
-    EverParse C -- generated verified C validator, timed in pure C loop 2. OCaml
-    Codec -- pure OCaml Wire.Codec.decode 3. OCaml->C FFI -- OCaml calling
-    EverParse C validator via generated stubs
+    All three paths use the same schema definitions from examples/: 1. EverParse
+    C -- generated verified C validator, timed in pure C loop 2. OCaml Codec --
+    pure OCaml Wire.Codec.decode 3. OCaml->C FFI -- OCaml calling EverParse C
+    validator via generated stubs
 
-    Usage: BUILD_EVERPARSE=1 dune exec bench/bench_perf.exe [-- ITERATIONS]
+    Usage: BUILD_EVERPARSE=1 dune exec bench/perf.exe [-- ITERATIONS]
 
     Default: 1_000_000 iterations. *)
 
-open Bench_schemas
+open Space
+
+type 'a schema = {
+  name : string;
+  size : int;
+  make_data : int -> bytes array;
+  decode : bytes -> int -> 'a;
+}
+
+type any_schema = Any : 'a schema -> any_schema
+
+let schema name codec size make_data =
+  { name; size; make_data; decode = Wire.Codec.decode codec }
+
+let all_schemas =
+  [
+    Any
+      (schema "Minimal" Demo.minimal_codec Demo.minimal_size Demo.minimal_data);
+    Any
+      (schema "AllInts" Demo.all_ints_codec Demo.all_ints_size
+         Demo.all_ints_data);
+    Any (schema "Bitfield8" Demo.bf8_codec Demo.bf8_size Demo.bf8_data);
+    Any (schema "Bitfield16" Demo.bf16_codec Demo.bf16_size Demo.bf16_data);
+    Any (schema "Bitfield32" Demo.bf32_codec Demo.bf32_size Demo.bf32_data);
+    Any
+      (schema "BoolFields" Demo.bool_fields_codec Demo.bool_fields_size
+         Demo.bool_fields_data);
+    Any
+      (schema "SpacePacket" space_packet_codec space_packet_size
+         space_packet_data);
+    Any (schema "CLCW" clcw_codec clcw_size clcw_data);
+    Any (schema "TMFrame" tm_frame_codec tm_frame_size tm_frame_data);
+    Any
+      (schema "LargeMixed" Demo.large_mixed_codec Demo.large_mixed_size
+         Demo.large_mixed_data);
+  ]
 
 (* ── Timing ── *)
 
@@ -35,8 +70,8 @@ let bench_ocaml_decode (type a) (s : a schema) n =
 
 (* ── Zero-copy get benchmark (single field, no record alloc) ── *)
 
-let bench_zero_copy_get (fld : (int, _) Wire.Codec.field) (s : _ schema) n =
-  let data = s.make_data 1 in
+let bench_zero_copy_get n =
+  let data = clcw_data 1 in
   let buf = data.(0) in
   let slice =
     Bytesrw.Bytes.Slice.make buf ~first:0 ~length:(Bytes.length buf)
@@ -44,7 +79,7 @@ let bench_zero_copy_get (fld : (int, _) Wire.Codec.field) (s : _ schema) n =
   let ns =
     time_ns (fun () ->
         for _ = 1 to n do
-          ignore (Wire.Codec.get fld slice)
+          ignore (Wire.Codec.get clcw_codec cw_report slice)
         done)
   in
   ns /. float_of_int n
@@ -117,11 +152,10 @@ let () =
   List.iter
     (fun (Any s as any) ->
       let lower = String.lowercase_ascii s.name in
-      let c_loop_fn = Bench_ep_dispatch.get_loop lower in
-      let ffi_check_fn = Bench_ep_dispatch.get_check lower in
+      let c_loop_fn = Ep_dispatch.get_loop lower in
+      let ffi_check_fn = Ep_dispatch.get_check lower in
       let zero_copy_time =
-        if s.name = "CLCW" then Some (bench_zero_copy_get cw_report s n)
-        else None
+        if s.name = "CLCW" then Some (bench_zero_copy_get n) else None
       in
       bench_one any n ~c_loop_fn ~ffi_check_fn ~zero_copy_time)
     all_schemas;
@@ -132,7 +166,7 @@ let () =
     let ns =
       time_ns (fun () ->
           for _ = 1 to n do
-            ignore (Bench_ep_stubs.noop buf)
+            ignore (Ep_stubs.noop buf)
           done)
     in
     ns /. float_of_int n
@@ -141,7 +175,7 @@ let () =
     let ns =
       time_ns (fun () ->
           for _ = 1 to n do
-            ignore (Bench_ep_stubs.noop_safe buf)
+            ignore (Ep_stubs.noop_safe buf)
           done)
     in
     ns /. float_of_int n
@@ -151,7 +185,7 @@ let () =
   Printf.printf "  noop CAMLparam     %6.1f ns/call\n" noop_safe_time;
   Printf.printf "  CLCW FFI check     %6.1f ns/call\n"
     (let (Any s) = List.find (fun (Any s) -> s.name = "CLCW") all_schemas in
-     bench_ffi_check (Bench_ep_dispatch.get_check "clcw") s n);
+     bench_ffi_check (Ep_dispatch.get_check "clcw") s n);
   Printf.printf "\n";
 
   Printf.printf
