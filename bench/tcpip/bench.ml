@@ -23,7 +23,7 @@ let time_ns f =
 
 (* ── Benchmarks ── *)
 
-let bench_ocaml_decode (type a) (s : a schema) n =
+let ocaml_decode (type a) (s : a schema) n =
   let buf = (tcp_frame_data 1).(0) in
   let ns =
     time_ns (fun () ->
@@ -33,7 +33,7 @@ let bench_ocaml_decode (type a) (s : a schema) n =
   in
   ns /. float_of_int n
 
-let bench_ffi_check (check : bytes -> bool) n =
+let ffi_check (check : bytes -> bool) n =
   let buf = (tcp_frame_data 1).(0) in
   let ns =
     time_ns (fun () ->
@@ -43,7 +43,7 @@ let bench_ffi_check (check : bytes -> bool) n =
   in
   ns /. float_of_int n
 
-let bench_c_loop (loop : bytes -> int -> int -> int) (s : _ schema) n =
+let c_loop (loop : bytes -> int -> int -> int) (s : _ schema) n =
   let buf = (tcp_frame_data 1).(0) in
   let ns = loop buf 0 n in
   float_of_int ns /. float_of_int n
@@ -80,9 +80,9 @@ let () =
       let lower = String.lowercase_ascii s.name in
       let c_loop_fn = Tcpip_ep_dispatch.get_loop lower in
       let ffi_check_fn = Tcpip_ep_dispatch.get_check lower in
-      let c_time = bench_c_loop c_loop_fn s (n * 10) in
-      let ocaml_time = bench_ocaml_decode s n in
-      let ffi_time = bench_ffi_check ffi_check_fn n in
+      let c_time = c_loop c_loop_fn s (n * 10) in
+      let ocaml_time = ocaml_decode s n in
+      let ffi_time = ffi_check ffi_check_fn n in
       row ~schema:s.name ~size:s.size "EverParse C" c_time c_time;
       row "OCaml Codec" ocaml_time c_time;
       row "OCaml->C FFI" ffi_time c_time;

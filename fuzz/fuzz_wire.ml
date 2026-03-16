@@ -300,7 +300,7 @@ let test_single_elem_array () =
   ()
 
 (** Test single_elem_array_at_most. *)
-let test_single_elem_array_at_most () =
+let test_single_elem_at_most () =
   let t = Wire.single_elem_array_at_most ~size:(Wire.int 8) Wire.uint32 in
   let s = Wire.struct_ "WithAtMost" [ Wire.field "x" t ] in
   let m = Wire.module_ "WithAtMost" [ Wire.typedef s ] in
@@ -1004,7 +1004,7 @@ let codegen_tests =
     test_case "array type" [ int ] test_array_type;
     test_case "byte array" [ int ] test_byte_array;
     test_case "single elem array" [ const () ] test_single_elem_array;
-    test_case "single elem at most" [ const () ] test_single_elem_array_at_most;
+    test_case "single elem at most" [ const () ] test_single_elem_at_most;
     test_case "anon field" [ const () ] test_anon_field;
     test_case "param struct" [ range 20 ] test_param_struct;
     test_case "mutable param" [ const () ] test_mutable_param;

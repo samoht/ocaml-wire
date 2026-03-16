@@ -39,7 +39,7 @@ let test_roundtrip_struct () =
   | Error _ -> Alcotest.fail "roundtrip failed"
 
 let suite =
-  ( "diff",
+  ( "wire_diff",
     [
       Alcotest.test_case "read match" `Quick test_read_match;
       Alcotest.test_case "read both failed" `Quick test_read_both_failed;

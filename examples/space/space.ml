@@ -8,7 +8,7 @@ open Wire
 (* ── 1. CCSDS Space Packet primary header: 6 bytes ──
    Real-world protocol: 3+1+1+11 bits (uint16be) + 2+14 bits (uint16be) + uint16be *)
 
-type space_packet = {
+type packet = {
   sp_version : int;
   sp_type : int;
   sp_sec_hdr : int;
@@ -18,7 +18,7 @@ type space_packet = {
   sp_data_len : int;
 }
 
-let space_packet_codec =
+let packet_codec =
   let open Codec in
   let r, _ =
     record "SpacePacket"
@@ -52,10 +52,10 @@ let space_packet_codec =
   let r, _ = r |+ field "DataLength" uint16be (fun p -> p.sp_data_len) in
   seal r
 
-let space_packet_struct = Codec.to_struct space_packet_codec
-let space_packet_size = Codec.wire_size space_packet_codec
+let packet_struct = Codec.to_struct packet_codec
+let packet_size = Codec.wire_size packet_codec
 
-let space_packet_default =
+let packet_default =
   {
     sp_version = 0;
     sp_type = 0;
@@ -66,9 +66,9 @@ let space_packet_default =
     sp_data_len = 255;
   }
 
-let space_packet_data n =
+let packet_data n =
   Array.init n (fun i ->
-      let b = Bytes.create space_packet_size in
+      let b = Bytes.create packet_size in
       let w0 = ((i mod 2) lsl 12) lor (i mod 2048) in
       Bytes.set_uint16_be b 0 w0;
       Bytes.set_uint16_be b 2 (0xC000 lor (i mod 16384));
@@ -222,6 +222,25 @@ type tm_frame = {
   tf_first_hdr : int;
 }
 
+let tm_frame_add_identifier_fields r =
+  let open Codec in
+  let r, _ =
+    r |+ field "SCID" (bits ~width:10 bf_uint16be) (fun f -> f.tf_scid)
+  in
+  let r, _ =
+    r |+ field "VCID" (bits ~width:3 bf_uint16be) (fun f -> f.tf_vcid)
+  in
+  let r, _ =
+    r |+ field "OCFFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_ocf_flag)
+  in
+  let r, _ =
+    r |+ field "MCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_mc_count)
+  in
+  let r, _ =
+    r |+ field "VCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_vc_count)
+  in
+  r
+
 let tm_frame_codec =
   let open Codec in
   let r, _ =
@@ -241,21 +260,7 @@ let tm_frame_codec =
         })
     |+ field "Version" (bits ~width:2 bf_uint16be) (fun f -> f.tf_version)
   in
-  let r, _ =
-    r |+ field "SCID" (bits ~width:10 bf_uint16be) (fun f -> f.tf_scid)
-  in
-  let r, _ =
-    r |+ field "VCID" (bits ~width:3 bf_uint16be) (fun f -> f.tf_vcid)
-  in
-  let r, _ =
-    r |+ field "OCFFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_ocf_flag)
-  in
-  let r, _ =
-    r |+ field "MCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_mc_count)
-  in
-  let r, _ =
-    r |+ field "VCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_vc_count)
-  in
+  let r = tm_frame_add_identifier_fields r in
   let r, _ =
     r |+ field "SecHdrFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_sec_hdr)
   in

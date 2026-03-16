@@ -30,7 +30,7 @@ let copy_file ~src ~dst =
   output_bytes oc buf;
   close_out oc
 
-let find_3d_exe () =
+let locate_3d_exe () =
   let ic = Unix.open_process_in "command -v 3d.exe 2>/dev/null" in
   let path = try Some (input_line ic) with End_of_file -> None in
   ignore (Unix.close_process_in ic);
@@ -43,7 +43,7 @@ let find_3d_exe () =
       if Sys.file_exists local then Some local else None
 
 let everparse_dir () =
-  match find_3d_exe () with
+  match locate_3d_exe () with
   | Some exe -> Filename.dirname exe |> Filename.dirname
   | None -> failwith "3d.exe not found"
 
@@ -56,11 +56,11 @@ let copy_everparse_endianness ~outdir =
     else Fmt.failwith "Cannot find EverParseEndianness.h at %s" src
   end
 
-let has_3d_exe () = find_3d_exe () <> None
+let has_3d_exe () = locate_3d_exe () <> None
 
 let run_everparse ~outdir schemas =
   let exe =
-    match find_3d_exe () with
+    match locate_3d_exe () with
     | Some e -> e
     | None -> failwith "3d.exe not found in PATH or ~/.local/everparse/bin/"
   in

@@ -5,31 +5,60 @@
 type clcw
 
 val clcw_codec : clcw Wire.Codec.t
+(** Codec for the 4-byte CLCW bitfield structure. *)
+
 val clcw_struct : Wire.struct_
+(** Wire struct descriptor for EverParse code generation. *)
+
 val clcw_size : int
+(** Wire size of a CLCW frame in bytes. *)
+
 val clcw_default : clcw
+(** Default CLCW value for benchmarks and tests. *)
+
 val clcw_data : int -> bytes array
+(** [clcw_data n] generates [n] synthetic CLCW byte buffers. *)
+
 val cw_report : (int, clcw) Wire.Codec.field
+(** Zero-copy field accessor for the CLCW ReportValue field. *)
 
 (** {2 SpacePacket} *)
 
-type space_packet
+type packet
 
-val space_packet_codec : space_packet Wire.Codec.t
-val space_packet_struct : Wire.struct_
-val space_packet_size : int
-val space_packet_default : space_packet
-val space_packet_data : int -> bytes array
+val packet_codec : packet Wire.Codec.t
+(** Codec for the 6-byte CCSDS Space Packet primary header. *)
+
+val packet_struct : Wire.struct_
+(** Wire struct descriptor for EverParse code generation. *)
+
+val packet_size : int
+(** Wire size of a Space Packet header in bytes. *)
+
+val packet_default : packet
+(** Default Space Packet value for benchmarks and tests. *)
+
+val packet_data : int -> bytes array
+(** [packet_data n] generates [n] synthetic Space Packet byte buffers. *)
 
 (** {2 TMFrame} *)
 
 type tm_frame
 
 val tm_frame_codec : tm_frame Wire.Codec.t
+(** Codec for the 6-byte TM Transfer Frame primary header. *)
+
 val tm_frame_struct : Wire.struct_
+(** Wire struct descriptor for EverParse code generation. *)
+
 val tm_frame_size : int
+(** Wire size of a TM Frame header in bytes. *)
+
 val tm_frame_default : tm_frame
+(** Default TM Frame value for benchmarks and tests. *)
+
 val tm_frame_data : int -> bytes array
+(** [tm_frame_data n] generates [n] synthetic TM Frame byte buffers. *)
 
 (** {2 Nested protocol} *)
 
@@ -37,11 +66,28 @@ type inner_cmd
 type outer_hdr
 
 val inner_cmd_codec : inner_cmd Wire.Codec.t
+(** Codec for the 4-byte inner command structure. *)
+
 val inner_cmd_size : int
+(** Wire size of an InnerCmd in bytes. *)
+
 val f_cmd_id : (int, inner_cmd) Wire.Codec.field
+(** Zero-copy field accessor for the InnerCmd CmdId field. *)
+
 val f_cmd_seq : (int, inner_cmd) Wire.Codec.field
+(** Zero-copy field accessor for the InnerCmd Seq field. *)
+
 val outer_hdr_codec : outer_hdr Wire.Codec.t
+(** Codec for the 8-byte outer header including a zero-copy payload slice. *)
+
 val outer_hdr_size : int
+(** Wire size of an OuterHdr in bytes. *)
+
 val f_oh_length : (int, outer_hdr) Wire.Codec.field
+(** Zero-copy field accessor for the OuterHdr Length field. *)
+
 val f_oh_payload : (Bytesrw.Bytes.Slice.t, outer_hdr) Wire.Codec.field
+(** Zero-copy field accessor for the OuterHdr Payload byte slice. *)
+
 val nested_data : int -> bytes array
+(** [nested_data n] generates [n] synthetic nested protocol byte buffers. *)

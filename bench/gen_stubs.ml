@@ -20,7 +20,7 @@ let entries =
     ("Bitfield16", Demo.bf16_struct, Demo.bf16_size);
     ("Bitfield32", Demo.bf32_struct, Demo.bf32_size);
     ("BoolFields", Demo.bool_fields_struct, Demo.bool_fields_size);
-    ("SpacePacket", Space.space_packet_struct, Space.space_packet_size);
+    ("SpacePacket", Space.packet_struct, Space.packet_size);
     ("CLCW", Space.clcw_struct, Space.clcw_size);
     ("TMFrame", Space.tm_frame_struct, Space.tm_frame_size);
     ("LargeMixed", Demo.large_mixed_struct, Demo.large_mixed_size);

@@ -121,15 +121,15 @@ let () =
   Fmt.pr "\n";
 
   (* SpacePacket: 7 fields, 3 bf_uint16be + uint16be *)
-  let sp_buf = (space_packet_data 1).(0) in
+  let sp_buf = (packet_data 1).(0) in
   let sp_decode_ns =
     time_ns n (fun () ->
         for _ = 1 to n do
-          ignore (Codec.decode space_packet_codec sp_buf 0)
+          ignore (Codec.decode packet_codec sp_buf 0)
         done)
   in
   let sp_decode_alloc =
-    alloc_words n (fun () -> ignore (Codec.decode space_packet_codec sp_buf 0))
+    alloc_words n (fun () -> ignore (Codec.decode packet_codec sp_buf 0))
   in
   table_row widths
     [

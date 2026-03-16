@@ -29,7 +29,7 @@ let test_generate_3d_files () =
   Unix.rmdir tmpdir
 
 let suite =
-  ( "diff_gen",
+  ( "wire_diff_gen",
     [
       Alcotest.test_case "schema creation" `Quick test_schema_creation;
       Alcotest.test_case "generate 3d files" `Quick test_generate_3d_files;

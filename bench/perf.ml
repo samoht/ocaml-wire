@@ -36,9 +36,7 @@ let all_schemas =
     Any
       (schema "BoolFields" Demo.bool_fields_codec Demo.bool_fields_size
          Demo.bool_fields_data);
-    Any
-      (schema "SpacePacket" space_packet_codec space_packet_size
-         space_packet_data);
+    Any (schema "SpacePacket" packet_codec packet_size packet_data);
     Any (schema "CLCW" clcw_codec clcw_size clcw_data);
     Any (schema "TMFrame" tm_frame_codec tm_frame_size tm_frame_data);
     Any
