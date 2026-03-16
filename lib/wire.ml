@@ -1091,59 +1091,90 @@ let parse_bytes typ b =
 module Bw = Bytesrw.Bytes.Writer
 
 (* Encoder state *)
-type encoder = { writer : Bw.t; buf : bytes }
+(* Buffered encoder — writes accumulate in o, flushed as a single Slice.t.
+   Mirrors the decoder's destructured-slice pattern. *)
+type encoder = { writer : Bw.t; o : bytes; o_max : int; mutable o_next : int }
 
-let encoder writer = { writer; buf = Bytes.create 8 }
+let o_size = 4096
 
-let write_slice enc len =
-  let slice = Slice.make enc.buf ~first:0 ~length:len in
-  Bw.write enc.writer slice
+let encoder writer =
+  { writer; o = Bytes.create o_size; o_max = o_size - 1; o_next = 0 }
 
-let write_byte enc b =
-  Bytes.set_uint8 enc.buf 0 b;
-  write_slice enc 1
+let[@inline] flush enc =
+  if enc.o_next > 0 then begin
+    Bw.write enc.writer (Slice.make enc.o ~first:0 ~length:enc.o_next);
+    enc.o_next <- 0
+  end
 
-let write_uint16_le enc v =
-  Bytes.set_uint16_le enc.buf 0 v;
-  write_slice enc 2
+let[@inline] ensure enc n = if enc.o_next + n > enc.o_max + 1 then flush enc
 
-let write_uint16_be enc v =
-  Bytes.set_uint16_be enc.buf 0 v;
-  write_slice enc 2
+let[@inline] write_byte enc b =
+  ensure enc 1;
+  Bytes.set_uint8 enc.o enc.o_next b;
+  enc.o_next <- enc.o_next + 1
 
-let write_int32_le enc v =
-  Bytes.set_int32_le enc.buf 0 v;
-  write_slice enc 4
+let[@inline] write_uint16_le enc v =
+  ensure enc 2;
+  Bytes.set_uint16_le enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 2
 
-let write_int32_be enc v =
-  Bytes.set_int32_be enc.buf 0 v;
-  write_slice enc 4
+let[@inline] write_uint16_be enc v =
+  ensure enc 2;
+  Bytes.set_uint16_be enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 2
 
-let write_uint32_le enc v =
-  UInt32.set_le enc.buf 0 v;
-  write_slice enc 4
+let[@inline] write_int32_le enc v =
+  ensure enc 4;
+  Bytes.set_int32_le enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 4
 
-let write_uint32_be enc v =
-  UInt32.set_be enc.buf 0 v;
-  write_slice enc 4
+let[@inline] write_int32_be enc v =
+  ensure enc 4;
+  Bytes.set_int32_be enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 4
 
-let write_int64_le enc v =
-  Bytes.set_int64_le enc.buf 0 v;
-  write_slice enc 8
+let[@inline] write_uint32_le enc v =
+  ensure enc 4;
+  UInt32.set_le enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 4
 
-let write_int64_be enc v =
-  Bytes.set_int64_be enc.buf 0 v;
-  write_slice enc 8
+let[@inline] write_uint32_be enc v =
+  ensure enc 4;
+  UInt32.set_be enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 4
 
-let write_uint63_le enc v =
-  UInt63.set_le enc.buf 0 v;
-  write_slice enc 8
+let[@inline] write_int64_le enc v =
+  ensure enc 8;
+  Bytes.set_int64_le enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 8
 
-let write_uint63_be enc v =
-  UInt63.set_be enc.buf 0 v;
-  write_slice enc 8
+let[@inline] write_int64_be enc v =
+  ensure enc 8;
+  Bytes.set_int64_be enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 8
 
-let write_string enc s = Bw.write_string enc.writer s
+let[@inline] write_uint63_le enc v =
+  ensure enc 8;
+  UInt63.set_le enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 8
+
+let[@inline] write_uint63_be enc v =
+  ensure enc 8;
+  UInt63.set_be enc.o enc.o_next v;
+  enc.o_next <- enc.o_next + 8
+
+let write_string enc s =
+  let len = String.length s in
+  if len <= enc.o_max + 1 - enc.o_next then begin
+    (* Fits in current buffer *)
+    Bytes.blit_string s 0 enc.o enc.o_next len;
+    enc.o_next <- enc.o_next + len
+  end
+  else begin
+    (* Flush current buffer, then write string directly *)
+    flush enc;
+    Bw.write_string enc.writer s
+  end
 
 let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
  fun ctx typ v enc ->
@@ -1217,7 +1248,8 @@ let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
 
 let encode typ v writer =
   let enc = encoder writer in
-  ignore (encode_with_ctx empty_ctx typ v enc)
+  ignore (encode_with_ctx empty_ctx typ v enc);
+  flush enc
 
 let encode_to_bytes typ v =
   let buf = Buffer.create 64 in
@@ -1608,6 +1640,7 @@ let encode_record : type r.
   let rec encode_fields (ctx : int Ctx.t) accum_opt = function
     | [] ->
         flush_accum accum_opt;
+        flush enc;
         Ok ()
     | Field_codec fc :: rest -> (
         let field_val = fc.get v in
@@ -2269,7 +2302,9 @@ let write_struct (s : struct_) (ps : parsed_struct) =
   let enc = encoder writer in
   let fields_with_vals = List.combine s.fields ps in
   let rec go ctx = function
-    | [] -> Ok (Buffer.contents buf)
+    | [] ->
+        flush enc;
+        Ok (Buffer.contents buf)
     | (Field { field_name; constraint_; _ }, (_, Parsed (typ, v))) :: rest -> (
         let ctx' = encode_with_ctx ctx typ v enc in
         let ctx' =
