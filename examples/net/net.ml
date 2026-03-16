@@ -159,50 +159,32 @@ let f_tcp_syn =
 let f_tcp_ack =
   Codec.field "ACK" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_ack)
 
+let tcp_of_fields src_port dst_port seq ack_num data_offset reserved ns cwr ece
+    urg ack psh rst syn fin window checksum urgent_ptr =
+  {
+    tcp_src_port = src_port;
+    tcp_dst_port = dst_port;
+    tcp_seq = seq;
+    tcp_ack_num = ack_num;
+    tcp_data_offset = data_offset;
+    tcp_reserved = reserved;
+    tcp_ns = ns;
+    tcp_cwr = cwr;
+    tcp_ece = ece;
+    tcp_urg = urg;
+    tcp_ack = ack;
+    tcp_psh = psh;
+    tcp_rst = rst;
+    tcp_syn = syn;
+    tcp_fin = fin;
+    tcp_window = window;
+    tcp_checksum = checksum;
+    tcp_urgent_ptr = urgent_ptr;
+  }
+
 let tcp_codec =
   let open Codec in
-  record "TCP"
-    (fun
-      src_port
-      dst_port
-      seq
-      ack_num
-      data_offset
-      reserved
-      ns
-      cwr
-      ece
-      urg
-      ack
-      psh
-      rst
-      syn
-      fin
-      window
-      checksum
-      urgent_ptr
-    ->
-      {
-        tcp_src_port = src_port;
-        tcp_dst_port = dst_port;
-        tcp_seq = seq;
-        tcp_ack_num = ack_num;
-        tcp_data_offset = data_offset;
-        tcp_reserved = reserved;
-        tcp_ns = ns;
-        tcp_cwr = cwr;
-        tcp_ece = ece;
-        tcp_urg = urg;
-        tcp_ack = ack;
-        tcp_psh = psh;
-        tcp_rst = rst;
-        tcp_syn = syn;
-        tcp_fin = fin;
-        tcp_window = window;
-        tcp_checksum = checksum;
-        tcp_urgent_ptr = urgent_ptr;
-      })
-  |+ f_tcp_src_port |+ f_tcp_dst_port
+  record "TCP" tcp_of_fields |+ f_tcp_src_port |+ f_tcp_dst_port
   |+ field "SeqNum" uint32be (fun t -> t.tcp_seq)
   |+ field "AckNum" uint32be (fun t -> t.tcp_ack_num)
   |+ field "DataOffset" (bits ~width:4 bf_uint16be) (fun t -> t.tcp_data_offset)

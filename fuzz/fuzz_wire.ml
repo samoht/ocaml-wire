@@ -1111,7 +1111,7 @@ let slice_msg_codec =
       { sl_length = length; sl_payload = payload })
   |+ f_sl_length |+ f_sl_payload |> seal
 
-let make_slice_or_eod buf len =
+let slice_or_eod buf len =
   if len = 0 then Slice.eod else Slice.make buf ~first:0 ~length:len
 
 let test_depsize_slice_roundtrip payload_str =
@@ -1122,7 +1122,7 @@ let test_depsize_slice_roundtrip payload_str =
   in
   let len = String.length payload_str in
   let payload_bytes = Bytes.of_string payload_str in
-  let payload = make_slice_or_eod payload_bytes len in
+  let payload = slice_or_eod payload_bytes len in
   let original = { sl_length = len; sl_payload = payload } in
   let total = 2 + len in
   let buf = Bytes.create total in
@@ -1214,7 +1214,7 @@ let test_depsize_tagged_roundtrip payload_str tag =
   let len = String.length payload_str in
   let tag = abs tag mod 256 in
   let payload_bytes = Bytes.of_string payload_str in
-  let payload = make_slice_or_eod payload_bytes len in
+  let payload = slice_or_eod payload_bytes len in
   let original = { tm_length = len; tm_payload = payload; tm_tag = tag } in
   let total = 2 + len + 1 in
   let buf = Bytes.create total in
@@ -1250,7 +1250,7 @@ let test_depsize_compute_wire_size payload_str =
   in
   let len = String.length payload_str in
   let payload_bytes = Bytes.of_string payload_str in
-  let payload = make_slice_or_eod payload_bytes len in
+  let payload = slice_or_eod payload_bytes len in
   let original = { sl_length = len; sl_payload = payload } in
   let total = 2 + len in
   let buf = Bytes.create total in

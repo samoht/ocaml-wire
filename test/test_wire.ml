@@ -1100,7 +1100,7 @@ let dep_slice_codec =
       { ds_length = length; ds_payload = payload })
   |+ f_ds_length |+ f_ds_payload |> seal
 
-let test_dep_byte_slice_decode_empty () =
+let test_dep_bslice_decode_empty () =
   (* length=0, no payload bytes *)
   let buf = Bytes.create 2 in
   Bytes.set_uint16_be buf 0 0;
@@ -1108,7 +1108,7 @@ let test_dep_byte_slice_decode_empty () =
   Alcotest.(check int) "length" 0 r.ds_length;
   Alcotest.(check int) "payload length" 0 (Bs.length r.ds_payload)
 
-let test_dep_byte_slice_decode_4 () =
+let test_dep_bslice_decode_4 () =
   (* length=4, 4 payload bytes *)
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
@@ -1127,7 +1127,7 @@ let test_dep_byte_slice_decode_4 () =
     "payload[3]" 0xDD
     (Bytes.get_uint8 (Bs.bytes r.ds_payload) (Bs.first r.ds_payload + 3))
 
-let test_dep_byte_slice_decode_100 () =
+let test_dep_bslice_decode_100 () =
   (* length=100, 100 payload bytes *)
   let buf = Bytes.create 102 in
   Bytes.set_uint16_be buf 0 100;
@@ -1141,7 +1141,7 @@ let test_dep_byte_slice_decode_100 () =
     "payload[50]" 50
     (Bytes.get_uint8 (Bs.bytes r.ds_payload) (Bs.first r.ds_payload + 50))
 
-let test_dep_byte_slice_roundtrip () =
+let test_dep_bslice_roundtrip () =
   (* encode then decode: 2 bytes length + 4 bytes payload = 6 total *)
   let payload_data = Bytes.of_string "\x01\x02\x03\x04" in
   let original =
@@ -1164,7 +1164,7 @@ let test_dep_byte_slice_roundtrip () =
        (Bs.bytes decoded.ds_payload)
        (Bs.first decoded.ds_payload))
 
-let test_dep_byte_slice_get_payload () =
+let test_dep_bslice_get_payload () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
   Bytes.set_uint8 buf 2 0x10;
@@ -1178,13 +1178,13 @@ let test_dep_byte_slice_get_payload () =
     "get payload[0]" 0x10
     (Bytes.get_uint8 (Bs.bytes payload) (Bs.first payload))
 
-let test_dep_byte_slice_sub () =
+let test_dep_bslice_sub () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
   let off = Codec.sub dep_slice_codec f_ds_payload buf 0 in
   Alcotest.(check int) "sub offset" 2 off
 
-let test_dep_byte_slice_set_length () =
+let test_dep_bslice_set_length () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
   Codec.set dep_slice_codec f_ds_length buf 0 8;
@@ -1192,7 +1192,7 @@ let test_dep_byte_slice_set_length () =
     "set length" 8
     (Codec.get dep_slice_codec f_ds_length buf 0)
 
-let test_dep_byte_slice_get_length () =
+let test_dep_bslice_get_length () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 42;
   Alcotest.(check int)
@@ -1258,7 +1258,7 @@ let trailer_codec =
       { tr_length = length; tr_payload = payload; tr_checksum = checksum })
   |+ f_tr_length |+ f_tr_payload |+ f_tr_checksum |> seal
 
-let test_dep_fixed_after_variable_get_checksum () =
+let test_dep_trailer_get_checksum () =
   (* [length:u16be=3] [payload:3 bytes] [checksum:u16be=0xBEEF] *)
   let buf = Bytes.create 7 in
   Bytes.set_uint16_be buf 0 3;
@@ -1269,7 +1269,7 @@ let test_dep_fixed_after_variable_get_checksum () =
   let checksum = Codec.get trailer_codec f_tr_checksum buf 0 in
   Alcotest.(check int) "get checksum" 0xBEEF checksum
 
-let test_dep_fixed_after_variable_set_checksum () =
+let test_dep_trailer_set_checksum () =
   let buf = Bytes.create 7 in
   Bytes.set_uint16_be buf 0 3;
   Bytes.set_uint8 buf 2 0x11;
@@ -1279,7 +1279,7 @@ let test_dep_fixed_after_variable_set_checksum () =
   Codec.set trailer_codec f_tr_checksum buf 0 0xCAFE;
   Alcotest.(check int) "set checksum" 0xCAFE (Bytes.get_uint16_be buf 5)
 
-let test_dep_fixed_after_variable_decode () =
+let test_dep_trailer_decode () =
   let buf = Bytes.create 7 in
   Bytes.set_uint16_be buf 0 3;
   Bytes.set_uint8 buf 2 0xAA;
@@ -1295,7 +1295,7 @@ let test_dep_fixed_after_variable_decode () =
     (Bytes.get_uint8 (Bs.bytes r.tr_payload) (Bs.first r.tr_payload));
   Alcotest.(check int) "checksum" 0xDEAD r.tr_checksum
 
-let test_dep_fixed_after_variable_roundtrip () =
+let test_dep_trailer_roundtrip () =
   let payload_data = Bytes.of_string "\x01\x02" in
   let original =
     {
@@ -1398,15 +1398,15 @@ let test_dep_codec_ref () =
     "ref data[4]" 0x14
     (Bytes.get_uint8 (Bs.bytes data) (Bs.first data + 4))
 
-let test_dep_codec_ref_size_eval () =
+let test_dep_ref_size_eval () =
   (* Test that the size expression is evaluated correctly for compute_wire_size *)
   let f_sz = Codec.field "Size" uint8 (fun (s, _) -> s) in
-  let _f_body =
+  let f_body =
     Codec.field "Body" (byte_slice ~size:(Codec.ref f_sz)) (fun (_, b) -> b)
   in
   let codec =
     let open Codec in
-    record "RefSizeEval" (fun sz body -> (sz, body)) |+ f_sz |+ _f_body |> seal
+    record "RefSizeEval" (fun sz body -> (sz, body)) |+ f_sz |+ f_body |> seal
   in
   let buf = Bytes.create 11 in
   Bytes.set_uint8 buf 0 10;
@@ -1566,20 +1566,20 @@ let suite =
       Alcotest.test_case "ffi: c_stubs" `Quick test_c_stubs;
       (* dependent-size byte_slice *)
       Alcotest.test_case "dep: byte_slice decode empty" `Quick
-        test_dep_byte_slice_decode_empty;
+        test_dep_bslice_decode_empty;
       Alcotest.test_case "dep: byte_slice decode 4" `Quick
-        test_dep_byte_slice_decode_4;
+        test_dep_bslice_decode_4;
       Alcotest.test_case "dep: byte_slice decode 100" `Quick
-        test_dep_byte_slice_decode_100;
+        test_dep_bslice_decode_100;
       Alcotest.test_case "dep: byte_slice roundtrip" `Quick
-        test_dep_byte_slice_roundtrip;
+        test_dep_bslice_roundtrip;
       Alcotest.test_case "dep: byte_slice get payload" `Quick
-        test_dep_byte_slice_get_payload;
-      Alcotest.test_case "dep: byte_slice sub" `Quick test_dep_byte_slice_sub;
+        test_dep_bslice_get_payload;
+      Alcotest.test_case "dep: byte_slice sub" `Quick test_dep_bslice_sub;
       Alcotest.test_case "dep: byte_slice set length" `Quick
-        test_dep_byte_slice_set_length;
+        test_dep_bslice_set_length;
       Alcotest.test_case "dep: byte_slice get length" `Quick
-        test_dep_byte_slice_get_length;
+        test_dep_bslice_get_length;
       (* dependent-size byte_array *)
       Alcotest.test_case "dep: byte_array decode" `Quick
         test_dep_byte_array_decode;
@@ -1588,13 +1588,13 @@ let suite =
       Alcotest.test_case "dep: byte_array get" `Quick test_dep_byte_array_get;
       (* fixed field after variable field *)
       Alcotest.test_case "dep: fixed after variable get checksum" `Quick
-        test_dep_fixed_after_variable_get_checksum;
+        test_dep_trailer_get_checksum;
       Alcotest.test_case "dep: fixed after variable set checksum" `Quick
-        test_dep_fixed_after_variable_set_checksum;
+        test_dep_trailer_set_checksum;
       Alcotest.test_case "dep: fixed after variable decode" `Quick
-        test_dep_fixed_after_variable_decode;
+        test_dep_trailer_decode;
       Alcotest.test_case "dep: fixed after variable roundtrip" `Quick
-        test_dep_fixed_after_variable_roundtrip;
+        test_dep_trailer_roundtrip;
       (* wire_size API for variable codecs *)
       Alcotest.test_case "dep: is_fixed" `Quick test_dep_is_fixed;
       Alcotest.test_case "dep: wire_size raises" `Quick
@@ -1605,7 +1605,7 @@ let suite =
       (* Codec.ref expressions *)
       Alcotest.test_case "dep: codec ref" `Quick test_dep_codec_ref;
       Alcotest.test_case "dep: codec ref size eval" `Quick
-        test_dep_codec_ref_size_eval;
+        test_dep_ref_size_eval;
       (* to_struct for variable-size codecs *)
       Alcotest.test_case "dep: to_struct" `Quick test_dep_to_struct;
       Alcotest.test_case "dep: trailer to_struct" `Quick
