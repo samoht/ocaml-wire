@@ -11,7 +11,6 @@ open Space
 
 type 'a schema = {
   name : string;
-  codec : 'a Wire.Codec.t;
   size : int;
   default : 'a;
   make_data : int -> bytes array;
@@ -24,7 +23,6 @@ type any_schema = Any : 'a schema -> any_schema
 let schema name codec size default make_data =
   {
     name;
-    codec;
     size;
     default;
     make_data;

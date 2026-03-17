@@ -22,7 +22,7 @@ let simple_header_codec =
 let simple_header_struct = Codec.to_struct simple_header_codec
 
 let simple_header_module =
-  module_ ~doc:"Simple header for differential testing" "SimpleHeader"
+  module_ ~doc:"Simple header for differential testing"
     [ typedef ~entrypoint:true simple_header_struct ]
 
 (* Constrained schema - constraints are applied in 3D generation,
@@ -40,5 +40,5 @@ let constrained_packet_codec =
       ]
 
 let constrained_packet_module =
-  module_ ~doc:"Constrained packet for differential testing" "ConstrainedPacket"
+  module_ ~doc:"Constrained packet for differential testing"
     [ typedef ~entrypoint:true (Codec.to_struct constrained_packet_codec) ]

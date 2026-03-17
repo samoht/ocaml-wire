@@ -4,7 +4,7 @@ type schema = { name : string; module_ : Wire.module_; wire_size : int }
 
 let schema_of_struct s =
   let name = Wire.struct_name s in
-  let m = Wire.module_ name [ Wire.typedef ~entrypoint:true s ] in
+  let m = Wire.module_ [ Wire.typedef ~entrypoint:true s ] in
   let wire_size =
     match Wire.size_of_struct s with
     | Some n -> n

@@ -33,10 +33,10 @@ let bitfields () =
         field "z" (bits ~width:16 bf_uint32);
       ]
   in
-  module_ "Bitfields" [ typedef bf; typedef ~entrypoint:true bf2; typedef bf3 ]
+  module_ [ typedef bf; typedef ~entrypoint:true bf2; typedef bf3 ]
 
 let enumerations () =
-  module_ "Enumerations"
+  module_
     [
       enum_decl "Enum8" [ ("Enum8_1", 0); ("Enum8_2", 1); ("Enum8_3", 2) ] uint8;
       enum_decl "Enum32"
@@ -81,7 +81,7 @@ let field_dependence () =
         field "payload" (apply (type_ref "D") [ ref "key" ]);
       ]
   in
-  module_ "FieldDependence"
+  module_
     [
       typedef t_struct;
       typedef ~entrypoint:true s_struct;
@@ -90,7 +90,7 @@ let field_dependence () =
     ]
 
 let gen_struct name s =
-  let m = module_ name [ typedef ~entrypoint:true s ] in
+  let m = module_ [ typedef ~entrypoint:true s ] in
   to_3d_file (name ^ ".3d") m
 
 let () =

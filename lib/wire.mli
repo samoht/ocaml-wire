@@ -489,8 +489,8 @@ val casetype_decl : string -> param list -> 'a typ -> decl_case list -> decl
 type module_
 (** A 3D module (file). *)
 
-val module_ : ?doc:string -> string -> decl list -> module_
-(** [module_ ?doc name decls] creates a module. *)
+val module_ : ?doc:string -> decl list -> module_
+(** [module_ ?doc decls] creates a module. *)
 
 (** {1 3D Output} *)
 

@@ -279,9 +279,9 @@ let casetype_decl name params tag cases =
   Casetype_decl { name; params; tag = Pack_typ tag; cases }
 
 (* Module *)
-type module_ = { doc : string option; name : string; decls : decl list }
+type module_ = { doc : string option; decls : decl list }
 
-let module_ ?doc name decls = { doc; name; decls }
+let module_ ?doc decls = { doc; decls }
 
 (* Pretty printing using Fmt *)
 
@@ -386,10 +386,6 @@ let pp_action ppf = function
       Fmt.pf ppf "{:on-success %a }" Fmt.(list ~sep:sp pp_action_stmt) stmts
   | On_act stmts ->
       Fmt.pf ppf "{:act %a }" Fmt.(list ~sep:sp pp_action_stmt) stmts
-
-let pp_bitwidth : type a. a typ -> int option = function
-  | Bits { width; _ } -> Some width
-  | _ -> None
 
 (* Extract field suffix for arrays - the modifier goes after the field name *)
 type field_suffix =
@@ -663,24 +659,6 @@ let refill dec =
       fill ()
 
 let[@inline] available dec = dec.i_len - dec.i_next
-
-let[@inline] read_byte dec =
-  if dec.i_next >= dec.i_len then begin
-    refill dec;
-    if dec.is_eod && dec.i_next >= dec.i_len then None
-    else begin
-      let b = Bytes.get_uint8 dec.i dec.i_next in
-      dec.i_next <- dec.i_next + 1;
-      dec.position <- dec.position + 1;
-      Some b
-    end
-  end
-  else begin
-    let b = Bytes.get_uint8 dec.i dec.i_next in
-    dec.i_next <- dec.i_next + 1;
-    dec.position <- dec.position + 1;
-    Some b
-  end
 
 (* Read n bytes for small fixed-size fields (n <= 8).
    Returns offset into dec.i. Raises Parse_exn on EOF. *)
@@ -1308,35 +1286,6 @@ let encode_to_string typ v =
       encode typ v writer;
       Buffer.contents buf
 
-(* ==================== Typed Record DSL (ctypes-like) ==================== *)
-
-type ('a, 'r) field_codec = {
-  name : string;
-  constraint_ : bool expr option;
-  typ : 'a typ;
-  get : 'r -> 'a;
-  set : 'a -> 'r -> 'r;
-}
-(** A field codec for field of type ['a] in record of type ['r] *)
-
-(** Specialized encode/decode functions built at codec construction time. This
-    avoids interpretation overhead by generating direct operations on
-    Bytesrw.Slice, similar to hand-written codecs but integrated with the
-    streaming API. *)
-
-type 'r record_codec = {
-  record_name : string;
-  fields : 'r field_codec_packed list;
-  default : 'r;
-  wire_size : int option; (* Pre-computed fixed wire size, None if variable *)
-}
-(** A record codec for type ['r]. Contains only the schema description.
-    Specialized encode/decode functions are built by
-    [Record.encode]/[Record.decode]. *)
-
-and 'r field_codec_packed =
-  | Field_codec : ('a, 'r) field_codec -> 'r field_codec_packed
-
 (** Build a specialized field encoder: writes field value to bytes at offset.
     Returns the new offset. Works directly on the slice's underlying bytes. *)
 let rec build_field_encoder : type a. a typ -> bytes -> int -> a -> int =
@@ -1400,411 +1349,9 @@ let rec build_field_encoder : type a. a typ -> bytes -> int -> a -> int =
       (* Fallback for complex types - not specialized *)
       fun _buf _off _v -> failwith "build_field_encoder: unsupported type"
 
-(** Build a specialized field decoder: reads field value from slice's bytes.
-    Takes the slice's bytes, first offset, and field offset within the record.
-    Returns the value and new field offset. *)
-let rec build_field_decoder : type a. a typ -> bytes -> int -> int -> a * int =
- fun typ ->
-  match typ with
-  | Uint8 -> fun buf base off -> (Bytes.get_uint8 buf (base + off), off + 1)
-  | Uint16 Little ->
-      fun buf base off -> (Bytes.get_uint16_le buf (base + off), off + 2)
-  | Uint16 Big ->
-      fun buf base off -> (Bytes.get_uint16_be buf (base + off), off + 2)
-  | Uint32 Little ->
-      fun buf base off -> (UInt32.get_le buf (base + off), off + 4)
-  | Uint32 Big -> fun buf base off -> (UInt32.get_be buf (base + off), off + 4)
-  | Uint63 Little ->
-      fun buf base off -> (UInt63.get_le buf (base + off), off + 8)
-  | Uint63 Big -> fun buf base off -> (UInt63.get_be buf (base + off), off + 8)
-  | Uint64 Little ->
-      fun buf base off -> (Bytes.get_int64_le buf (base + off), off + 8)
-  | Uint64 Big ->
-      fun buf base off -> (Bytes.get_int64_be buf (base + off), off + 8)
-  | Byte_array { size = Int n } ->
-      fun buf base off -> (Bytes.sub_string buf (base + off) n, off + n)
-  | Byte_slice { size = Int n } ->
-      fun buf base off -> (Slice.make buf ~first:(base + off) ~length:n, off + n)
-  | Where { inner; _ } -> build_field_decoder inner
-  | Enum { base; _ } -> build_field_decoder base
-  | Map { inner; decode; _ } ->
-      let dec = build_field_decoder inner in
-      fun buf base off ->
-        let v, off' = dec buf base off in
-        (decode v, off')
-  | Unit -> fun _buf _base off -> ((), off)
-  | _ ->
-      (* Fallback for complex types *)
-      fun _buf _base _off -> failwith "build_field_decoder: unsupported type"
-
-(** Build a mutable-offset field decoder (avoids tuple allocation). Takes bytes,
-    base, mutable offset ref. Returns value, mutates offset. *)
-let rec build_field_decoder_mut : type a. a typ -> bytes -> int -> int ref -> a
-    =
- fun typ ->
-  match typ with
-  | Uint8 ->
-      fun buf base off ->
-        let v = Bytes.get_uint8 buf (base + !off) in
-        off := !off + 1;
-        v
-  | Uint16 Little ->
-      fun buf base off ->
-        let v = Bytes.get_uint16_le buf (base + !off) in
-        off := !off + 2;
-        v
-  | Uint16 Big ->
-      fun buf base off ->
-        let v = Bytes.get_uint16_be buf (base + !off) in
-        off := !off + 2;
-        v
-  | Uint32 Little ->
-      fun buf base off ->
-        let v = UInt32.get_le buf (base + !off) in
-        off := !off + 4;
-        v
-  | Uint32 Big ->
-      fun buf base off ->
-        let v = UInt32.get_be buf (base + !off) in
-        off := !off + 4;
-        v
-  | Uint63 Little ->
-      fun buf base off ->
-        let v = UInt63.get_le buf (base + !off) in
-        off := !off + 8;
-        v
-  | Uint63 Big ->
-      fun buf base off ->
-        let v = UInt63.get_be buf (base + !off) in
-        off := !off + 8;
-        v
-  | Uint64 Little ->
-      fun buf base off ->
-        let v = Bytes.get_int64_le buf (base + !off) in
-        off := !off + 8;
-        v
-  | Uint64 Big ->
-      fun buf base off ->
-        let v = Bytes.get_int64_be buf (base + !off) in
-        off := !off + 8;
-        v
-  | Byte_array { size = Int n } ->
-      fun buf base off ->
-        let v = Bytes.sub_string buf (base + !off) n in
-        off := !off + n;
-        v
-  | Byte_slice { size = Int n } ->
-      fun buf base off ->
-        let v = Slice.make buf ~first:(base + !off) ~length:n in
-        off := !off + n;
-        v
-  | Where { inner; _ } -> build_field_decoder_mut inner
-  | Enum { base; _ } -> build_field_decoder_mut base
-  | Map { inner; decode; _ } ->
-      let dec = build_field_decoder_mut inner in
-      fun buf base off -> decode (dec buf base off)
-  | Unit -> fun _buf _base _off -> ()
-  | _ ->
-      fun _buf _base _off ->
-        failwith "build_field_decoder_mut: unsupported type"
-
-(** CPS-style field decoder: threads constructor through decode chain. This is
-    the repr pattern that avoids intermediate record allocations. Type: bytes ->
-    int -> int ref -> ('a -> 'b) -> 'b *)
-let rec build_field_decoder_cps : type a.
-    a typ -> bytes -> int -> int ref -> (a -> 'k) -> 'k =
- fun typ ->
-  match typ with
-  | Uint8 ->
-      fun buf base off k ->
-        let v = Bytes.get_uint8 buf (base + !off) in
-        off := !off + 1;
-        k v
-  | Uint16 Little ->
-      fun buf base off k ->
-        let v = Bytes.get_uint16_le buf (base + !off) in
-        off := !off + 2;
-        k v
-  | Uint16 Big ->
-      fun buf base off k ->
-        let v = Bytes.get_uint16_be buf (base + !off) in
-        off := !off + 2;
-        k v
-  | Uint32 Little ->
-      fun buf base off k ->
-        let v = UInt32.get_le buf (base + !off) in
-        off := !off + 4;
-        k v
-  | Uint32 Big ->
-      fun buf base off k ->
-        let v = UInt32.get_be buf (base + !off) in
-        off := !off + 4;
-        k v
-  | Uint63 Little ->
-      fun buf base off k ->
-        let v = UInt63.get_le buf (base + !off) in
-        off := !off + 8;
-        k v
-  | Uint63 Big ->
-      fun buf base off k ->
-        let v = UInt63.get_be buf (base + !off) in
-        off := !off + 8;
-        k v
-  | Uint64 Little ->
-      fun buf base off k ->
-        let v = Bytes.get_int64_le buf (base + !off) in
-        off := !off + 8;
-        k v
-  | Uint64 Big ->
-      fun buf base off k ->
-        let v = Bytes.get_int64_be buf (base + !off) in
-        off := !off + 8;
-        k v
-  | Byte_array { size = Int n } ->
-      fun buf base off k ->
-        let v = Bytes.sub_string buf (base + !off) n in
-        off := !off + n;
-        k v
-  | Byte_slice { size = Int n } ->
-      fun buf base off k ->
-        let v = Slice.make buf ~first:(base + !off) ~length:n in
-        off := !off + n;
-        k v
-  | Where { inner; _ } -> build_field_decoder_cps inner
-  | Enum { base; _ } -> build_field_decoder_cps base
-  | Map { inner; decode; _ } ->
-      let dec = build_field_decoder_cps inner in
-      fun buf base off k -> dec buf base off (fun v -> k (decode v))
-  | Unit -> fun _buf _base _off k -> k ()
-  | _ ->
-      fun _buf _base _off _k ->
-        failwith "build_field_decoder_cps: unsupported type"
-
-(** Create a field codec *)
-let field_codec name ?constraint_ typ ~get ~set =
-  { name; constraint_; typ; get; set }
-
-(** Create a record codec schema. This is just data - no specialization yet.
-    Specialization happens when you call [Record.encode]/[Record.decode]. *)
-let record_codec name ~default fields =
-  let wire_size =
-    List.fold_left
-      (fun acc (Field_codec fc) ->
-        match (acc, field_wire_size fc.typ) with
-        | Some a, Some b -> Some (a + b)
-        | _ -> None)
-      (Some 0) fields
-  in
-  { record_name = name; fields; default; wire_size }
-
-(** [record_wire_size codec] returns the fixed wire size of the codec, or [None]
-    if the codec has variable-length fields. Callers should check buffer length
-    before calling decode to avoid index-out-of-bounds errors. *)
-let record_wire_size codec = codec.wire_size
-
-(** Pack a field codec for storage in record *)
-let pack_field fc = Field_codec fc
-
-(* Bitfield encoder accumulator *)
-type bf_enc_accum = {
-  bfe_base : bitfield_base;
-  bfe_word : int;
-  bfe_bits_used : int;
-  bfe_total_bits : int;
-}
-
-let bf_write_word enc base word =
-  match base with
-  | BF_U8 -> write_byte enc word
-  | BF_U16 Little -> write_uint16_le enc word
-  | BF_U16 Big -> write_uint16_be enc word
-  | BF_U32 Little -> write_int32_le enc (Int32.of_int word)
-  | BF_U32 Big -> write_int32_be enc (Int32.of_int word)
-
-(* Insert bits into accumulator at current position (MSB first) *)
-let bf_insert accum width value =
-  let shift = accum.bfe_total_bits - accum.bfe_bits_used - width in
-  let mask = (1 lsl width) - 1 in
-  let masked = value land mask in
-  let word' = accum.bfe_word lor (masked lsl shift) in
-  { accum with bfe_word = word'; bfe_bits_used = accum.bfe_bits_used + width }
-
-(** Encode a record value to a writer with bitfield packing *)
-let encode_bf_accum enc flush_accum accum_opt base width field_val =
-  let accum_opt' =
-    match accum_opt with
-    | Some accum
-      when bf_compatible accum.bfe_base base
-           && accum.bfe_bits_used + width <= accum.bfe_total_bits ->
-        Some (bf_insert accum width field_val)
-    | _ ->
-        flush_accum accum_opt;
-        let total = bf_total_bits base in
-        let accum =
-          {
-            bfe_base = base;
-            bfe_word = 0;
-            bfe_bits_used = 0;
-            bfe_total_bits = total;
-          }
-        in
-        Some (bf_insert accum width field_val)
-  in
-  match accum_opt' with
-  | Some a when a.bfe_bits_used = a.bfe_total_bits ->
-      bf_write_word enc a.bfe_base a.bfe_word;
-      None
-  | other -> other
-
-let encode_record : type r.
-    r record_codec -> r -> Writer.t -> (unit, parse_error) result =
- fun codec v writer ->
-  let enc = encoder writer in
-  let flush_accum = function
-    | None -> ()
-    | Some accum -> bf_write_word enc accum.bfe_base accum.bfe_word
-  in
-  let rec encode_fields (ctx : int Ctx.t) accum_opt = function
-    | [] ->
-        flush_accum accum_opt;
-        flush enc
-    | Field_codec fc :: rest -> (
-        let field_val = fc.get v in
-        match fc.typ with
-        | Bits { width; base } ->
-            let accum_opt' =
-              encode_bf_accum enc flush_accum accum_opt base width field_val
-            in
-            let ctx' = Ctx.add fc.name field_val ctx in
-            check_constraint ctx' fc.constraint_;
-            encode_fields ctx' accum_opt' rest
-        | _ ->
-            flush_accum accum_opt;
-            let ctx' = encode_with_ctx ctx fc.typ field_val enc in
-            let ctx'' = Ctx.add fc.name (val_to_int fc.typ field_val) ctx' in
-            check_constraint ctx'' fc.constraint_;
-            encode_fields ctx'' None rest)
-  in
-  match encode_fields empty_ctx None codec.fields with
-  | () -> Ok ()
-  | exception Parse_exn e -> Error e
-
-(** Build a staged record encoder: returns a slice with encoded data. Following
-    repr's pattern: iteration over fields happens once at staging time, building
-    closures that are fast to execute.
-
-    WARNING: The returned slice's underlying buffer may be reused between calls.
-    Copy the slice data before the next encode if you need to keep it. *)
-let encode_record_to_slice : type r. r record_codec -> (r -> Slice.t) Staged.t =
- fun codec ->
-  match codec.wire_size with
-  | Some wire_size ->
-      (* Build field encoders at staging time - this is the repr pattern *)
-      let buf = Bytes.create wire_size in
-      let field_encoders =
-        List.filter_map
-          (fun (Field_codec fc) ->
-            match field_wire_size fc.typ with
-            | Some _ ->
-                let encoder = build_field_encoder fc.typ in
-                Some (fun b off v -> encoder b off (fc.get v))
-            | None -> None)
-          codec.fields
-      in
-      if List.length field_encoders <> List.length codec.fields then
-        (* Not all fields can be specialized - return empty slice *)
-        Staged.stage (fun _v -> Slice.eod)
-      else
-        (* All fields specialized - this closure captures pre-built encoders *)
-        Staged.stage (fun v ->
-            let _ =
-              List.fold_left (fun off enc -> enc buf off v) 0 field_encoders
-            in
-            Slice.make buf ~first:0 ~length:wire_size)
-  | None ->
-      (* Variable-size: can't return slice *)
-      Staged.stage (fun _v -> Slice.eod)
-
-(** Build a staged record decoder: reads from a slice. Following repr's pattern:
-    iteration over fields happens once at staging time, building closures that
-    are fast to execute. *)
-let decode_record_from_slice : type r. r record_codec -> (Slice.t -> r) Staged.t
-    =
- fun codec ->
-  (* Build field decoders using mutable offset to avoid tuple allocation *)
-  let field_decoders =
-    List.filter_map
-      (fun (Field_codec fc) ->
-        match field_wire_size fc.typ with
-        | Some _ ->
-            let decoder = build_field_decoder_mut fc.typ in
-            let set = fc.set in
-            Some (fun buf base off acc -> set (decoder buf base off) acc)
-        | None -> None)
-      codec.fields
-  in
-  let default = codec.default in
-  if List.length field_decoders <> List.length codec.fields then
-    Staged.stage (fun _slice -> default)
-  else
-    (* Convert to array for faster iteration *)
-    let decoders = Array.of_list field_decoders in
-    let n = Array.length decoders in
-    Staged.stage (fun slice ->
-        let buf = Slice.bytes slice in
-        let base = Slice.first slice in
-        let off = Stdlib.ref 0 in
-        let acc = Stdlib.ref default in
-        for i = 0 to n - 1 do
-          acc := decoders.(i) buf base off !acc
-        done;
-        !acc)
-
-(** {2 Zero-allocation encode/decode}
-
-    These functions provide direct bytes access without slice allocation. Use
-    when you need maximum performance and can manage buffer lifetime. *)
-
-type 'r encode_context = {
-  buffer : bytes;
-  wire_size : int;
-  encode : 'r -> unit;
-}
 (** Context for zero-allocation encoding. The [buffer] is shared and reused
     between calls to [encode]. Copy the bytes before the next [encode] if you
     need to keep them. *)
-
-let encode_record_to_bytes : type r. r record_codec -> r encode_context option =
- fun codec ->
-  match codec.wire_size with
-  | Some wire_size ->
-      let buf = Bytes.create wire_size in
-      (* Build field encoders at staging time - each captures its getter *)
-      let field_encoders =
-        List.filter_map
-          (fun (Field_codec fc) ->
-            match field_wire_size fc.typ with
-            | Some _ ->
-                let encoder = build_field_encoder fc.typ in
-                let get = fc.get in
-                (* This function is built once, captures encoder and get *)
-                Some (fun v b off -> encoder b off (get v))
-            | None -> None)
-          codec.fields
-      in
-      if List.length field_encoders <> List.length codec.fields then None
-      else
-        (* Convert to array for faster iteration without closure allocation *)
-        let encoders = Array.of_list field_encoders in
-        let n = Array.length encoders in
-        let encode v =
-          let off = Stdlib.ref 0 in
-          for i = 0 to n - 1 do
-            off := encoders.(i) v buf !off
-          done
-        in
-        Some { buffer = buf; wire_size; encode }
-  | None -> None
 
 (** Build a direct field reader that reads at a fixed offset. No tuples, no refs
     \- just pure value read. Caller must ensure the buffer is large enough. *)
@@ -1831,198 +1378,6 @@ let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
       fun buf base -> decode (read buf base)
   | Unit -> fun _buf _base -> ()
   | _ -> fun _buf _base -> failwith "build_field_reader: unsupported type"
-
-let decode_record_from_bytes : type r.
-    r record_codec -> (bytes -> int -> r) Staged.t =
- fun codec ->
-  (* Precompute field offsets and build readers at staging time *)
-  let field_info =
-    let current_off = Stdlib.ref 0 in
-    List.filter_map
-      (fun (Field_codec fc) ->
-        match field_wire_size fc.typ with
-        | Some size ->
-            let off = !current_off in
-            current_off := !current_off + size;
-            (* Build a direct reader at this fixed offset *)
-            let reader = build_field_reader fc.typ off in
-            let set = fc.set in
-            Some (fun buf base acc -> set (reader buf base) acc)
-        | None -> None)
-      codec.fields
-  in
-  let default = codec.default in
-  if List.length field_info <> List.length codec.fields then
-    Staged.stage (fun _buf _base -> default)
-  else
-    (* Convert to array for iteration *)
-    let decoders = Array.of_list field_info in
-    let n = Array.length decoders in
-    Staged.stage (fun buf base ->
-        let acc = Stdlib.ref default in
-        for i = 0 to n - 1 do
-          acc := decoders.(i) buf base !acc
-        done;
-        !acc)
-
-(** {2 Zero-alloc decode with explicit types}
-
-    For truly zero intermediate allocations, use these typed decode functions
-    that build readers at staging time and call a make function directly. Only
-    the final record is allocated - no intermediate records or refs. *)
-
-(** Build zero-alloc decoder for 1-field record *)
-let decode_make1 : type a1 r.
-    a1 typ -> make:(a1 -> r) -> (bytes -> int -> r) Staged.t =
- fun t1 ~make ->
-  let read1 = build_field_reader t1 0 in
-  Staged.stage (fun buf base -> make (read1 buf base))
-
-(** Build zero-alloc decoder for 2-field record *)
-let decode_make2 : type a1 a2 r.
-    a1 typ -> a2 typ -> make:(a1 -> a2 -> r) -> (bytes -> int -> r) Staged.t =
- fun t1 t2 ~make ->
-  match (field_wire_size t1, field_wire_size t2) with
-  | Some s1, Some _ ->
-      let read1 = build_field_reader t1 0 in
-      let read2 = build_field_reader t2 s1 in
-      Staged.stage (fun buf base -> make (read1 buf base) (read2 buf base))
-  | _ -> failwith "decode_make2: variable-size fields not supported"
-
-(** Build zero-alloc decoder for 3-field record *)
-let decode_make3 : type a1 a2 a3 r.
-    a1 typ ->
-    a2 typ ->
-    a3 typ ->
-    make:(a1 -> a2 -> a3 -> r) ->
-    (bytes -> int -> r) Staged.t =
- fun t1 t2 t3 ~make ->
-  match (field_wire_size t1, field_wire_size t2, field_wire_size t3) with
-  | Some s1, Some s2, Some _ ->
-      let read1 = build_field_reader t1 0 in
-      let read2 = build_field_reader t2 s1 in
-      let read3 = build_field_reader t3 (s1 + s2) in
-      Staged.stage (fun buf base ->
-          make (read1 buf base) (read2 buf base) (read3 buf base))
-  | _ -> failwith "decode_make3: variable-size fields not supported"
-
-(** Build zero-alloc decoder for 4-field record *)
-let decode_make4 : type a1 a2 a3 a4 r.
-    a1 typ ->
-    a2 typ ->
-    a3 typ ->
-    a4 typ ->
-    make:(a1 -> a2 -> a3 -> a4 -> r) ->
-    (bytes -> int -> r) Staged.t =
- fun t1 t2 t3 t4 ~make ->
-  match
-    ( field_wire_size t1,
-      field_wire_size t2,
-      field_wire_size t3,
-      field_wire_size t4 )
-  with
-  | Some s1, Some s2, Some s3, Some _ ->
-      let read1 = build_field_reader t1 0 in
-      let read2 = build_field_reader t2 s1 in
-      let read3 = build_field_reader t3 (s1 + s2) in
-      let read4 = build_field_reader t4 (s1 + s2 + s3) in
-      Staged.stage (fun buf base ->
-          make (read1 buf base) (read2 buf base) (read3 buf base)
-            (read4 buf base))
-  | _ -> failwith "decode_make4: variable-size fields not supported"
-
-(** {2 Bounds-checked decode with exceptions}
-
-    Same as decode_make* but with bounds checking that raises Parse_error. *)
-
-(** Build bounds-checked decoder for 1-field record *)
-let decode_make1_exn : type a1 r.
-    a1 typ -> make:(a1 -> r) -> (bytes -> int -> r) Staged.t =
- fun t1 ~make ->
-  match field_wire_size t1 with
-  | Some total_size ->
-      let read1 = build_field_reader t1 0 in
-      Staged.stage (fun buf base ->
-          let len = Bytes.length buf in
-          if base + total_size > len then
-            raise_eof ~expected:total_size ~got:(len - base);
-          make (read1 buf base))
-  | None -> failwith "decode_make1_exn: variable-size fields not supported"
-
-(** Build bounds-checked decoder for 2-field record *)
-let decode_make2_exn : type a1 a2 r.
-    a1 typ -> a2 typ -> make:(a1 -> a2 -> r) -> (bytes -> int -> r) Staged.t =
- fun t1 t2 ~make ->
-  match (field_wire_size t1, field_wire_size t2) with
-  | Some s1, Some s2 ->
-      let total_size = s1 + s2 in
-      let read1 = build_field_reader t1 0 in
-      let read2 = build_field_reader t2 s1 in
-      Staged.stage (fun buf base ->
-          let len = Bytes.length buf in
-          if base + total_size > len then
-            raise_eof ~expected:total_size ~got:(len - base);
-          make (read1 buf base) (read2 buf base))
-  | _ -> failwith "decode_make2_exn: variable-size fields not supported"
-
-(** Build bounds-checked decoder for 3-field record *)
-let decode_make3_exn : type a1 a2 a3 r.
-    a1 typ ->
-    a2 typ ->
-    a3 typ ->
-    make:(a1 -> a2 -> a3 -> r) ->
-    (bytes -> int -> r) Staged.t =
- fun t1 t2 t3 ~make ->
-  match (field_wire_size t1, field_wire_size t2, field_wire_size t3) with
-  | Some s1, Some s2, Some s3 ->
-      let total_size = s1 + s2 + s3 in
-      let read1 = build_field_reader t1 0 in
-      let read2 = build_field_reader t2 s1 in
-      let read3 = build_field_reader t3 (s1 + s2) in
-      Staged.stage (fun buf base ->
-          let len = Bytes.length buf in
-          if base + total_size > len then
-            raise_eof ~expected:total_size ~got:(len - base);
-          make (read1 buf base) (read2 buf base) (read3 buf base))
-  | _ -> failwith "decode_make3_exn: variable-size fields not supported"
-
-(** Build bounds-checked decoder for 4-field record *)
-let decode_make4_exn : type a1 a2 a3 a4 r.
-    a1 typ ->
-    a2 typ ->
-    a3 typ ->
-    a4 typ ->
-    make:(a1 -> a2 -> a3 -> a4 -> r) ->
-    (bytes -> int -> r) Staged.t =
- fun t1 t2 t3 t4 ~make ->
-  match
-    ( field_wire_size t1,
-      field_wire_size t2,
-      field_wire_size t3,
-      field_wire_size t4 )
-  with
-  | Some s1, Some s2, Some s3, Some s4 ->
-      let total_size = s1 + s2 + s3 + s4 in
-      let read1 = build_field_reader t1 0 in
-      let read2 = build_field_reader t2 s1 in
-      let read3 = build_field_reader t3 (s1 + s2) in
-      let read4 = build_field_reader t4 (s1 + s2 + s3) in
-      Staged.stage (fun buf base ->
-          let len = Bytes.length buf in
-          if base + total_size > len then
-            raise_eof ~expected:total_size ~got:(len - base);
-          make (read1 buf base) (read2 buf base) (read3 buf base)
-            (read4 buf base))
-  | _ -> failwith "decode_make4_exn: variable-size fields not supported"
-
-(** Convert record codec to struct_ for 3D generation *)
-let record_to_struct codec =
-  let fields =
-    List.map
-      (fun (Field_codec fc) -> field fc.name ?constraint_:fc.constraint_ fc.typ)
-      codec.fields
-  in
-  struct_ codec.record_name fields
 
 (* ==================== EverParse FFI Helpers ==================== *)
 
@@ -2107,39 +1462,6 @@ and ml_type_of_int : int typ -> string = function
   | Where { inner; _ } -> ml_type_of_int inner
   | Map { inner; _ } -> ml_type_of inner
   | _ -> failwith "ml_type_of_int: unsupported type"
-
-(** C expression to store a C struct field into an OCaml value. *)
-let c_to_ml : type a. a typ -> string -> string =
- fun typ c_expr ->
-  match ml_type_of typ with
-  | "int" -> Fmt.str "Val_int(%s)" c_expr
-  | "int32" -> Fmt.str "caml_copy_int32(%s)" c_expr
-  | "int64" -> Fmt.str "caml_copy_int64(%s)" c_expr
-  | _ -> failwith "c_to_ml: unsupported type"
-
-(** C expression to extract an OCaml value into a C value. *)
-let ml_to_c : type a. a typ -> string -> string =
- fun typ ml_expr ->
-  match ml_type_of typ with
-  | "int" -> Fmt.str "Int_val(%s)" ml_expr
-  | "int32" -> Fmt.str "Int32_val(%s)" ml_expr
-  | "int64" -> Fmt.str "Int64_val(%s)" ml_expr
-  | _ -> failwith "ml_to_c: unsupported type"
-
-(** Does this type require a boxed OCaml allocation (int32/int64)? *)
-let is_boxed : type a. a typ -> bool =
- fun typ -> match ml_type_of typ with "int32" | "int64" -> true | _ -> false
-
-(** Named fields with existential type hidden. *)
-type named_field = Named : string * 'a typ -> named_field
-
-let named_fields (s : struct_) =
-  List.filter_map
-    (fun (Field f) ->
-      match f.field_name with
-      | Some name -> Some (Named (name, f.field_typ))
-      | None -> None)
-    s.fields
 
 (** Generate C check stub: [bytes -> bool]. Calls EverParse-generated
     [FooCheckFoo] validation function. *)
@@ -2298,22 +1620,10 @@ module Codec = struct
   (* Type equality witness for GADT-safe accessor setting *)
   type (_, _) eq = Refl : ('a, 'a) eq
 
-  (* Accessor GADT: stores raw parameters instead of closures.
-     Pattern match on tag is a predictable branch; closure call is not. *)
-  type _ accessor =
-    | Bf_u8 : { byte_off : int; shift : int; mask : int } -> int accessor
-    | Bf_u16_le : { byte_off : int; shift : int; mask : int } -> int accessor
-    | Bf_u16_be : { byte_off : int; shift : int; mask : int } -> int accessor
-    | Bf_u32_le : { byte_off : int; shift : int; mask : int } -> int accessor
-    | Bf_u32_be : { byte_off : int; shift : int; mask : int } -> int accessor
-    | Sub : { field_off : int; size : int } -> Slice.t accessor
-    | Fn : (bytes -> int -> 'a) -> 'a accessor
-
   type ('a, 'r) field = {
     name : string;
     typ : 'a typ;
     get : 'r -> 'a;
-    mutable f_acc : 'a accessor;
     mutable f_reader : bytes -> int -> 'a;
     mutable f_writer : bytes -> int -> 'a -> unit;
   }
@@ -2432,7 +1742,6 @@ module Codec = struct
       name;
       typ;
       get;
-      f_acc = Fn not_ready;
       f_reader = not_ready;
       f_writer = (fun _ _ _ -> failwith "field: not added to a record yet");
     }
@@ -2452,16 +1761,6 @@ module Codec = struct
     | BF_U16 e1, BF_U16 e2 -> e1 = e2
     | BF_U32 e1, BF_U32 e2 -> e1 = e2
     | _ -> false
-
-  (* Bounds-checked readers/writers — used by encode/decode which may not
-     have a pre-validated view. *)
-  let bf_read_base base buf off =
-    match base with
-    | BF_U8 -> Bytes.get_uint8 buf off
-    | BF_U16 Little -> Bytes.get_uint16_le buf off
-    | BF_U16 Big -> Bytes.get_uint16_be buf off
-    | BF_U32 Little -> UInt32.get_le buf off
-    | BF_U32 Big -> UInt32.get_be buf off
 
   let bf_write_base base buf off v =
     match base with
@@ -2603,7 +1902,6 @@ module Codec = struct
               (bf.bfc_base_off, bf.bfc_bits_used, 0, [])
           in
           let shift = total - bits_used - width in
-          let mask = (1 lsl width) - 1 in
           let raw_reader = build_bf_reader base base_off shift width in
           let raw_writer = build_bf_writer base base_off shift width in
           let accessor_writer =
@@ -2613,21 +1911,9 @@ module Codec = struct
           let configurator () =
             match eq with
             | Some Refl ->
-                let f_acc =
-                  match base with
-                  | BF_U8 -> Bf_u8 { byte_off = base_off; shift; mask }
-                  | BF_U16 Little ->
-                      Bf_u16_le { byte_off = base_off; shift; mask }
-                  | BF_U16 Big -> Bf_u16_be { byte_off = base_off; shift; mask }
-                  | BF_U32 Little ->
-                      Bf_u32_le { byte_off = base_off; shift; mask }
-                  | BF_U32 Big -> Bf_u32_be { byte_off = base_off; shift; mask }
-                in
-                fld.f_acc <- f_acc;
                 fld.f_reader <- raw_reader;
                 fld.f_writer <- accessor_writer
             | None ->
-                fld.f_acc <- Fn (wrap_reader raw_reader);
                 fld.f_reader <- wrap_reader raw_reader;
                 fld.f_writer <- wrap_writer accessor_writer
           in
@@ -2686,15 +1972,6 @@ module Codec = struct
               in
               let raw_encoder = build_field_encoder typ in
               let configurator () =
-                let f_acc : a accessor =
-                  match
-                    ((typ : w typ), (eq : (a, w) eq option), field_off_static)
-                  with
-                  | Byte_slice { size = Int n }, Some Refl, Some fo ->
-                      Sub { field_off = fo; size = n }
-                  | _ -> Fn (wrap_reader raw_reader)
-                in
-                fld.f_acc <- f_acc;
                 fld.f_reader <- wrap_reader raw_reader;
                 fld.f_writer <-
                   (match field_off_static with
@@ -2810,7 +2087,6 @@ module Codec = struct
               in
               let writer = raw_writer typ in
               let configurator () =
-                fld.f_acc <- Fn (wrap_reader reader);
                 fld.f_reader <- wrap_reader reader;
                 fld.f_writer <- wrap_writer writer
               in
@@ -3029,24 +2305,4 @@ module Codec = struct
     Staged.stage f.f_writer
 
   let ref (type a r) (f : (a, r) field) : int expr = Ref f.name
-end
-
-module Record = struct
-  type ('a, 'r) field = ('a, 'r) field_codec
-  type 'r t = 'r record_codec
-
-  let field = field_codec
-  let ( @: ) name (typ, get, set) = field_codec name typ ~get ~set
-
-  let ( @:? ) name (constraint_, typ, get, set) =
-    field_codec name ~constraint_ typ ~get ~set
-
-  let record name ~default fields =
-    record_codec name ~default (List.map pack_field fields)
-
-  let encode codec = encode_record_to_slice codec
-  let decode codec = decode_record_from_slice codec
-  let encode_bytes codec = encode_record_to_bytes codec
-  let decode_bytes codec = decode_record_from_bytes codec
-  let to_struct = record_to_struct
 end

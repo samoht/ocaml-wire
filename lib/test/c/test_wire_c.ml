@@ -5,8 +5,7 @@ open Wire
 let simple_struct =
   struct_ "TestSimple" [ field "version" uint8; field "length" uint16be ]
 
-let simple_module =
-  module_ "TestSimple" [ typedef ~entrypoint:true simple_struct ]
+let simple_module = module_ [ typedef ~entrypoint:true simple_struct ]
 
 let test_generate_3d_files () =
   let tmpdir = Filename.temp_dir "wire_c_test" "" in

@@ -45,7 +45,7 @@ let test_bitfields () =
           (bits ~width:16 bf_uint32);
       ]
   in
-  let m = module_ "Bitfields" [ typedef bf ] in
+  let m = module_ [ typedef bf ] in
   let output = to_3d m in
   Alcotest.(check bool) "non-empty output" true (String.length output > 0);
   Alcotest.(check bool) "contains UINT32" true (contains ~sub:"UINT32" output);
@@ -53,7 +53,7 @@ let test_bitfields () =
 
 let test_enumerations () =
   let m =
-    module_ "Enumerations"
+    module_
       [
         enum_decl "Enum8"
           [ ("Enum8_1", 0); ("Enum8_2", 1); ("Enum8_3", 2) ]
@@ -71,7 +71,7 @@ let test_field_dependence () =
     struct_ "s"
       [ field "a" uint32; field "b" (apply (type_ref "t") [ ref "a" ]) ]
   in
-  let m = module_ "FieldDependence" [ typedef t_struct; typedef s_struct ] in
+  let m = module_ [ typedef t_struct; typedef s_struct ] in
   let output = to_3d m in
   Alcotest.(check bool) "non-empty output" true (String.length output > 0);
   Alcotest.(check bool) "contains param" true (contains ~sub:"UINT32 a" output)
@@ -83,7 +83,7 @@ let test_casetype () =
       uint32
       [ decl_case 1 uint16; decl_case 2 uint32 ]
   in
-  let m = module_ "Casetype" [ d_casetype ] in
+  let m = module_ [ d_casetype ] in
   let output = to_3d m in
   Alcotest.(check bool) "non-empty output" true (String.length output > 0);
   Alcotest.(check bool)
@@ -99,7 +99,7 @@ let test_pretty_print () =
   let simple =
     struct_ "Simple" [ field "a" uint8; field "b" uint16be; field "c" uint32 ]
   in
-  let m = module_ "Simple" [ typedef simple ] in
+  let m = module_ [ typedef simple ] in
   let output = to_3d m in
   Alcotest.(check bool) "contains typedef" true (String.length output > 0);
   Alcotest.(check bool) "contains UINT8" true (contains ~sub:"UINT8" output);
@@ -378,7 +378,7 @@ let test_record_roundtrip () =
 
 let test_record_to_struct () =
   let s = Codec.to_struct simple_record_codec in
-  let m = module_ "SimpleRecord" [ typedef s ] in
+  let m = module_ [ typedef s ] in
   let output = to_3d m in
   Alcotest.(check bool) "contains UINT8" true (contains ~sub:"UINT8" output);
   Alcotest.(check bool) "contains UINT16" true (contains ~sub:"UINT16" output);
@@ -571,7 +571,7 @@ let test_codec_bitfield_multi_group () =
 
 let test_codec_bitfield_to_struct () =
   let s = Codec.to_struct bf32_codec in
-  let m = module_ "Bf32Test" [ typedef s ] in
+  let m = module_ [ typedef s ] in
   let output = to_3d m in
   Alcotest.(check bool)
     "contains UINT32BE" true
@@ -1472,7 +1472,7 @@ let test_dep_ref_size_eval () =
 let test_dep_to_struct () =
   (* to_struct should produce a valid struct for variable-size codecs *)
   let s = Codec.to_struct dep_slice_codec in
-  let m = module_ "DepSlice" [ typedef s ] in
+  let m = module_ [ typedef s ] in
   let output = to_3d m in
   Alcotest.(check bool)
     "contains UINT16BE" true
@@ -1482,7 +1482,7 @@ let test_dep_to_struct () =
 
 let test_dep_trailer_to_struct () =
   let s = Codec.to_struct trailer_codec in
-  let m = module_ "Trailer" [ typedef s ] in
+  let m = module_ [ typedef s ] in
   let output = to_3d m in
   Alcotest.(check bool) "contains Length" true (contains ~sub:"Length" output);
   Alcotest.(check bool) "contains Payload" true (contains ~sub:"Payload" output);

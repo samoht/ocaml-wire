@@ -5,8 +5,7 @@ open Wire
 let simple_struct =
   struct_ "TestDiffGen" [ field "A" uint8; field "B" uint16be ]
 
-let simple_module =
-  module_ "TestDiffGen" [ typedef ~entrypoint:true simple_struct ]
+let simple_module = module_ [ typedef ~entrypoint:true simple_struct ]
 
 let test_schema_creation () =
   let s =
