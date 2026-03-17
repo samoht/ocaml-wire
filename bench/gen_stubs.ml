@@ -26,10 +26,7 @@ let entries =
     (* Demo: type combinators *)
     ("Mapped", Demo.mapped_struct, Demo.mapped_size, []);
     ("CasesDemo", Demo.cases_demo_struct, Demo.cases_demo_size, []);
-    ( "EnumDemo",
-      Demo.enum_demo_struct,
-      Demo.enum_demo_size,
-      [ Wire.enum_decl "Status" Demo.status_3d_cases Wire.uint8 ] );
+    ("EnumDemo", Demo.enum_demo_struct, Demo.enum_demo_size, []);
     ("Constrained", Demo.constrained_struct, Demo.constrained_size, []);
     (* Space: real protocol *)
     ("CLCW", Space.clcw_struct, Space.clcw_size, []);

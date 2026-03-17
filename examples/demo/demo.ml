@@ -358,7 +358,9 @@ type cases_demo = { cd_type : ptype; cd_id : int }
 
 let f_cd_type =
   Codec.field "PacketType"
-    (cases [ Telemetry; Telecommand ] (bits ~width:1 bf_uint8))
+    (variants "PacketType"
+       [ ("TM", Telemetry); ("TC", Telecommand) ]
+       (bits ~width:1 bf_uint8))
     (fun c -> c.cd_type)
 
 let f_cd_id = Codec.field "Id" (bits ~width:7 bf_uint8) (fun c -> c.cd_id)
@@ -390,16 +392,13 @@ let cases_demo_data n =
    Codec.get calls the map decode on every read. *)
 
 type status = [ `Ok | `Warn | `Err | `Crit ]
-
-let status_of_int = function 0 -> `Ok | 1 -> `Warn | 2 -> `Err | _ -> `Crit
-let int_of_status = function `Ok -> 0 | `Warn -> 1 | `Err -> 2 | `Crit -> 3
-let status_3d_cases = [ ("OK", 0); ("WARN", 1); ("ERR", 2); ("CRIT", 3) ]
-
 type enum_demo = { en_status : status; en_code : int }
 
 let f_en_status =
   Codec.field "StatusCode"
-    (map status_of_int int_of_status (enum "Status" status_3d_cases uint8))
+    (variants "Status"
+       [ ("OK", `Ok); ("WARN", `Warn); ("ERR", `Err); ("CRIT", `Crit) ]
+       uint8)
     (fun e -> e.en_status)
 
 let f_en_code = Codec.field "Code" uint8 (fun e -> e.en_code)
@@ -454,3 +453,161 @@ let constrained_data n =
       buf (i * constrained_size)
   done;
   buf
+
+(* ══════════════════════════════════════════════════════════════════════════
+   3D Feature Coverage
+   ══════════════════════════════════════════════════════════════════════════
+   The following demonstrate Wire DSL features targeting EverParse 3D output.
+   They don't have Codec views (variable-size or 3D-only) but exercise the
+   full API surface and produce valid 3D modules via Wire.to_3d. *)
+
+(* ── 12. Array: repeated fixed-count elements ── *)
+
+let array_struct =
+  struct_ "ArrayDemo"
+    [ field "Count" uint8; field "Items" (array ~len:(ref "Count") uint16be) ]
+
+(* ── 13. ByteArray: byte blob with copy (vs byte_slice zero-copy) ── *)
+
+let byte_array_struct =
+  struct_ "ByteArrayDemo"
+    [ field "Length" uint16be; field "Data" (byte_array ~size:(ref "Length")) ]
+
+(* ── 14. Trailing / padding types ── *)
+
+let all_bytes_struct =
+  struct_ "TrailingData" [ field "Header" uint32be; field "Rest" all_bytes ]
+
+let all_zeros_struct =
+  struct_ "PaddedMsg" [ field "Value" uint16be; field "Padding" all_zeros ]
+
+(* ── 15. SingleElemArray: single element with byte-size constraint ── *)
+
+let single_elem_struct =
+  struct_ "SingleElem"
+    [
+      field "Size" uint16be;
+      field "Elem" (single_elem_array ~size:(ref "Size") uint32be);
+    ]
+
+let single_elem_at_most_struct =
+  struct_ "SingleElemAtMost"
+    [
+      field "MaxSize" uint16be;
+      field "Elem" (single_elem_array_at_most ~size:(ref "MaxSize") uint16be);
+    ]
+
+(* ── 16. Anonymous fields (padding) ── *)
+
+let anon_field_struct =
+  struct_ "WithPadding"
+    [ field "X" uint8; anon_field uint8; field "Y" uint16be ]
+
+(* ── 17. Actions: side-effects during EverParse validation ── *)
+
+let action_struct =
+  struct_ "Validated"
+    [
+      field "Magic" uint32be;
+      field "Data"
+        ~action:(on_success [ return_bool Expr.(ref "Magic" = int 0x1ACFFC1D) ])
+        uint16be;
+    ]
+
+(* ── 18. Actions: full — var, action_if, assign, abort ── *)
+
+let action_full_struct =
+  param_struct "ActionFull"
+    [ mutable_param "out_value" uint32be ]
+    [
+      field "Tag" uint8;
+      field "Value"
+        ~action:
+          (on_act
+             [
+               var "x" Expr.(ref "Tag" + ref "Value");
+               action_if
+                 Expr.(ref "x" > int 0)
+                 [ assign "out_value" (ref "x") ]
+                 (Some [ abort ]);
+             ])
+        uint16be;
+    ]
+
+(* ── 19. Parameterized struct: reusable with constraints ── *)
+
+let param_demo_struct =
+  param_struct "BoundedPayload"
+    [ param "max_len" uint16be; mutable_param "out_len" uint16be ]
+    ~where:Expr.(ref "Length" <= ref "max_len")
+    [
+      field "Length"
+        ~action:(on_success [ assign "out_len" (ref "Length") ])
+        uint16be;
+      field "Data" (byte_array ~size:(ref "Length"));
+    ]
+
+(* ── 20. Casetype: tagged union (different wire layout per tag) ──
+   Unlike enum (same wire size, different named values), casetype selects
+   a different struct/type based on a discriminant field. *)
+
+let casetype_module =
+  module_
+    [
+      typedef (struct_ "PingPayload" [ field "Timestamp" uint64be ]);
+      typedef
+        (struct_ "DataPayload"
+           [
+             field "SeqNo" uint32be;
+             field "Length" uint16be;
+             field "Body" (byte_array ~size:(ref "Length"));
+           ]);
+      typedef (struct_ "AckPayload" [ field "AckedSeqNo" uint32be ]);
+      casetype_decl "MsgBody"
+        [ param "kind" uint8 ]
+        uint8
+        [
+          decl_case 0 (type_ref "PingPayload");
+          decl_case 1 (type_ref "DataPayload");
+          decl_case 2 (type_ref "AckPayload");
+          decl_default uint8;
+        ];
+      typedef ~entrypoint:true
+        (struct_ "Message"
+           [
+             field "Kind" uint8;
+             field "Body" (apply (type_ref "MsgBody") [ ref "Kind" ]);
+           ]);
+    ]
+
+(* ── 21. Module-level declarations: define, extern_fn, extern_probe ── *)
+
+let extern_module =
+  module_
+    [
+      define "MAX_PAYLOAD" 1024;
+      extern_fn "compute_crc"
+        [ param "data" uint8; param "len" uint32be ]
+        uint32be;
+      extern_probe "on_packet";
+      extern_probe ~init:true "init_parser";
+      typedef ~entrypoint:true
+        (struct_ "ExternDemo"
+           [
+             field "Length" uint16be;
+             field "Payload" (byte_array ~size:(ref "Length"));
+           ]);
+    ]
+
+(* ── 22. Type references: type_ref, qualified_ref ── *)
+
+let type_ref_module =
+  module_
+    [
+      typedef (struct_ "Inner" [ field "Value" uint32be ]);
+      typedef ~entrypoint:true
+        (struct_ "Outer" [ field "Tag" uint8; field "Body" (type_ref "Inner") ]);
+    ]
+
+let qualified_ref_example : unit Wire.typ =
+  qualified_ref "OtherModule" "SomeType"

@@ -108,8 +108,10 @@ let test_pp_bool () =
   let _ = Fmt.str "%a" Wire.pp_typ t in
   ()
 
-let test_pp_cases () =
-  let t = Wire.cases [ "A"; "B"; "C" ] Wire.uint8 in
+let test_pp_variants () =
+  let t =
+    Wire.variants "Test" [ ("A", "a"); ("B", "b"); ("C", "c") ] Wire.uint8
+  in
   let _ = Fmt.str "%a" Wire.pp_typ t in
   ()
 
@@ -585,9 +587,11 @@ let test_parse_byte_array buf =
   let _ = Wire.parse_string ba buf in
   ()
 
-let test_parse_enum buf =
+let test_parse_variants buf =
   let buf = truncate buf in
-  let e = Wire.enum "TestEnum" [ ("A", 0); ("B", 1); ("C", 2) ] Wire.uint8 in
+  let e =
+    Wire.variants "TestEnum" [ ("A", `A); ("B", `B); ("C", `C) ] Wire.uint8
+  in
   let _ = Wire.parse_string e buf in
   ()
 
@@ -789,13 +793,15 @@ let test_roundtrip_byte_array buf =
     | Error _ -> fail "byte_array roundtrip parse failed"
   end
 
-let test_roundtrip_enum n =
+let test_roundtrip_variants n =
   let n = abs n mod 3 in
-  let t = Wire.enum "Test" [ ("A", 0); ("B", 1); ("C", 2) ] Wire.uint8 in
-  let encoded = Wire.encode_to_string t n in
+  let variants = [| `A; `B; `C |] in
+  let t = Wire.variants "Test" [ ("A", `A); ("B", `B); ("C", `C) ] Wire.uint8 in
+  let v = variants.(n) in
+  let encoded = Wire.encode_to_string t v in
   match Wire.parse_string t encoded with
-  | Ok decoded -> if n <> decoded then fail "enum roundtrip mismatch"
-  | Error _ -> fail "enum roundtrip parse failed"
+  | Ok decoded -> if v <> decoded then fail "variants roundtrip mismatch"
+  | Error _ -> fail "variants roundtrip parse failed"
 
 (** {1 Record Codec Tests} *)
 
@@ -974,7 +980,7 @@ let pp_tests =
     test_case "pp bf_uint32be" [ int ] test_pp_bf_uint32be;
     test_case "pp map" [ const () ] test_pp_map;
     test_case "pp bool" [ const () ] test_pp_bool;
-    test_case "pp cases" [ const () ] test_pp_cases;
+    test_case "pp cases" [ const () ] test_pp_variants;
     test_case "pp unit" [ const () ] test_pp_unit;
     test_case "pp module" [ const () ] test_pp_module_simple;
   ]
@@ -1037,7 +1043,7 @@ let parse_tests =
     test_case "parse unit" [ bytes ] test_parse_unit;
     test_case "parse array" [ bytes ] test_parse_array;
     test_case "parse byte_array" [ bytes ] test_parse_byte_array;
-    test_case "parse enum" [ bytes ] test_parse_enum;
+    test_case "parse enum" [ bytes ] test_parse_variants;
     test_case "parse where" [ bytes ] test_parse_where;
     test_case "parse all_bytes" [ bytes ] test_parse_all_bytes;
     test_case "parse all_zeros" [ bytes ] test_parse_all_zeros;
@@ -1064,7 +1070,7 @@ let roundtrip_tests =
     test_case "roundtrip bool" [ int ] test_roundtrip_bool;
     test_case "roundtrip array" [ int; int; int ] test_roundtrip_array;
     test_case "roundtrip byte_array" [ bytes ] test_roundtrip_byte_array;
-    test_case "roundtrip enum" [ int ] test_roundtrip_enum;
+    test_case "roundtrip enum" [ int ] test_roundtrip_variants;
   ]
 
 let record_tests =

@@ -12,15 +12,15 @@ bench-demo:
 	BUILD_EVERPARSE=1 dune exec --profile=release bench/demo/bench.exe
 
 bench-routing:
-	dune exec --profile=release bench/bench_routing.exe
+	dune exec --profile=release bench/routing/bench.exe
 
 bench-gateway:
-	dune exec --profile=release bench/bench_gateway.exe
+	dune exec --profile=release bench/gateway/bench.exe
 
 bench-clcw:
-	dune exec --profile=release bench/bench_clcw.exe
+	dune exec --profile=release bench/clcw/bench.exe
 
-PROF_EXE ?= bench/bench_clcw.exe
+PROF_EXE ?= bench/clcw/bench.exe
 
 prof:
 	dune build --profile=release $(PROF_EXE)
@@ -29,7 +29,7 @@ prof:
 	@echo "Profile written to prof.trace — open with: open prof.trace"
 
 memtrace:
-	MEMTRACE=trace.ctf dune exec --profile=release bench/memtrace.exe
+	MEMTRACE=trace.ctf dune exec --profile=release bench/memtrace/bench.exe
 	memtrace_hotspots trace.ctf
 
 clean:

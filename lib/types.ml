@@ -190,6 +190,24 @@ let single_elem_array_at_most ~size elem =
 
 let enum name cases base = Enum { name; cases; base }
 
+let variants name cases base =
+  let enum_cases = List.mapi (fun i (s, _) -> (s, i)) cases in
+  let arr = Array.of_list (List.map snd cases) in
+  let decode n =
+    if n >= 0 && n < Array.length arr then arr.(n)
+    else Fmt.invalid_arg "Wire.variants %s: unknown value %d" name n
+  in
+  let encode v =
+    let rec go i =
+      if i >= Array.length arr then
+        invalid_arg (Fmt.str "Wire.variants %s: unknown variant" name)
+      else if arr.(i) = v then i
+      else go (i + 1)
+    in
+    go 0
+  in
+  map decode encode (enum name enum_cases base)
+
 (* Casetype *)
 type ('tag, 'a) case = 'tag option * 'a typ
 
@@ -275,7 +293,59 @@ let casetype_decl name params tag cases =
 (* Module *)
 type module_ = { doc : string option; decls : decl list }
 
-let module_ ?doc decls = { doc; decls }
+(* Extract enum declarations needed by struct fields. Scans field types for
+   Enum constructors (including under Map/Where wrappers) and returns the
+   corresponding enum_decl entries, deduplicated by name. *)
+let enum_decls (s : struct_) : decl list =
+  let seen = Hashtbl.create 4 in
+  let decls = Stdlib.ref [] in
+  List.iter
+    (fun (Field f) ->
+      let rec extract : type a. a typ -> unit = function
+        | Enum { name; cases; base } when not (Hashtbl.mem seen name) ->
+            Hashtbl.add seen name ();
+            decls := Enum_decl { name; cases; base = Pack_typ base } :: !decls
+        | Map { inner; _ } -> extract inner
+        | Where { inner; _ } -> extract inner
+        | _ -> ()
+      in
+      extract f.field_typ)
+    s.fields;
+  List.rev !decls
+
+let module_ ?doc decls =
+  (* Auto-prepend enum declarations for any enum types used in typedefs
+     that aren't already declared in the module. *)
+  let already_declared =
+    List.fold_left
+      (fun acc d ->
+        match d with Enum_decl { name; _ } -> name :: acc | _ -> acc)
+      [] decls
+  in
+  let extra =
+    List.fold_left
+      (fun acc d ->
+        match d with
+        | Typedef { struct_; _ } ->
+            List.filter
+              (fun e ->
+                match e with
+                | Enum_decl { name; _ } ->
+                    not
+                      (List.mem name already_declared
+                      || List.exists
+                           (function
+                             | Enum_decl { name = n; _ } -> String.equal n name
+                             | _ -> false)
+                           acc)
+                | _ -> false)
+              (enum_decls struct_)
+            @ acc
+        | _ -> acc)
+      [] decls
+  in
+  { doc; decls = List.rev extra @ decls }
+
 let pp_endian ppf = function Little -> () | Big -> Fmt.string ppf "BE"
 
 let pp_bitfield_base ppf = function

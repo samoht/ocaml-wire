@@ -311,13 +311,20 @@ val bool : int typ -> bool typ
       let flag = bool (bits ~width:1 bf_uint16be)
     ]} *)
 
-val cases : 'a list -> int typ -> 'a typ
-(** [cases variants t] maps integer type [t] through a list of variants.
-    Position in the list determines the integer value (0-indexed). Raises
-    [Invalid_argument] on unknown values.
+val variants : string -> (string * 'a) list -> int typ -> 'a typ
+(** [variants name cases base] maps integer type [base] to named variants with
+    EverParse enum validation. Wire values are inferred from position
+    (0-indexed). Each pair [(3d_name, ocaml_value)] defines one variant.
     {[
-      let ptype = cases [ Telemetry; Telecommand ] (bits ~width:1 bf_uint16be)
-    ]} *)
+      type status = [ `Ok | `Warn | `Err | `Crit ]
+
+      let status_typ =
+        variants "Status"
+          [ ("OK", `Ok); ("WARN", `Warn); ("ERR", `Err); ("CRIT", `Crit) ]
+          uint8
+    ]}
+
+    Use {!enum_decls} to extract the 3D enum declaration for module output. *)
 
 (** {2 Special Types} *)
 
@@ -356,11 +363,6 @@ val single_elem_array : size:int expr -> 'a typ -> 'a typ
 val single_elem_array_at_most : size:int expr -> 'a typ -> 'a typ
 (** [single_elem_array_at_most ~size t] is a single element consuming at most
     [size] bytes with padding. *)
-
-(** {2 Enumerations} *)
-
-val enum : string -> (string * int) list -> int typ -> int typ
-(** [enum name cases base] defines an enumeration. *)
 
 (** {2 Tagged Unions (casetype)} *)
 

@@ -214,11 +214,6 @@ val cases_demo_data : int -> bytes
 (** {1 EnumDemo (2 bytes)} *)
 
 type status = [ `Ok | `Warn | `Err | `Crit ]
-
-val status_of_int : int -> status
-val int_of_status : status -> int
-val status_3d_cases : (string * int) list
-
 type enum_demo = { en_status : status; en_code : int }
 
 val enum_demo_codec : enum_demo Wire.Codec.t
@@ -240,3 +235,23 @@ val constrained_struct : Wire.struct_
 val constrained_size : int
 val constrained_default : constrained
 val constrained_data : int -> bytes
+
+(** {1 3D Feature Coverage}
+
+    The following are struct/module definitions exercising Wire DSL features
+    that target EverParse 3D output. They don't have Codec views. *)
+
+val array_struct : Wire.struct_
+val byte_array_struct : Wire.struct_
+val all_bytes_struct : Wire.struct_
+val all_zeros_struct : Wire.struct_
+val single_elem_struct : Wire.struct_
+val single_elem_at_most_struct : Wire.struct_
+val anon_field_struct : Wire.struct_
+val action_struct : Wire.struct_
+val action_full_struct : Wire.struct_
+val param_demo_struct : Wire.struct_
+val casetype_module : Wire.module_
+val extern_module : Wire.module_
+val type_ref_module : Wire.module_
+val qualified_ref_example : unit Wire.typ

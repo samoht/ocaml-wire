@@ -159,16 +159,16 @@ let test_parse_byte_array () =
   | Ok v -> Alcotest.(check string) "byte_array value" "hello" v
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
-let test_parse_enum_valid () =
+let test_parse_variants_valid () =
   let input = "\x01" in
-  let t = enum "Test" [ ("A", 0); ("B", 1); ("C", 2) ] uint8 in
+  let t = variants "Test" [ ("A", `A); ("B", `B); ("C", `C) ] uint8 in
   match parse_string t input with
-  | Ok v -> Alcotest.(check int) "enum value" 1 v
+  | Ok v -> Alcotest.(check bool) "variants value" true (v = `B)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
-let test_parse_enum_invalid () =
+let test_parse_variants_invalid () =
   let input = "\xFF" in
-  let t = enum "Test" [ ("A", 0); ("B", 1); ("C", 2) ] uint8 in
+  let t = variants "Test" [ ("A", `A); ("B", `B); ("C", `C) ] uint8 in
   match parse_string t input with
   | Ok _ -> Alcotest.fail "expected error for invalid enum"
   | Error (Invalid_enum { value; _ }) ->
@@ -278,10 +278,10 @@ let test_encode_byte_array () =
   let encoded = encode_to_string t "hello" in
   Alcotest.(check string) "byte_array encoding" "hello" encoded
 
-let test_encode_enum () =
-  let t = enum "Test" [ ("A", 0); ("B", 1); ("C", 2) ] uint8 in
-  let encoded = encode_to_string t 1 in
-  Alcotest.(check string) "enum encoding" "\x01" encoded
+let test_encode_variants () =
+  let t = variants "Test" [ ("A", `A); ("B", `B); ("C", `C) ] uint8 in
+  let encoded = encode_to_string t `B in
+  Alcotest.(check string) "variants encoding" "\x01" encoded
 
 let test_encode_bitfield () =
   let t = bits ~width:6 bf_uint32 in
@@ -1509,8 +1509,10 @@ let suite =
       Alcotest.test_case "parse: uint64 le" `Quick test_parse_uint64_le;
       Alcotest.test_case "parse: array" `Quick test_parse_array;
       Alcotest.test_case "parse: byte_array" `Quick test_parse_byte_array;
-      Alcotest.test_case "parse: enum valid" `Quick test_parse_enum_valid;
-      Alcotest.test_case "parse: enum invalid" `Quick test_parse_enum_invalid;
+      Alcotest.test_case "parse: variants valid" `Quick
+        test_parse_variants_valid;
+      Alcotest.test_case "parse: variants invalid" `Quick
+        test_parse_variants_invalid;
       Alcotest.test_case "parse: all_bytes" `Quick test_parse_all_bytes;
       Alcotest.test_case "parse: all_zeros valid" `Quick
         test_parse_all_zeros_valid;
@@ -1531,7 +1533,7 @@ let suite =
       Alcotest.test_case "encode: uint32 be" `Quick test_encode_uint32_be;
       Alcotest.test_case "encode: array" `Quick test_encode_array;
       Alcotest.test_case "encode: byte_array" `Quick test_encode_byte_array;
-      Alcotest.test_case "encode: enum" `Quick test_encode_enum;
+      Alcotest.test_case "encode: variants" `Quick test_encode_variants;
       Alcotest.test_case "encode: bitfield" `Quick test_encode_bitfield;
       (* roundtrip *)
       Alcotest.test_case "roundtrip: uint8" `Quick test_roundtrip_uint8;
