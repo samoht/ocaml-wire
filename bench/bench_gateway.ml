@@ -2,12 +2,11 @@
 
     Simulates a downlink TM frame processor:
     - Pre-allocate a stream of TM Transfer Frames (1115-byte CADUs)
-    - For each frame: parse the 6-byte header (11 bitfields), check VCID to
-      select virtual channel, read First Header Pointer to find the first Space
-      Packet, extract packets from the data field (packets may span frames)
+    - For each frame: parse the 6-byte header (11 bitfields), check VCID, read
+      First Header Pointer, extract Space Packets from data field
     - Measure frames/sec and packets reassembled/sec
 
-    Compares: pure C (shift/mask) vs Wire OCaml (Codec.get) vs hand OCaml. *)
+    Compares: pure C (shift/mask) vs Wire OCaml (staged Codec.get). *)
 
 module C = Wire.Codec
 
@@ -57,32 +56,16 @@ let () =
     "TM frame reassembly (%d frames, %d-byte CADUs, %d embedded packets)\n\n" n
     cadu_size total_pkts;
 
-  let time label f =
-    Gc.compact ();
-    let t0 = Unix.gettimeofday () in
-    let pkts = f () in
-    let dt = Unix.gettimeofday () -. t0 in
-    let ns_per_frame = dt *. 1e9 /. float n in
-    let mfps = float n /. dt /. 1e6 in
-    let mpps = float pkts /. dt /. 1e6 in
-    Fmt.pr "  %-45s %5.0f ns/frm  %4.1f Mfrm/s  %4.1f Mpkt/s\n" label
-      ns_per_frame mfps mpps
-  in
-
   let pkt_payload = 64 in
   let pkt_size = sp_hdr + pkt_payload in
 
-  (* Pure C: shift/mask in tight loop *)
+  (* C baseline *)
   let c_ns = C_scenarios.gateway buf n cadu_size in
   let c_pkts = C_scenarios.gateway_pkts () in
   let c_dt = float c_ns /. 1e9 in
-  Fmt.pr "  %-45s %5.0f ns/frm  %4.1f Mfrm/s  %4.1f Mpkt/s\n"
-    "C: shift/mask (tight loop)"
-    (float c_ns /. float n)
-    (float n /. c_dt /. 1e6)
-    (float c_pkts /. c_dt /. 1e6);
+  let c_ns_per = float c_ns /. float n in
 
-  (* Wire: zero-copy field access (partial-apply get outside loop) *)
+  (* Wire: staged get *)
   let get_vcid =
     Wire.Staged.unstage (C.get Space.tm_frame_codec Space.f_tf_vcid)
   in
@@ -95,42 +78,36 @@ let () =
   let get_seq =
     Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_seq_count)
   in
-  time "wire: get VCID + FirstHdrPtr + walk pkts" (fun () ->
-      let pkts = ref 0 in
-      for frame = 0 to n - 1 do
-        let base = frame * cadu_size in
-        let vcid = get_vcid buf base in
-        let fhp = get_fhp buf base in
-        ignore (Sys.opaque_identity vcid);
-        let data_start = base + tm_hdr in
-        let off = ref (data_start + fhp) in
-        while !off + pkt_size <= data_start + data_field_size do
-          let _apid = get_apid buf !off in
-          let _seq = get_seq buf !off in
-          off := !off + pkt_size;
-          incr pkts
-        done
-      done;
-      !pkts);
+  Gc.compact ();
+  let t0 = Unix.gettimeofday () in
+  let w_pkts = ref 0 in
+  for frame = 0 to n - 1 do
+    let base = frame * cadu_size in
+    let vcid = get_vcid buf base in
+    let fhp = get_fhp buf base in
+    ignore (Sys.opaque_identity vcid);
+    let data_start = base + tm_hdr in
+    let off = ref (data_start + fhp) in
+    while !off + pkt_size <= data_start + data_field_size do
+      let _apid = get_apid buf !off in
+      let _seq = get_seq buf !off in
+      off := !off + pkt_size;
+      incr w_pkts
+    done
+  done;
+  let w_dt = Unix.gettimeofday () -. t0 in
+  let w_ns_per = w_dt *. 1e9 /. float n in
+  let ratio = w_ns_per /. c_ns_per in
 
-  (* Hand-written OCaml: hardcoded offsets + shift/mask *)
-  time "hand: Bytes.get_uint16_be + shift/mask" (fun () ->
-      let pkts = ref 0 in
-      for frame = 0 to n - 1 do
-        let base = frame * cadu_size in
-        let w0 = Bytes.get_uint16_be buf base in
-        let vcid = (w0 lsr 1) land 0x7 in
-        let w2 = Bytes.get_uint16_be buf (base + 4) in
-        let fhp = w2 land 0x7FF in
-        ignore (Sys.opaque_identity vcid);
-        let data_start = base + tm_hdr in
-        let off = ref (data_start + fhp) in
-        while !off + pkt_size <= data_start + data_field_size do
-          let w0 = Bytes.get_uint16_be buf !off in
-          let _apid = w0 land 0x7FF in
-          let _seq = Bytes.get_uint16_be buf (!off + 2) land 0x3FFF in
-          off := !off + pkt_size;
-          incr pkts
-        done
-      done;
-      !pkts)
+  Fmt.pr "  %-24s %5.0f ns/frm  %4.1f Mfrm/s  %5.1f Mpkt/s\n" "C (baseline)"
+    c_ns_per
+    (float n /. c_dt /. 1e6)
+    (float c_pkts /. c_dt /. 1e6);
+  Fmt.pr "  %-24s %5.0f ns/frm  %4.1f Mfrm/s  %5.1f Mpkt/s  (%.1fx)\n"
+    "Wire (staged Codec.get)" w_ns_per
+    (float n /. w_dt /. 1e6)
+    (float !w_pkts /. w_dt /. 1e6)
+    ratio;
+  if c_pkts <> !w_pkts then
+    Fmt.pr "\n  MISMATCH! C: %d pkts, Wire: %d pkts\n" c_pkts !w_pkts
+  else Fmt.pr "\n  %d packets reassembled (C and Wire agree)\n" c_pkts

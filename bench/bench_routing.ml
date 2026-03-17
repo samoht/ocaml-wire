@@ -7,28 +7,23 @@
       DataLength, pass payload pointer to handler (no copy)
     - Measure packets/sec and MB/s of payload delivered
 
-    Compares: pure C (shift/mask) vs Wire OCaml (Codec.get) vs hand OCaml. *)
+    Compares: pure C (shift/mask) vs Wire OCaml (staged Codec.get). *)
 
 module C = Wire.Codec
 
-(* Realistic APID distribution: HK (small packets), science (large),
-   diagnostic (medium), idle (minimal). *)
 let apid_of_index i =
   let r = i mod 100 in
-  if r < 40 then i mod 256 (* 40% HK: APIDs 0-255 *)
-  else if r < 75 then 256 + (i mod 768) (* 35% science: 256-1023 *)
-  else if r < 95 then 1024 + (i mod 512) (* 20% diagnostic: 1024-1535 *)
-  else 0x7FF (* 5% idle *)
+  if r < 40 then i mod 256
+  else if r < 75 then 256 + (i mod 768)
+  else if r < 95 then 1024 + (i mod 512)
+  else 0x7FF
 
-(* Packet size distribution: HK=32B, science=256B, diag=64B, idle=8B payload *)
 let payload_size_of_apid apid =
   if apid < 256 then 32
   else if apid < 1024 then 256
   else if apid < 1536 then 64
   else 8
 
-(* Generate a contiguous buffer of n variable-size Space Packets. Returns
-   (buf, n_packets, total_payload_bytes). *)
 let generate_stream n =
   let total = ref 0 in
   let hdr = Space.packet_size in
@@ -71,31 +66,16 @@ let () =
     (total_bytes / 1_000_000)
     (payload_bytes / 1_000_000);
 
-  let time label f =
-    Gc.compact ();
-    Array.fill handler_counts 0 4 0;
-    let t0 = Unix.gettimeofday () in
-    f ();
-    let dt = Unix.gettimeofday () -. t0 in
-    let ns_per = dt *. 1e9 /. float n in
-    let mpps = float n /. dt /. 1e6 in
-    let mbps = float payload_bytes /. dt /. 1e6 in
-    Fmt.pr "  %-50s %5.1f ns/pkt  %5.1f Mpkt/s  %6.0f MB/s\n" label ns_per mpps
-      mbps
-  in
-
   let hdr = Space.packet_size in
 
-  (* Pure C: shift/mask in tight loop *)
+  (* C baseline *)
   let c_ns = C_scenarios.routing buf n in
+  let c_ns_per = float c_ns /. float n in
   let c_dt = float c_ns /. 1e9 in
-  Fmt.pr "  %-50s %5.1f ns/pkt  %5.1f Mpkt/s  %6.0f MB/s\n"
-    "C: shift/mask + dispatch (tight loop)"
-    (float c_ns /. float n)
-    (float n /. c_dt /. 1e6)
-    (float payload_bytes /. c_dt /. 1e6);
+  let c_mpps = float n /. c_dt /. 1e6 in
+  let c_mbps = float payload_bytes /. c_dt /. 1e6 in
 
-  (* Wire (staged): partial-apply get outside loop *)
+  (* Wire: staged get *)
   let get_apid =
     Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_apid)
   in
@@ -105,49 +85,43 @@ let () =
   let get_dlen =
     Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_data_len)
   in
-  time "wire (staged): get APID + SeqCount + DataLen" (fun () ->
-      let off = ref 0 in
-      for _ = 1 to n do
-        let o = !off in
-        let apid = get_apid buf o in
-        let _seq = get_seq buf o in
-        let dlen = get_dlen buf o in
-        dispatch routing_table.(apid);
-        off := o + hdr + dlen + 1
-      done);
+  Gc.compact ();
+  Array.fill handler_counts 0 4 0;
+  let t0 = Unix.gettimeofday () in
+  let off = ref 0 in
+  for _ = 1 to n do
+    let o = !off in
+    let apid = get_apid buf o in
+    let _seq = get_seq buf o in
+    let dlen = get_dlen buf o in
+    dispatch routing_table.(apid);
+    off := o + hdr + dlen + 1
+  done;
+  let w_dt = Unix.gettimeofday () -. t0 in
+  let w_ns_per = w_dt *. 1e9 /. float n in
+  let w_mpps = float n /. w_dt /. 1e6 in
+  let w_mbps = float payload_bytes /. w_dt /. 1e6 in
+  let ratio = w_ns_per /. c_ns_per in
 
-  (* Wire (naive): full 4-arg get inside loop *)
-  time "wire (naive): Codec.get codec field buf off" (fun () ->
-      let off = ref 0 in
-      for _ = 1 to n do
-        let o = !off in
-        let apid =
-          (Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_apid)) buf o
-        in
-        let _seq =
-          (Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_seq_count))
-            buf o
-        in
-        let dlen =
-          (Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_data_len))
-            buf o
-        in
-        dispatch routing_table.(apid);
-        off := o + hdr + dlen + 1
-      done);
+  Fmt.pr "  %-24s %5.1f ns/pkt  %5.1f Mpkt/s  %6.0f MB/s\n" "C (baseline)"
+    c_ns_per c_mpps c_mbps;
+  Fmt.pr "  %-24s %5.1f ns/pkt  %5.1f Mpkt/s  %6.0f MB/s  (%.1fx)\n"
+    "Wire (staged Codec.get)" w_ns_per w_mpps w_mbps ratio;
 
-  (* Hand-written OCaml: hardcoded offsets + shift/mask *)
-  time "hand: Bytes.get_uint16_be + shift/mask + dispatch" (fun () ->
-      let off = ref 0 in
-      for _ = 1 to n do
-        let o = !off in
-        let w0 = Bytes.get_uint16_be buf o in
-        let apid = w0 land 0x7FF in
-        let _seq = Bytes.get_uint16_be buf (o + 2) land 0x3FFF in
-        let dlen = Bytes.get_uint16_be buf (o + 4) in
-        dispatch routing_table.(apid);
-        off := o + hdr + dlen + 1
-      done);
-
-  Fmt.pr "\n  routed: hk=%d sci=%d diag=%d idle=%d\n" handler_counts.(0)
-    handler_counts.(1) handler_counts.(2) handler_counts.(3)
+  (* Validate C and Wire produce identical routing *)
+  let c_hk = C_scenarios.routing_counts 0 in
+  let c_sci = C_scenarios.routing_counts 1 in
+  let c_diag = C_scenarios.routing_counts 2 in
+  let c_idle = C_scenarios.routing_counts 3 in
+  if
+    c_hk <> handler_counts.(0)
+    || c_sci <> handler_counts.(1)
+    || c_diag <> handler_counts.(2)
+    || c_idle <> handler_counts.(3)
+  then
+    Fmt.pr "\n  MISMATCH! C: hk=%d sci=%d diag=%d idle=%d\n" c_hk c_sci c_diag
+      c_idle
+  else
+    Fmt.pr "\n  routed: hk=%d sci=%d diag=%d idle=%d (C and Wire agree)\n"
+      handler_counts.(0) handler_counts.(1) handler_counts.(2)
+      handler_counts.(3)

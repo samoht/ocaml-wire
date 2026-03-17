@@ -42,8 +42,9 @@ CAMLprim value ep_c_routing(value v_buf, value v_n) {
   for (int i = 0; i < n; i++) {
     uint16_t w0 = (buf[off] << 8) | buf[off + 1];
     int apid = w0 & 0x7FF;
-    /* uint16_t w1 = (buf[off+2] << 8) | buf[off+3]; */
-    /* int seq = w1 & 0x3FFF; */
+    uint16_t w1 = (buf[off + 2] << 8) | buf[off + 3];
+    volatile int seq = w1 & 0x3FFF;
+    (void)seq;
     uint16_t dlen = (buf[off + 4] << 8) | buf[off + 5];
     handler_counts[routing_table[apid]]++;
     off += hdr + dlen + 1;
@@ -88,7 +89,9 @@ CAMLprim value ep_c_gateway(value v_buf, value v_n, value v_cadu) {
       uint16_t pw0 = (buf[off] << 8) | buf[off + 1];
       int apid = pw0 & 0x7FF;
       (void)apid;
-      /* uint16_t pw1 = (buf[off+2] << 8) | buf[off+3]; */
+      uint16_t pw1 = (buf[off + 2] << 8) | buf[off + 3];
+      volatile int seq = pw1 & 0x3FFF;
+      (void)seq;
       off += pkt_size;
       pkts++;
     }
