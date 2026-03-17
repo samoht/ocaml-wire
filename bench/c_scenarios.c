@@ -158,9 +158,9 @@ CAMLprim value ep_c_clcw_contiguous(value v_buf, value v_n) {
     /* CLCW layout (MSB→LSB): Type(1) Ver(2) Status(3) COP(2) VCID(6)
        Spare(2) NoRF(1) NoBitlock(1) Lockout(1) Wait(1) Retransmit(1)
        FARMB(2) Report(8) */
-    int lockout = (w >> 12) & 1;
-    int wait = (w >> 11) & 1;
-    int retransmit = (w >> 10) & 1;
+    int lockout = (w >> 13) & 1;
+    int wait = (w >> 12) & 1;
+    int retransmit = (w >> 11) & 1;
     int report = w & 0xFF;
     if (lockout || wait || retransmit || report != (expected_seq & 0xFF))
       anomalies++;
