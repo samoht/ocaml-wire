@@ -1912,65 +1912,50 @@ let encode_record_to_bytes : type r. r record_codec -> r encode_context option =
         Some { buffer = buf; wire_size; encode }
   | None -> None
 
-(* Unsafe readers for build_field_reader — no bounds checking.
-   Callers (Codec.get/set/sub) do not validate offsets or buffer length. *)
+(* Unchecked single-load readers using OCaml C primitives + hardware bswap.
+   %caml_bytes_get16u loads exactly 16 bits (zero-extended), so bswap16
+   always returns 0-0xFFFF — no masking needed. For u32, Int32.to_int needs
+   land 0xFFFF_FFFF to prevent sign extension on 64-bit.
+   Sys.big_endian is a compile-time constant; OCaml eliminates the dead
+   branch when these are inlined. *)
+external unsafe_get_16_ne : bytes -> int -> int = "%caml_bytes_get16u"
+external unsafe_set_16_ne : bytes -> int -> int -> unit = "%caml_bytes_set16u"
+external unsafe_get_32_ne : bytes -> int -> int32 = "%caml_bytes_get32u"
+external unsafe_set_32_ne : bytes -> int -> int32 -> unit = "%caml_bytes_set32u"
+external unsafe_get_64_ne : bytes -> int -> int64 = "%caml_bytes_get64u"
+external bswap16 : int -> int = "%bswap16"
+external bswap32 : int32 -> int32 = "%bswap_int32"
+external bswap64 : int64 -> int64 = "%bswap_int64"
+
 let[@inline] unsafe_get_u8 buf off = Char.code (Bytes.unsafe_get buf off)
 
 let[@inline] unsafe_get_u16_le buf off =
-  let b0 = unsafe_get_u8 buf off in
-  let b1 = unsafe_get_u8 buf (off + 1) in
-  b0 lor (b1 lsl 8)
+  if Sys.big_endian then bswap16 (unsafe_get_16_ne buf off)
+  else unsafe_get_16_ne buf off
 
 let[@inline] unsafe_get_u16_be buf off =
-  let b0 = unsafe_get_u8 buf off in
-  let b1 = unsafe_get_u8 buf (off + 1) in
-  (b0 lsl 8) lor b1
+  if Sys.big_endian then unsafe_get_16_ne buf off
+  else bswap16 (unsafe_get_16_ne buf off)
 
 let[@inline] unsafe_get_u32_le buf off =
-  let b0 = unsafe_get_u8 buf off in
-  let b1 = unsafe_get_u8 buf (off + 1) in
-  let b2 = unsafe_get_u8 buf (off + 2) in
-  let b3 = unsafe_get_u8 buf (off + 3) in
-  b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24)
+  Int32.to_int
+    (if Sys.big_endian then bswap32 (unsafe_get_32_ne buf off)
+     else unsafe_get_32_ne buf off)
+  land 0xFFFF_FFFF
 
 let[@inline] unsafe_get_u32_be buf off =
-  let b0 = unsafe_get_u8 buf off in
-  let b1 = unsafe_get_u8 buf (off + 1) in
-  let b2 = unsafe_get_u8 buf (off + 2) in
-  let b3 = unsafe_get_u8 buf (off + 3) in
-  (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3
+  Int32.to_int
+    (if Sys.big_endian then unsafe_get_32_ne buf off
+     else bswap32 (unsafe_get_32_ne buf off))
+  land 0xFFFF_FFFF
 
 let[@inline] unsafe_get_u64_le buf off =
-  let b0 = unsafe_get_u8 buf off in
-  let b1 = unsafe_get_u8 buf (off + 1) in
-  let b2 = unsafe_get_u8 buf (off + 2) in
-  let b3 = unsafe_get_u8 buf (off + 3) in
-  let b4 = unsafe_get_u8 buf (off + 4) in
-  let b5 = unsafe_get_u8 buf (off + 5) in
-  let b6 = unsafe_get_u8 buf (off + 6) in
-  let b7 = unsafe_get_u8 buf (off + 7) in
-  Int64.(
-    add
-      (of_int (b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24)))
-      (shift_left
-         (of_int (b4 lor (b5 lsl 8) lor (b6 lsl 16) lor (b7 lsl 24)))
-         32))
+  if Sys.big_endian then bswap64 (unsafe_get_64_ne buf off)
+  else unsafe_get_64_ne buf off
 
 let[@inline] unsafe_get_u64_be buf off =
-  let b0 = unsafe_get_u8 buf off in
-  let b1 = unsafe_get_u8 buf (off + 1) in
-  let b2 = unsafe_get_u8 buf (off + 2) in
-  let b3 = unsafe_get_u8 buf (off + 3) in
-  let b4 = unsafe_get_u8 buf (off + 4) in
-  let b5 = unsafe_get_u8 buf (off + 5) in
-  let b6 = unsafe_get_u8 buf (off + 6) in
-  let b7 = unsafe_get_u8 buf (off + 7) in
-  Int64.(
-    add
-      (shift_left
-         (of_int ((b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3))
-         32)
-      (of_int ((b4 lsl 24) lor (b5 lsl 16) lor (b6 lsl 8) lor b7)))
+  if Sys.big_endian then unsafe_get_64_ne buf off
+  else bswap64 (unsafe_get_64_ne buf off)
 
 (** Build a direct field reader that reads at a fixed offset. No tuples, no refs
     \- just pure value read. Uses unsafe reads — caller must ensure the buffer
@@ -2481,6 +2466,7 @@ module Codec = struct
     typ : 'a typ;
     get : 'r -> 'a;
     mutable f_acc : 'a accessor;
+    mutable f_reader : bytes -> int -> 'a;
     mutable f_writer : bytes -> int -> 'a -> unit;
   }
 
@@ -2593,11 +2579,13 @@ module Codec = struct
       }
 
   let field name typ get =
+    let not_ready _ _ = failwith "field: not added to a record yet" in
     {
       name;
       typ;
       get;
-      f_acc = Fn (fun _ _ -> failwith "field: not added to a record yet");
+      f_acc = Fn not_ready;
+      f_reader = not_ready;
       f_writer = (fun _ _ _ -> failwith "field: not added to a record yet");
     }
 
@@ -2635,56 +2623,31 @@ module Codec = struct
     | BF_U32 Little -> UInt32.set_le buf off v
     | BF_U32 Big -> UInt32.set_be buf off v
 
-  (* Unsafe readers — no bounds checking.
-     Callers (get/set) do not validate offsets or buffer length. *)
+  (* Codec-internal readers/writers — delegates to top-level primitives. *)
   let[@inline] unsafe_get_u8 buf off = Char.code (Bytes.unsafe_get buf off)
-
-  let[@inline] unsafe_get_u16_le buf off =
-    let b0 = unsafe_get_u8 buf off in
-    let b1 = unsafe_get_u8 buf (off + 1) in
-    b0 lor (b1 lsl 8)
-
-  let[@inline] unsafe_get_u16_be buf off =
-    let b0 = unsafe_get_u8 buf off in
-    let b1 = unsafe_get_u8 buf (off + 1) in
-    (b0 lsl 8) lor b1
-
-  let[@inline] unsafe_get_u32_le buf off =
-    let b0 = unsafe_get_u8 buf off in
-    let b1 = unsafe_get_u8 buf (off + 1) in
-    let b2 = unsafe_get_u8 buf (off + 2) in
-    let b3 = unsafe_get_u8 buf (off + 3) in
-    b0 lor (b1 lsl 8) lor (b2 lsl 16) lor (b3 lsl 24)
-
-  let[@inline] unsafe_get_u32_be buf off =
-    let b0 = unsafe_get_u8 buf off in
-    let b1 = unsafe_get_u8 buf (off + 1) in
-    let b2 = unsafe_get_u8 buf (off + 2) in
-    let b3 = unsafe_get_u8 buf (off + 3) in
-    (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3
+  let[@inline] unsafe_get_u16_le buf off = unsafe_get_u16_le buf off
+  let[@inline] unsafe_get_u16_be buf off = unsafe_get_u16_be buf off
+  let[@inline] unsafe_get_u32_le buf off = unsafe_get_u32_le buf off
+  let[@inline] unsafe_get_u32_be buf off = unsafe_get_u32_be buf off
 
   let[@inline] unsafe_set_u8 buf off v =
     Bytes.unsafe_set buf off (Char.unsafe_chr (v land 0xFF))
 
   let[@inline] unsafe_set_u16_le buf off v =
-    unsafe_set_u8 buf off v;
-    unsafe_set_u8 buf (off + 1) (v lsr 8)
+    if Sys.big_endian then unsafe_set_16_ne buf off (bswap16 v)
+    else unsafe_set_16_ne buf off v
 
   let[@inline] unsafe_set_u16_be buf off v =
-    unsafe_set_u8 buf off (v lsr 8);
-    unsafe_set_u8 buf (off + 1) v
+    if Sys.big_endian then unsafe_set_16_ne buf off v
+    else unsafe_set_16_ne buf off (bswap16 v)
 
   let[@inline] unsafe_set_u32_le buf off v =
-    unsafe_set_u8 buf off v;
-    unsafe_set_u8 buf (off + 1) (v lsr 8);
-    unsafe_set_u8 buf (off + 2) (v lsr 16);
-    unsafe_set_u8 buf (off + 3) (v lsr 24)
+    if Sys.big_endian then unsafe_set_32_ne buf off (bswap32 (Int32.of_int v))
+    else unsafe_set_32_ne buf off (Int32.of_int v)
 
   let[@inline] unsafe_set_u32_be buf off v =
-    unsafe_set_u8 buf off (v lsr 24);
-    unsafe_set_u8 buf (off + 1) (v lsr 16);
-    unsafe_set_u8 buf (off + 2) (v lsr 8);
-    unsafe_set_u8 buf (off + 3) v
+    if Sys.big_endian then unsafe_set_32_ne buf off (Int32.of_int v)
+    else unsafe_set_32_ne buf off (bswap32 (Int32.of_int v))
 
   (* Build-time dispatch: pattern match on base happens once at codec
      construction, not on every read/write call. Each returned closure
@@ -2841,9 +2804,11 @@ module Codec = struct
                   | BF_U32 Big -> Bf_u32_be { byte_off = base_off; shift; mask }
                 in
                 fld.f_acc <- f_acc;
+                fld.f_reader <- int_reader;
                 fld.f_writer <- accessor_writer
             | None ->
                 fld.f_acc <- Fn (wrap_reader raw_reader);
+                fld.f_reader <- wrap_reader raw_reader;
                 fld.f_writer <- wrap_writer accessor_writer
           in
           let new_bf =
@@ -2910,6 +2875,7 @@ module Codec = struct
                   | _ -> Fn (wrap_reader raw_reader)
                 in
                 fld.f_acc <- f_acc;
+                fld.f_reader <- wrap_reader raw_reader;
                 fld.f_writer <-
                   (match field_off_static with
                   | Some fo ->
@@ -3023,6 +2989,7 @@ module Codec = struct
               let writer = raw_writer typ in
               let configurator () =
                 fld.f_acc <- Fn (wrap_reader reader);
+                fld.f_reader <- wrap_reader reader;
                 fld.f_writer <- wrap_writer writer
               in
               let new_next_off =
@@ -3049,8 +3016,8 @@ module Codec = struct
 
   (* Forward reader list: cons-list dual of [readers] snoc-list.
      Built once at seal time by [to_fwd]; applied at decode time by
-     [apply_fwd] which unrolls 6 fields per step (1 partial application
-     per 6 fields, e.g. 12 fields = 6 + merge + 6 = 1 partial). *)
+     [apply_fwd] which unrolls 8 fields per step (1 partial application
+     per 8 fields, e.g. 16 fields = 8 + merge + 8 = 1 partial). *)
   type (_, _) readers_fwd =
     | FNil : ('r, 'r) readers_fwd
     | FCons :
@@ -3074,7 +3041,7 @@ module Codec = struct
     go readers FNil
 
   (* Apply a forward reader list to [make]. Unrolled up to 6 fields per step;
-     beyond that, one partial application per 6 fields. *)
+     beyond that, one partial application per 8 fields. *)
   let rec apply_fwd : type mid result.
       mid -> (mid, result) readers_fwd -> bytes -> int -> result =
    fun f fwd buf off ->
@@ -3089,11 +3056,30 @@ module Codec = struct
     | FCons (r1, FCons (r2, FCons (r3, FCons (r4, FCons (r5, FNil))))) ->
         f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
     | FCons
-        (r1, FCons (r2, FCons (r3, FCons (r4, FCons (r5, FCons (r6, rest))))))
+        (r1, FCons (r2, FCons (r3, FCons (r4, FCons (r5, FCons (r6, FNil))))))
       ->
+        f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
+          (r6 buf off)
+    | FCons
+        ( r1,
+          FCons
+            ( r2,
+              FCons (r3, FCons (r4, FCons (r5, FCons (r6, FCons (r7, FNil)))))
+            ) ) ->
+        f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
+          (r6 buf off) (r7 buf off)
+    | FCons
+        ( r1,
+          FCons
+            ( r2,
+              FCons
+                ( r3,
+                  FCons
+                    (r4, FCons (r5, FCons (r6, FCons (r7, FCons (r8, rest)))))
+                ) ) ) ->
         apply_fwd
           (f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
-             (r6 buf off))
+             (r6 buf off) (r7 buf off) (r8 buf off))
           rest buf off
 
   let seal : type r. (r, r) record -> r t =

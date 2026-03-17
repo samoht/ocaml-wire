@@ -198,11 +198,18 @@ type tm_frame = {
   tf_first_hdr : int;
 }
 
+let f_tf_vcid =
+  Codec.field "VCID" (bits ~width:3 bf_uint16be) (fun f -> f.tf_vcid)
+
+let f_tf_first_hdr =
+  Codec.field "FirstHdrPtr" (bits ~width:11 bf_uint16be) (fun f ->
+      f.tf_first_hdr)
+
 let tm_frame_add_identifier_fields r =
   let open Codec in
   r
   |+ field "SCID" (bits ~width:10 bf_uint16be) (fun f -> f.tf_scid)
-  |+ field "VCID" (bits ~width:3 bf_uint16be) (fun f -> f.tf_vcid)
+  |+ f_tf_vcid
   |+ field "OCFFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_ocf_flag)
   |+ field "MCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_mc_count)
   |+ field "VCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_vc_count)
@@ -229,8 +236,7 @@ let tm_frame_codec =
   |+ field "SyncFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_sync)
   |+ field "PacketOrder" (bits ~width:1 bf_uint16be) (fun f -> f.tf_pkt_order)
   |+ field "SegLenId" (bits ~width:2 bf_uint16be) (fun f -> f.tf_seg_id)
-  |+ field "FirstHdrPtr" (bits ~width:11 bf_uint16be) (fun f -> f.tf_first_hdr)
-  |> seal
+  |+ f_tf_first_hdr |> seal
 
 let tm_frame_struct = Codec.to_struct tm_frame_codec
 let tm_frame_size = Codec.wire_size tm_frame_codec

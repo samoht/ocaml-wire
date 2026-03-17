@@ -75,6 +75,12 @@ val tm_frame_size : int
 val tm_frame_default : tm_frame
 (** Default TM Frame value for benchmarks and tests. *)
 
+val f_tf_vcid : (int, tm_frame) Wire.Codec.field
+(** Zero-copy field accessor for the VCID field (3-bit bitfield). *)
+
+val f_tf_first_hdr : (int, tm_frame) Wire.Codec.field
+(** Zero-copy field accessor for the First Header Pointer (11-bit bitfield). *)
+
 val tm_frame_data : int -> bytes array
 (** [tm_frame_data n] generates [n] synthetic TM Frame byte buffers. *)
 
