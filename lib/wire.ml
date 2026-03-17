@@ -1912,8 +1912,8 @@ let encode_record_to_bytes : type r. r record_codec -> r encode_context option =
         Some { buffer = buf; wire_size; encode }
   | None -> None
 
-(* Unsafe readers for build_field_reader — bounds already checked by Codec.get.
-   Eliminates redundant per-byte bounds checks in the hot path. *)
+(* Unsafe readers for build_field_reader — no bounds checking.
+   Callers (Codec.get/set/sub) do not validate offsets or buffer length. *)
 let[@inline] unsafe_get_u8 buf off = Char.code (Bytes.unsafe_get buf off)
 
 let[@inline] unsafe_get_u16_le buf off =
@@ -1973,8 +1973,8 @@ let[@inline] unsafe_get_u64_be buf off =
       (of_int ((b4 lsl 24) lor (b5 lsl 16) lor (b6 lsl 8) lor b7)))
 
 (** Build a direct field reader that reads at a fixed offset. No tuples, no refs
-    \- just pure value read. Uses unsafe reads since Codec.get already
-    bounds-checks. *)
+    \- just pure value read. Uses unsafe reads — caller must ensure the buffer
+    is large enough. *)
 let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
  fun typ field_off ->
   match typ with
@@ -2635,8 +2635,8 @@ module Codec = struct
     | BF_U32 Little -> UInt32.set_le buf off v
     | BF_U32 Big -> UInt32.set_be buf off v
 
-  (* Unsafe readers — bounds already checked by view or decode.
-     Eliminates redundant per-byte bounds checks in the hot path. *)
+  (* Unsafe readers — no bounds checking.
+     Callers (get/set) do not validate offsets or buffer length. *)
   let[@inline] unsafe_get_u8 buf off = Char.code (Bytes.unsafe_get buf off)
 
   let[@inline] unsafe_get_u16_le buf off =
@@ -3047,25 +3047,54 @@ module Codec = struct
     in
     add typ get (fun reader -> reader) (fun writer -> writer) (Some Refl)
 
-  (* Chunked application: peels off up to 6 fields per recursion step.
-     Cost: ceil(n/6) - 1 partial applications instead of n - 1. *)
-  let rec apply_readers : type full current.
-      full -> (full, current) readers -> bytes -> int -> current =
-   fun make readers buf off ->
-    match readers with
-    | Nil -> make
-    | Snoc (Nil, r1) -> make (r1 buf off)
-    | Snoc (Snoc (Nil, r1), r2) -> make (r1 buf off) (r2 buf off)
-    | Snoc (Snoc (Snoc (Nil, r1), r2), r3) ->
-        make (r1 buf off) (r2 buf off) (r3 buf off)
-    | Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4) ->
-        make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-    | Snoc (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5) ->
-        make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
-    | Snoc (Snoc (Snoc (Snoc (Snoc (Snoc (rest, r1), r2), r3), r4), r5), r6) ->
-        let f = apply_readers make rest buf off in
+  (* Forward reader list: cons-list dual of [readers] snoc-list.
+     Built once at seal time by [to_fwd]; applied at decode time by
+     [apply_fwd] which unrolls 6 fields per step (1 partial application
+     per 6 fields, e.g. 12 fields = 6 + merge + 6 = 1 partial). *)
+  type (_, _) readers_fwd =
+    | FNil : ('r, 'r) readers_fwd
+    | FCons :
+        (bytes -> int -> 'a) * ('rest, 'result) readers_fwd
+        -> ('a -> 'rest, 'result) readers_fwd
+
+  (* Convert a [readers] snoc-list to a [readers_fwd] cons-list. O(n), runs
+     once at seal time. *)
+  let to_fwd : type full result.
+      (full, result) readers -> (full, result) readers_fwd =
+   fun readers ->
+    let rec go : type mid.
+        (full, mid) readers ->
+        (mid, result) readers_fwd ->
+        (full, result) readers_fwd =
+     fun readers acc ->
+      match readers with
+      | Nil -> acc
+      | Snoc (rest, reader) -> go rest (FCons (reader, acc))
+    in
+    go readers FNil
+
+  (* Apply a forward reader list to [make]. Unrolled up to 6 fields per step;
+     beyond that, one partial application per 6 fields. *)
+  let rec apply_fwd : type mid result.
+      mid -> (mid, result) readers_fwd -> bytes -> int -> result =
+   fun f fwd buf off ->
+    match fwd with
+    | FNil -> f
+    | FCons (r1, FNil) -> f (r1 buf off)
+    | FCons (r1, FCons (r2, FNil)) -> f (r1 buf off) (r2 buf off)
+    | FCons (r1, FCons (r2, FCons (r3, FNil))) ->
+        f (r1 buf off) (r2 buf off) (r3 buf off)
+    | FCons (r1, FCons (r2, FCons (r3, FCons (r4, FNil)))) ->
+        f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
+    | FCons (r1, FCons (r2, FCons (r3, FCons (r4, FCons (r5, FNil))))) ->
         f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
-          (r6 buf off)
+    | FCons
+        (r1, FCons (r2, FCons (r3, FCons (r4, FCons (r5, FCons (r6, rest))))))
+      ->
+        apply_fwd
+          (f (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off) (r5 buf off)
+             (r6 buf off))
+          rest buf off
 
   let seal : type r. (r, r) record -> r t =
    fun (Record r) ->
@@ -3099,122 +3128,11 @@ module Codec = struct
           fun buf off ->
             make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
               (r5 buf off) (r6 buf off)
-      | Snoc
-          ( Snoc (Snoc (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5), r6),
-            r7 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off)
-      | Snoc
-          ( Snoc
-              ( Snoc
-                  ( Snoc (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5),
-                    r6 ),
-                r7 ),
-            r8 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off)
-      | Snoc
-          ( Snoc
-              ( Snoc
-                  ( Snoc
-                      ( Snoc
-                          (Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4), r5),
-                        r6 ),
-                    r7 ),
-                r8 ),
-            r9 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
-      | Snoc
-          ( Snoc
-              ( Snoc
-                  ( Snoc
-                      ( Snoc
-                          ( Snoc
-                              ( Snoc (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4),
-                                r5 ),
-                            r6 ),
-                        r7 ),
-                    r8 ),
-                r9 ),
-            r10 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
-              (r10 buf off)
-      | Snoc
-          ( Snoc
-              ( Snoc
-                  ( Snoc
-                      ( Snoc
-                          ( Snoc
-                              ( Snoc
-                                  ( Snoc
-                                      (Snoc (Snoc (Snoc (Nil, r1), r2), r3), r4),
-                                    r5 ),
-                                r6 ),
-                            r7 ),
-                        r8 ),
-                    r9 ),
-                r10 ),
-            r11 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
-              (r10 buf off) (r11 buf off)
-      | Snoc
-          ( Snoc
-              ( Snoc
-                  ( Snoc
-                      ( Snoc
-                          ( Snoc
-                              ( Snoc
-                                  ( Snoc
-                                      ( Snoc
-                                          ( Snoc (Snoc (Snoc (Nil, r1), r2), r3),
-                                            r4 ),
-                                        r5 ),
-                                    r6 ),
-                                r7 ),
-                            r8 ),
-                        r9 ),
-                    r10 ),
-                r11 ),
-            r12 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
-              (r10 buf off) (r11 buf off) (r12 buf off)
-      | Snoc
-          ( Snoc
-              ( Snoc
-                  ( Snoc
-                      ( Snoc
-                          ( Snoc
-                              ( Snoc
-                                  ( Snoc
-                                      ( Snoc
-                                          ( Snoc
-                                              ( Snoc
-                                                  (Snoc (Snoc (Nil, r1), r2), r3),
-                                                r4 ),
-                                            r5 ),
-                                        r6 ),
-                                    r7 ),
-                                r8 ),
-                            r9 ),
-                        r10 ),
-                    r11 ),
-                r12 ),
-            r13 ) ->
-          fun buf off ->
-            make (r1 buf off) (r2 buf off) (r3 buf off) (r4 buf off)
-              (r5 buf off) (r6 buf off) (r7 buf off) (r8 buf off) (r9 buf off)
-              (r10 buf off) (r11 buf off) (r12 buf off) (r13 buf off)
-      | readers -> fun buf off -> apply_readers make readers buf off
+      | readers ->
+          (* 7+ fields: convert to forward list at seal time, apply at decode
+             time. Cost: ceil(n/6) - 1 partial applications. *)
+          let fwd = to_fwd readers in
+          fun buf off -> apply_fwd make fwd buf off
     in
     let raw_decode = build_decode r.r_make r.r_readers in
     {
@@ -3226,6 +3144,11 @@ module Codec = struct
           raw_decode buf off);
       t_encode =
         (fun v buf off ->
+          if off + min_size > Bytes.length buf then
+            invalid_arg
+              (Fmt.str "Codec.encode %s: buffer too short (need %d, got %d)"
+                 r.r_name min_size
+                 (Bytes.length buf - off));
           for i = 0 to n_writers - 1 do
             writers.(i) v buf off
           done);

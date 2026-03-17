@@ -772,7 +772,8 @@ module Codec : sig
       writer are configured when the record is {!seal}ed. *)
 
   val seal : ('r, 'r) record -> 'r t
-  (** [seal r] finalizes the record codec, adding bounds checking. *)
+  (** [seal r] finalizes the record codec. The resulting {!decode} function
+      bounds-checks; {!get}, {!set}, {!sub}, and {!encode} do not. *)
 
   val wire_size : 'r t -> int
   (** [wire_size codec] returns the fixed wire size of the codec in bytes.
@@ -796,23 +797,28 @@ module Codec : sig
       {!Parse_error} if the buffer is too short. *)
 
   val encode : 'r t -> 'r -> bytes -> int -> unit
-  (** [encode codec v buf off] encodes [v] into [buf] at offset [off]. *)
+  (** [encode codec v buf off] encodes [v] into [buf] at offset [off]. Raises
+      [Invalid_argument] if the buffer is too short. *)
 
   val to_struct : 'r t -> struct_
   (** [to_struct codec] converts the codec to a struct for 3D generation. *)
 
   val get : 'r t -> ('a, 'r) field -> bytes -> int -> 'a
   (** [get codec f buf off] reads field [f] from [buf] at offset [off]. Zero
-      allocation for immediate types (int, bool). *)
+      allocation for immediate types (int, bool). Does not bounds-check — the
+      caller must ensure [buf] has at least [wire_size codec] bytes from [off].
+  *)
 
   val set : 'r t -> ('a, 'r) field -> bytes -> int -> 'a -> unit
   (** [set codec f buf off x] writes [x] into [buf] at offset [off]. For
-      bitfields, uses read-modify-write to preserve adjacent bits. *)
+      bitfields, uses read-modify-write to preserve adjacent bits. Does not
+      bounds-check — the caller must ensure [buf] has at least [wire_size codec]
+      bytes from [off]. *)
 
   val sub : 'r t -> (Bytesrw.Bytes.Slice.t, 'r) field -> bytes -> int -> int
   (** [sub codec f buf off] returns the byte offset of the sub-protocol field
       [f] within [buf]. Zero allocation — use with {!get} to traverse nested
-      protocols without intermediate slice allocations.
+      protocols without intermediate slice allocations. Does not bounds-check.
 
       {[
         let ip_off = Codec.sub ethernet_codec f_eth_payload buf 0 in
