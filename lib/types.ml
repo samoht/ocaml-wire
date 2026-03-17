@@ -493,3 +493,47 @@ let to_3d_file path m =
   let ppf = Format.formatter_of_out_channel oc in
   Fmt.pf ppf "@[<v>%a@]@." pp_module m;
   close_out oc
+
+(* Parse errors — shared between streaming parser and Codec *)
+
+type parse_error =
+  | Unexpected_eof of { expected : int; got : int }
+  | Constraint_failed of string
+  | Invalid_enum of { value : int; valid : int list }
+  | Invalid_tag of int
+  | All_zeros_failed of { offset : int }
+
+exception Parse_error of parse_error
+
+let raise_eof ~expected ~got =
+  raise (Parse_error (Unexpected_eof { expected; got }))
+
+let pp_parse_error ppf = function
+  | Unexpected_eof { expected; got } ->
+      Fmt.pf ppf "unexpected EOF: expected %d bytes, got %d" expected got
+  | Constraint_failed msg -> Fmt.pf ppf "constraint failed: %s" msg
+  | Invalid_enum { value; valid } ->
+      Fmt.pf ppf "invalid enum value %d, valid: [%a]" value
+        Fmt.(list ~sep:comma int)
+        valid
+  | Invalid_tag tag -> Fmt.pf ppf "invalid tag: %d" tag
+  | All_zeros_failed { offset } ->
+      Fmt.pf ppf "non-zero byte at offset %d" offset
+
+(** Compute wire size of a type (None for variable-size types). *)
+let rec field_wire_size : type a. a typ -> int option = function
+  | Uint8 -> Some 1
+  | Uint16 _ -> Some 2
+  | Uint32 _ -> Some 4
+  | Uint64 _ -> Some 8
+  | Bits { base; _ } -> (
+      match base with
+      | BF_U8 -> Some 1
+      | BF_U16 _ -> Some 2
+      | BF_U32 _ -> Some 4)
+  | Unit -> Some 0
+  | Byte_array { size = Int n } | Byte_slice { size = Int n } -> Some n
+  | Where { inner; _ } -> field_wire_size inner
+  | Enum { base; _ } -> field_wire_size base
+  | Map { inner; _ } -> field_wire_size inner
+  | _ -> None

@@ -1,5 +1,5 @@
 (** Generate EverParse .3d files, run EverParse, and generate C/OCaml FFI stubs
-    and benchmark loops for the schemas used in bench.ml.
+    and benchmark loops for the schemas used in bench_demo.ml.
 
     Usage: gen_stubs.exe <schema_dir>
 
@@ -10,31 +10,43 @@
 
 let schema_dir = if Array.length Sys.argv > 1 then Sys.argv.(1) else "schemas"
 
+(* Each entry: (name, struct, wire_size, extra_decls).
+   extra_decls are emitted before the typedef in the .3d module — needed for
+   enum declarations that the struct fields reference. *)
 let entries =
   [
     (* Demo: synthetic schemas covering every Wire type *)
-    ("Minimal", Demo.minimal_struct, Demo.minimal_size);
-    ("Bitfield8", Demo.bf8_struct, Demo.bf8_size);
-    ("Bitfield16", Demo.bf16_struct, Demo.bf16_size);
-    ("BoolFields", Demo.bool_fields_struct, Demo.bool_fields_size);
-    ("Bitfield32", Demo.bf32_struct, Demo.bf32_size);
-    ("AllInts", Demo.all_ints_struct, Demo.all_ints_size);
-    ("LargeMixed", Demo.large_mixed_struct, Demo.large_mixed_size);
+    ("Minimal", Demo.minimal_struct, Demo.minimal_size, []);
+    ("Bitfield8", Demo.bf8_struct, Demo.bf8_size, []);
+    ("Bitfield16", Demo.bf16_struct, Demo.bf16_size, []);
+    ("BoolFields", Demo.bool_fields_struct, Demo.bool_fields_size, []);
+    ("Bitfield32", Demo.bf32_struct, Demo.bf32_size, []);
+    ("AllInts", Demo.all_ints_struct, Demo.all_ints_size, []);
+    ("LargeMixed", Demo.large_mixed_struct, Demo.large_mixed_size, []);
+    (* Demo: type combinators *)
+    ("Mapped", Demo.mapped_struct, Demo.mapped_size, []);
+    ("CasesDemo", Demo.cases_demo_struct, Demo.cases_demo_size, []);
+    ( "EnumDemo",
+      Demo.enum_demo_struct,
+      Demo.enum_demo_size,
+      [ Wire.enum_decl "Status" Demo.status_3d_cases Wire.uint8 ] );
+    ("Constrained", Demo.constrained_struct, Demo.constrained_size, []);
     (* Space: real protocol *)
-    ("CLCW", Space.clcw_struct, Space.clcw_size);
+    ("CLCW", Space.clcw_struct, Space.clcw_size, []);
     (* Net: TCP/IP headers *)
-    ("Ethernet", Net.ethernet_struct, Net.ethernet_size);
-    ("IPv4", Net.ipv4_struct, Net.ipv4_size);
-    ("TCP", Net.tcp_struct, Net.tcp_size);
+    ("Ethernet", Net.ethernet_struct, Net.ethernet_size, []);
+    ("IPv4", Net.ipv4_struct, Net.ipv4_size, []);
+    ("TCP", Net.tcp_struct, Net.tcp_size, []);
   ]
 
 let () =
-  let structs = List.map (fun (_, s, _) -> s) entries in
+  let structs = List.map (fun (_, s, _, _) -> s) entries in
   let schemas =
     List.map
-      (fun (name, s, wire_size) ->
+      (fun (name, s, wire_size, extra_decls) ->
         Wire_c.schema ~name
-          ~module_:(Wire.module_ [ Wire.typedef ~entrypoint:true s ])
+          ~module_:
+            (Wire.module_ (extra_decls @ [ Wire.typedef ~entrypoint:true s ]))
           ~wire_size)
       entries
   in

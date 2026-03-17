@@ -184,3 +184,59 @@ val large_mixed_default : large_mixed
 
 val large_mixed_data : int -> bytes array
 (** [large_mixed_data n] generates [n] encoded large_mixed buffers. *)
+
+(** {1 Mapped (2 bytes)} *)
+
+type priority = Low | Medium | High | Critical
+type mapped = { mp_priority : priority; mp_value : int }
+
+val mapped_codec : mapped Wire.Codec.t
+val f_mp_priority : (priority, mapped) Wire.Codec.field
+val f_mp_value : (int, mapped) Wire.Codec.field
+val mapped_struct : Wire.struct_
+val mapped_size : int
+val mapped_default : mapped
+val mapped_data : int -> bytes
+
+(** {1 CasesDemo (1 byte)} *)
+
+type ptype = Telemetry | Telecommand
+type cases_demo = { cd_type : ptype; cd_id : int }
+
+val cases_demo_codec : cases_demo Wire.Codec.t
+val f_cd_type : (ptype, cases_demo) Wire.Codec.field
+val f_cd_id : (int, cases_demo) Wire.Codec.field
+val cases_demo_struct : Wire.struct_
+val cases_demo_size : int
+val cases_demo_default : cases_demo
+val cases_demo_data : int -> bytes
+
+(** {1 EnumDemo (2 bytes)} *)
+
+type status = [ `Ok | `Warn | `Err | `Crit ]
+
+val status_of_int : int -> status
+val int_of_status : status -> int
+val status_3d_cases : (string * int) list
+
+type enum_demo = { en_status : status; en_code : int }
+
+val enum_demo_codec : enum_demo Wire.Codec.t
+val f_en_status : (status, enum_demo) Wire.Codec.field
+val f_en_code : (int, enum_demo) Wire.Codec.field
+val enum_demo_struct : Wire.struct_
+val enum_demo_size : int
+val enum_demo_default : enum_demo
+val enum_demo_data : int -> bytes
+
+(** {1 Constrained (2 bytes)} *)
+
+type constrained = { co_version : int; co_data : int }
+
+val constrained_codec : constrained Wire.Codec.t
+val f_co_version : (int, constrained) Wire.Codec.field
+val f_co_data : (int, constrained) Wire.Codec.field
+val constrained_struct : Wire.struct_
+val constrained_size : int
+val constrained_default : constrained
+val constrained_data : int -> bytes

@@ -302,3 +302,155 @@ let large_mixed_data n =
       Bytes.set_int32_be b 14 (Int32.of_int (i * 0x1234));
       Bytes.set_int64_be b 18 (Int64.of_int (i * 1_000_000));
       b)
+
+(* ── 8. Mapped: user-defined decode/encode via map combinator = 2 bytes ──
+   The map decode function runs on every Codec.get call, adding a function
+   call to the hot path. On the C side, map is invisible (3D sees the inner
+   type), so this measures the OCaml mapping overhead vs bare C validation. *)
+
+type priority = Low | Medium | High | Critical
+
+let priority_of_int = function
+  | 0 -> Low
+  | 1 -> Medium
+  | 2 -> High
+  | _ -> Critical
+
+let int_of_priority = function
+  | Low -> 0
+  | Medium -> 1
+  | High -> 2
+  | Critical -> 3
+
+type mapped = { mp_priority : priority; mp_value : int }
+
+let f_mp_priority =
+  Codec.field "Priority" (map priority_of_int int_of_priority uint8) (fun m ->
+      m.mp_priority)
+
+let f_mp_value = Codec.field "Value" uint8 (fun m -> m.mp_value)
+
+let mapped_codec =
+  Codec.view "Mapped"
+    (fun pri value -> { mp_priority = pri; mp_value = value })
+    Codec.[ f_mp_priority; f_mp_value ]
+
+let mapped_struct = Codec.to_struct mapped_codec
+let mapped_size = Codec.wire_size mapped_codec
+let mapped_default = { mp_priority = High; mp_value = 42 }
+
+let mapped_data n =
+  let buf = Bytes.create (n * mapped_size) in
+  for i = 0 to n - 1 do
+    Codec.encode mapped_codec
+      { mp_priority = priority_of_int (i mod 4); mp_value = i mod 256 }
+      buf (i * mapped_size)
+  done;
+  buf
+
+(* ── 9. CasesDemo: variant dispatch via cases combinator = 1 byte ──
+   The cases combinator uses an array lookup on decode (Codec.get) and a
+   linear scan on encode (Codec.set). On the C side, it's just a 1-bit
+   bitfield — the variant mapping is OCaml-only. *)
+
+type ptype = Telemetry | Telecommand
+type cases_demo = { cd_type : ptype; cd_id : int }
+
+let f_cd_type =
+  Codec.field "PacketType"
+    (cases [ Telemetry; Telecommand ] (bits ~width:1 bf_uint8))
+    (fun c -> c.cd_type)
+
+let f_cd_id = Codec.field "Id" (bits ~width:7 bf_uint8) (fun c -> c.cd_id)
+
+let cases_demo_codec =
+  Codec.view "CasesDemo"
+    (fun ptype id -> { cd_type = ptype; cd_id = id })
+    Codec.[ f_cd_type; f_cd_id ]
+
+let cases_demo_struct = Codec.to_struct cases_demo_codec
+let cases_demo_size = Codec.wire_size cases_demo_codec
+let cases_demo_default = { cd_type = Telemetry; cd_id = 42 }
+
+let cases_demo_data n =
+  let buf = Bytes.create (n * cases_demo_size) in
+  for i = 0 to n - 1 do
+    Codec.encode cases_demo_codec
+      {
+        cd_type = (if i mod 2 = 0 then Telemetry else Telecommand);
+        cd_id = i mod 128;
+      }
+      buf (i * cases_demo_size)
+  done;
+  buf
+
+(* ── 10. EnumDemo: enum + map for OCaml variant types = 2 bytes ──
+   Combines enum (3D validation: rejects values outside {0,1,2,3}) with map
+   (OCaml variant decode/encode). EverParse C validates enum membership;
+   Codec.get calls the map decode on every read. *)
+
+type status = [ `Ok | `Warn | `Err | `Crit ]
+
+let status_of_int = function 0 -> `Ok | 1 -> `Warn | 2 -> `Err | _ -> `Crit
+let int_of_status = function `Ok -> 0 | `Warn -> 1 | `Err -> 2 | `Crit -> 3
+let status_3d_cases = [ ("OK", 0); ("WARN", 1); ("ERR", 2); ("CRIT", 3) ]
+
+type enum_demo = { en_status : status; en_code : int }
+
+let f_en_status =
+  Codec.field "StatusCode"
+    (map status_of_int int_of_status (enum "Status" status_3d_cases uint8))
+    (fun e -> e.en_status)
+
+let f_en_code = Codec.field "Code" uint8 (fun e -> e.en_code)
+
+let enum_demo_codec =
+  Codec.view "EnumDemo"
+    (fun status code -> { en_status = status; en_code = code })
+    Codec.[ f_en_status; f_en_code ]
+
+let enum_demo_struct = Codec.to_struct enum_demo_codec
+let enum_demo_size = Codec.wire_size enum_demo_codec
+let enum_demo_default = { en_status = `Ok; en_code = 42 }
+
+let enum_demo_data n =
+  let buf = Bytes.create (n * enum_demo_size) in
+  let statuses = [| `Ok; `Warn; `Err; `Crit |] in
+  for i = 0 to n - 1 do
+    Codec.encode enum_demo_codec
+      { en_status = statuses.(i mod 4); en_code = i mod 256 }
+      buf (i * enum_demo_size)
+  done;
+  buf
+
+(* ── 11. Constrained: where clause, validation on C side only = 2 bytes ──
+   The where constraint generates a check in the EverParse C validator
+   (Version must be 0) but Codec.get strips the constraint entirely.
+   This measures C constraint-checking overhead vs OCaml unchecked read. *)
+
+type constrained = { co_version : int; co_data : int }
+
+let f_co_version =
+  Codec.field "Version"
+    (where Expr.(ref "Version" = int 0) uint8)
+    (fun c -> c.co_version)
+
+let f_co_data = Codec.field "Data" uint8 (fun c -> c.co_data)
+
+let constrained_codec =
+  Codec.view "Constrained"
+    (fun version data -> { co_version = version; co_data = data })
+    Codec.[ f_co_version; f_co_data ]
+
+let constrained_struct = Codec.to_struct constrained_codec
+let constrained_size = Codec.wire_size constrained_codec
+let constrained_default = { co_version = 0; co_data = 42 }
+
+let constrained_data n =
+  let buf = Bytes.create (n * constrained_size) in
+  for i = 0 to n - 1 do
+    Codec.encode constrained_codec
+      { co_version = 0; co_data = i mod 256 }
+      buf (i * constrained_size)
+  done;
+  buf

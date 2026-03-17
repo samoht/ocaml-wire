@@ -1,0 +1,7 @@
+; Field-level codec benchmark: EverParse C vs OCaml->C FFI vs pure OCaml
+
+(executable
+ (name bench)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries demo space net c_stubs bench_lib wire unix))

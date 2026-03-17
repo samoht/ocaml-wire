@@ -67,11 +67,9 @@
   (names c_stubs)
   (flags :standard -I schemas)))
 
-; Step 4: Benchmark — EverParse C vs OCaml FFI vs pure OCaml field access
+; ── Shared benchmark framework ──
 
-(executable
- (name bench)
- (modules bench)
- (enabled_if
-  (= %{env:BUILD_EVERPARSE=} "1"))
- (libraries demo space net c_stubs wire unix))
+(library
+ (name bench_lib)
+ (modules bench_lib)
+ (libraries unix fmt))

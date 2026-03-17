@@ -1,4 +1,4 @@
-.PHONY: build test bench bench-routing bench-gateway bench-clcw prof memtrace clean
+.PHONY: build test bench bench-demo bench-routing bench-gateway bench-clcw prof memtrace clean
 
 build:
 	dune build
@@ -6,8 +6,10 @@ build:
 test:
 	dune runtest
 
-bench:
-	BUILD_EVERPARSE=1 dune exec --profile=release bench/bench.exe
+bench: bench-demo bench-routing bench-gateway bench-clcw
+
+bench-demo:
+	BUILD_EVERPARSE=1 dune exec --profile=release bench/demo/bench.exe
 
 bench-routing:
 	dune exec --profile=release bench/bench_routing.exe

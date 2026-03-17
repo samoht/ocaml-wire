@@ -28,6 +28,8 @@ All bench/prof/memtrace targets use `--profile=release`.
 - `bench/` -- benchmarks using schemas from `examples/`
   - `bench/bench.ml` -- field-level read/write: EverParse C vs OCaml FFI vs pure OCaml get/set
   - `bench/gen_stubs.ml` -- generates C/OCaml stubs for EverParse comparison
+  - `bench/demo/` -- field-level codec benchmark (EverParse C vs FFI vs OCaml)
+  - `bench/bench_lib.ml` -- shared benchmark framework (timing, tables, 3-tier comparison)
   - `bench/memtrace.ml` -- allocation profiling
 - `fuzz/` -- Crowbar fuzz tests (`fuzz_wire.ml`) covering all DSL combinators
 - `test/` -- Alcotest unit tests and differential tests (`test/diff/`)
@@ -47,7 +49,7 @@ Benchmarks compare field-level access, all derived from the same Wire DSL defini
 2. **OCaml→C FFI** -- OCaml calling the EverParse-generated C validator via generated stubs.
 3. **Pure OCaml** -- `Wire.Codec.get` / `Wire.Codec.set` (zero-copy field access, no record allocation).
 
-Every Wire type is covered: uint8, uint16be, uint32be, uint64be, bf_uint8, bf_uint16be, bf_uint32be, bool(bf1), and nested protocol traversals via byte_slice.
+Every Wire type is covered: uint8, uint16be, uint32be, uint64be, bf_uint8, bf_uint16be, bf_uint32be, bool(bf1), map, cases, enum, where, and nested protocol traversals via byte_slice.
 
 ## Style
 
