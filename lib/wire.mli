@@ -750,30 +750,34 @@ module Codec : sig
   (** A field specification for a value of type ['a] in a record of type ['r].
   *)
 
-  type ('f, 'r) record
-  (** A record codec under construction. ['f] is the remaining constructor
-      arguments, ['r] is the final record type. *)
-
   type 'r t
   (** A sealed record codec for type ['r]. *)
 
-  val record : string -> 'f -> ('f, _) record
-  (** [record name make] starts building a codec named [name] with constructor
-      [make]. *)
+  (** Heterogeneous field list. Use [Fields.[f1; f2; f3]] syntax. *)
+  module Fields : sig
+    type ('f, 'r) t =
+      | [] : ('r, 'r) t
+      | ( :: ) : ('a, 'r) field * ('f, 'r) t -> ('a -> 'f, 'r) t
+  end
 
   val field : string -> 'a typ -> ('r -> 'a) -> ('a, 'r) field
   (** [field name typ get] defines a field specification with type [typ] and
       getter [get]. Use {!val:Wire.map} or {!val:Wire.bool} on the type for
-      conversions. The field becomes usable with {!get}/{!set} after the record
-      containing it is {!seal}ed. *)
+      conversions. *)
 
-  val ( |+ ) : ('a -> 'b, 'r) record -> ('a, 'r) field -> ('b, 'r) record
-  (** [r |+ f] adds field [f] to record codec [r]. The field's accessor and
-      writer are configured when the record is {!seal}ed. *)
+  val view : string -> 'f -> ('f, 'r) Fields.t -> 'r t
+  (** [make name constructor fields] creates a sealed record codec.
+      {[
+        let f_apid =
+          Codec.field "APID" (bits ~width:11 bf_uint16be) (fun p -> p.apid)
 
-  val seal : ('r, 'r) record -> 'r t
-  (** [seal r] finalizes the record codec. The resulting {!decode} function
-      bounds-checks; {!get}, {!set}, {!sub}, and {!encode} do not. *)
+        let f_dlen = Codec.field "DataLen" uint16be (fun p -> p.dlen)
+
+        let codec =
+          Codec.view "Packet"
+            (fun apid dlen -> { apid; dlen })
+            Fields.[ f_apid; f_dlen ]
+      ]} *)
 
   val wire_size : 'r t -> int
   (** [wire_size codec] returns the fixed wire size of the codec in bytes.

@@ -59,9 +59,8 @@ let f_flags   = Codec.field "Flags"   (bits ~width:4 bf_uint8) (fun p -> p.flags
 let f_length  = Codec.field "Length"   uint16be                 (fun p -> p.length)
 
 let codec =
-  let open Codec in
-  record "Packet" (fun version flags length -> { version; flags; length })
-  |+ f_version |+ f_flags |+ f_length |> seal
+  Codec.make "Packet" (fun version flags length -> { version; flags; length })
+    Codec.Fields.[f_version; f_flags; f_length]
 ```
 
 ### Zero-copy field access
@@ -133,17 +132,17 @@ let () = print_string (Wire.to_ml_stubs [struct_])
 
 ```ocaml
 let packet_codec =
-  let open Codec in
-  record "SpacePacket"
+  Codec.make "SpacePacket"
     (fun version type_ sec_hdr apid seq_flags seq_count data_len -> ...)
-  |+ field "Version"    (bits ~width:3  bf_uint16be) (fun p -> p.sp_version)
-  |+ field "Type"       (bits ~width:1  bf_uint16be) (fun p -> p.sp_type)
-  |+ field "SecHdrFlag" (bits ~width:1  bf_uint16be) (fun p -> p.sp_sec_hdr)
-  |+ field "APID"       (bits ~width:11 bf_uint16be) (fun p -> p.sp_apid)
-  |+ field "SeqFlags"   (bits ~width:2  bf_uint16be) (fun p -> p.sp_seq_flags)
-  |+ field "SeqCount"   (bits ~width:14 bf_uint16be) (fun p -> p.sp_seq_count)
-  |+ field "DataLength"  uint16be                    (fun p -> p.sp_data_len)
-  |> seal
+    Codec.Fields.[
+      Codec.field "Version"    (bits ~width:3  bf_uint16be) (fun p -> p.sp_version);
+      Codec.field "Type"       (bits ~width:1  bf_uint16be) (fun p -> p.sp_type);
+      Codec.field "SecHdrFlag" (bits ~width:1  bf_uint16be) (fun p -> p.sp_sec_hdr);
+      Codec.field "APID"       (bits ~width:11 bf_uint16be) (fun p -> p.sp_apid);
+      Codec.field "SeqFlags"   (bits ~width:2  bf_uint16be) (fun p -> p.sp_seq_flags);
+      Codec.field "SeqCount"   (bits ~width:14 bf_uint16be) (fun p -> p.sp_seq_count);
+      Codec.field "DataLength"  uint16be                    (fun p -> p.sp_data_len);
+    ]
 ```
 
 ### TCP header (20 bytes, bool bitfields)
@@ -155,14 +154,14 @@ let f_tcp_syn = Codec.field "SYN" (bool (bits ~width:1 bf_uint16be)) (fun t -> t
 let f_tcp_ack = Codec.field "ACK" (bool (bits ~width:1 bf_uint16be)) (fun t -> t.tcp_ack)
 
 let tcp_codec =
-  let open Codec in
-  record "TCP" (fun src dst seq ack_num ... -> ...)
-  |+ f_tcp_src_port |+ f_tcp_dst_port
-  |+ field "SeqNum" uint32be (fun t -> t.tcp_seq)
-  (* ... flags as individual bool bitfields ... *)
-  |+ f_tcp_syn |+ f_tcp_ack
-  (* ... *)
-  |> seal
+  Codec.make "TCP" (fun src dst seq ack_num ... -> ...)
+    Codec.Fields.[
+      f_tcp_src_port; f_tcp_dst_port;
+      Codec.field "SeqNum" uint32be (fun t -> t.tcp_seq);
+      (* ... flags as individual bool bitfields ... *)
+      f_tcp_syn; f_tcp_ack;
+      (* ... *)
+    ]
 ```
 
 ## Architecture

@@ -27,8 +27,7 @@ let f_sp_seq_count =
 let f_sp_data_len = Codec.field "DataLength" uint16be (fun p -> p.sp_data_len)
 
 let packet_codec =
-  let open Codec in
-  record "SpacePacket"
+  Codec.view "SpacePacket"
     (fun version type_ sec_hdr apid seq_flags seq_count data_len ->
       {
         sp_version = version;
@@ -39,12 +38,19 @@ let packet_codec =
         sp_seq_count = seq_count;
         sp_data_len = data_len;
       })
-  |+ field "Version" (bits ~width:3 bf_uint16be) (fun p -> p.sp_version)
-  |+ field "Type" (bits ~width:1 bf_uint16be) (fun p -> p.sp_type)
-  |+ field "SecHdrFlag" (bits ~width:1 bf_uint16be) (fun p -> p.sp_sec_hdr)
-  |+ f_sp_apid
-  |+ field "SeqFlags" (bits ~width:2 bf_uint16be) (fun p -> p.sp_seq_flags)
-  |+ f_sp_seq_count |+ f_sp_data_len |> seal
+    Codec.Fields.
+      [
+        Codec.field "Version" (bits ~width:3 bf_uint16be) (fun p ->
+            p.sp_version);
+        Codec.field "Type" (bits ~width:1 bf_uint16be) (fun p -> p.sp_type);
+        Codec.field "SecHdrFlag" (bits ~width:1 bf_uint16be) (fun p ->
+            p.sp_sec_hdr);
+        f_sp_apid;
+        Codec.field "SeqFlags" (bits ~width:2 bf_uint16be) (fun p ->
+            p.sp_seq_flags);
+        f_sp_seq_count;
+        f_sp_data_len;
+      ]
 
 let packet_struct = Codec.to_struct packet_codec
 let packet_size = Codec.wire_size packet_codec
@@ -102,23 +108,9 @@ let cw_report =
   Codec.field "ReportValue" (bits ~width:8 bf_uint32be) (fun c -> c.cw_report)
 
 let clcw_codec =
-  let open Codec in
-  record "CLCW"
-    (fun
-      type_
-      version
-      status
-      cop
-      vcid
-      spare
-      no_rf
-      no_bitlock
-      lockout
-      wait
-      retransmit
-      farmb
-      report
-    ->
+  Codec.view "CLCW"
+    (fun type_ version status cop vcid spare no_rf no_bitlock lockout wait
+         retransmit farmb report ->
       {
         cw_type = type_;
         cw_version = version;
@@ -134,17 +126,28 @@ let clcw_codec =
         cw_farmb = farmb;
         cw_report = report;
       })
-  |+ field "ControlWordType" (bits ~width:1 bf_uint32be) (fun c -> c.cw_type)
-  |+ field "CLCWVersion" (bits ~width:2 bf_uint32be) (fun c -> c.cw_version)
-  |+ field "StatusField" (bits ~width:3 bf_uint32be) (fun c -> c.cw_status)
-  |+ field "COPInEffect" (bits ~width:2 bf_uint32be) (fun c -> c.cw_cop)
-  |+ field "VCID" (bits ~width:6 bf_uint32be) (fun c -> c.cw_vcid)
-  |+ field "Spare" (bits ~width:2 bf_uint32be) (fun c -> c.cw_spare)
-  |+ field "NoRF" (bits ~width:1 bf_uint32be) (fun c -> c.cw_no_rf)
-  |+ field "NoBitlock" (bits ~width:1 bf_uint32be) (fun c -> c.cw_no_bitlock)
-  |+ cw_lockout |+ cw_wait |+ cw_retransmit
-  |+ field "FARMBCounter" (bits ~width:2 bf_uint32be) (fun c -> c.cw_farmb)
-  |+ cw_report |> seal
+    Codec.Fields.
+      [
+        Codec.field "ControlWordType" (bits ~width:1 bf_uint32be) (fun c ->
+            c.cw_type);
+        Codec.field "CLCWVersion" (bits ~width:2 bf_uint32be) (fun c ->
+            c.cw_version);
+        Codec.field "StatusField" (bits ~width:3 bf_uint32be) (fun c ->
+            c.cw_status);
+        Codec.field "COPInEffect" (bits ~width:2 bf_uint32be) (fun c ->
+            c.cw_cop);
+        Codec.field "VCID" (bits ~width:6 bf_uint32be) (fun c -> c.cw_vcid);
+        Codec.field "Spare" (bits ~width:2 bf_uint32be) (fun c -> c.cw_spare);
+        Codec.field "NoRF" (bits ~width:1 bf_uint32be) (fun c -> c.cw_no_rf);
+        Codec.field "NoBitlock" (bits ~width:1 bf_uint32be) (fun c ->
+            c.cw_no_bitlock);
+        cw_lockout;
+        cw_wait;
+        cw_retransmit;
+        Codec.field "FARMBCounter" (bits ~width:2 bf_uint32be) (fun c ->
+            c.cw_farmb);
+        cw_report;
+      ]
 
 let clcw_struct = Codec.to_struct clcw_codec
 let clcw_size = Codec.wire_size clcw_codec
@@ -205,18 +208,9 @@ let f_tf_first_hdr =
   Codec.field "FirstHdrPtr" (bits ~width:11 bf_uint16be) (fun f ->
       f.tf_first_hdr)
 
-let tm_frame_add_identifier_fields r =
-  let open Codec in
-  r
-  |+ field "SCID" (bits ~width:10 bf_uint16be) (fun f -> f.tf_scid)
-  |+ f_tf_vcid
-  |+ field "OCFFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_ocf_flag)
-  |+ field "MCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_mc_count)
-  |+ field "VCCount" (bits ~width:8 bf_uint16be) (fun f -> f.tf_vc_count)
-
 let tm_frame_codec =
-  let open Codec in
-  record "TMFrame" (fun version scid vcid ocf mc vc sec sync pkt seg hdr ->
+  Codec.view "TMFrame"
+    (fun version scid vcid ocf mc vc sec sync pkt seg hdr ->
       {
         tf_version = version;
         tf_scid = scid;
@@ -230,13 +224,27 @@ let tm_frame_codec =
         tf_seg_id = seg;
         tf_first_hdr = hdr;
       })
-  |+ field "Version" (bits ~width:2 bf_uint16be) (fun f -> f.tf_version)
-  |> tm_frame_add_identifier_fields
-  |+ field "SecHdrFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_sec_hdr)
-  |+ field "SyncFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_sync)
-  |+ field "PacketOrder" (bits ~width:1 bf_uint16be) (fun f -> f.tf_pkt_order)
-  |+ field "SegLenId" (bits ~width:2 bf_uint16be) (fun f -> f.tf_seg_id)
-  |+ f_tf_first_hdr |> seal
+    Codec.Fields.
+      [
+        Codec.field "Version" (bits ~width:2 bf_uint16be) (fun f ->
+            f.tf_version);
+        Codec.field "SCID" (bits ~width:10 bf_uint16be) (fun f -> f.tf_scid);
+        f_tf_vcid;
+        Codec.field "OCFFlag" (bits ~width:1 bf_uint16be) (fun f ->
+            f.tf_ocf_flag);
+        Codec.field "MCCount" (bits ~width:8 bf_uint16be) (fun f ->
+            f.tf_mc_count);
+        Codec.field "VCCount" (bits ~width:8 bf_uint16be) (fun f ->
+            f.tf_vc_count);
+        Codec.field "SecHdrFlag" (bits ~width:1 bf_uint16be) (fun f ->
+            f.tf_sec_hdr);
+        Codec.field "SyncFlag" (bits ~width:1 bf_uint16be) (fun f -> f.tf_sync);
+        Codec.field "PacketOrder" (bits ~width:1 bf_uint16be) (fun f ->
+            f.tf_pkt_order);
+        Codec.field "SegLenId" (bits ~width:2 bf_uint16be) (fun f ->
+            f.tf_seg_id);
+        f_tf_first_hdr;
+      ]
 
 let tm_frame_struct = Codec.to_struct tm_frame_codec
 let tm_frame_size = Codec.wire_size tm_frame_codec
@@ -282,12 +290,10 @@ let f_cmd_id = Codec.field "CmdId" uint8 (fun c -> c.cmd_id)
 let f_cmd_seq = Codec.field "Seq" uint16be (fun c -> c.cmd_seq)
 
 let inner_cmd_codec =
-  let open Codec in
-  record "InnerCmd" (fun id seq flags ->
-      { cmd_id = id; cmd_seq = seq; cmd_flags = flags })
-  |+ f_cmd_id |+ f_cmd_seq
-  |+ field "Flags" uint8 (fun c -> c.cmd_flags)
-  |> seal
+  Codec.view "InnerCmd"
+    (fun id seq flags -> { cmd_id = id; cmd_seq = seq; cmd_flags = flags })
+    Codec.Fields.
+      [ f_cmd_id; f_cmd_seq; Codec.field "Flags" uint8 (fun c -> c.cmd_flags) ]
 
 let inner_cmd_size = Codec.wire_size inner_cmd_codec
 
@@ -306,17 +312,21 @@ let f_oh_payload =
     (fun h -> h.oh_payload)
 
 let outer_hdr_codec =
-  let open Codec in
-  record "OuterHdr" (fun version type_ length payload ->
+  Codec.view "OuterHdr"
+    (fun version type_ length payload ->
       {
         oh_version = version;
         oh_type = type_;
         oh_length = length;
         oh_payload = payload;
       })
-  |+ field "Version" uint8 (fun h -> h.oh_version)
-  |+ field "Type" uint8 (fun h -> h.oh_type)
-  |+ f_oh_length |+ f_oh_payload |> seal
+    Codec.Fields.
+      [
+        Codec.field "Version" uint8 (fun h -> h.oh_version);
+        Codec.field "Type" uint8 (fun h -> h.oh_type);
+        f_oh_length;
+        f_oh_payload;
+      ]
 
 let outer_hdr_size = Codec.min_wire_size outer_hdr_codec + inner_cmd_size
 
