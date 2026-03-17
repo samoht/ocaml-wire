@@ -82,8 +82,11 @@ let clcw_buf = (Space.clcw_data 1).(0)
 let tcp_buf = (Net.tcp_frame_data 1).(0)
 
 (* Sub-offsets for nested protocol access *)
-let ip_off = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0
-let tcp_off = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip_off
+let ip_off =
+  (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload)) tcp_buf 0
+
+let tcp_off =
+  (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload)) tcp_buf ip_off
 
 (* Isolated buffers for flat EverParse validation *)
 let ipv4_only_buf = Bytes.sub tcp_buf 14 Net.ipv4_size
@@ -141,55 +144,71 @@ let () =
   bench_flat "Minimal.value (uint8)" ~size:Demo.minimal_size
     ~c_loop_fn:C_stubs.minimal_loop ~check_fn:C_stubs.minimal_check
     ~buf:minimal_buf ~get_fn:(fun () ->
-      ignore (Codec.get Demo.minimal_codec Demo.f_minimal_value minimal_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Demo.minimal_codec Demo.f_minimal_value))
+           minimal_buf 0));
 
   (* Demo: Bitfield8.value — bf5 in bf_uint8, 1B struct *)
   bench_flat "Bitfield8.value (bf5 in bf_uint8)" ~size:Demo.bf8_size
     ~c_loop_fn:C_stubs.bitfield8_loop ~check_fn:C_stubs.bitfield8_check
     ~buf:bf8_buf ~get_fn:(fun () ->
-      ignore (Codec.get Demo.bf8_codec Demo.f_bf8_value bf8_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Demo.bf8_codec Demo.f_bf8_value)) bf8_buf 0));
 
   (* Demo: Bitfield16.id — bf11 in bf_uint16be, 2B struct *)
   bench_flat "Bitfield16.id (bf11 in bf_uint16be)" ~size:Demo.bf16_size
     ~c_loop_fn:C_stubs.bitfield16_loop ~check_fn:C_stubs.bitfield16_check
     ~buf:bf16_buf ~get_fn:(fun () ->
-      ignore (Codec.get Demo.bf16_codec Demo.f_bf16_id bf16_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Demo.bf16_codec Demo.f_bf16_id)) bf16_buf 0));
 
   (* Demo: BoolFields.active — bool(bf1) in bf_uint8, 2B struct *)
   bench_flat "BoolFields.active (bool bf1 in bf_uint8)"
     ~size:Demo.bool_fields_size ~c_loop_fn:C_stubs.boolfields_loop
     ~check_fn:C_stubs.boolfields_check ~buf:bool_buf ~get_fn:(fun () ->
-      ignore (Codec.get Demo.bool_fields_codec Demo.f_bool_active bool_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Demo.bool_fields_codec Demo.f_bool_active))
+           bool_buf 0));
 
   (* Demo: Bitfield32.pri — bf8 in bf_uint32be, 4B struct *)
   bench_flat "Bitfield32.pri (bf8 in bf_uint32be)" ~size:Demo.bf32_size
     ~c_loop_fn:C_stubs.bitfield32_loop ~check_fn:C_stubs.bitfield32_check
     ~buf:bf32_buf ~get_fn:(fun () ->
-      ignore (Codec.get Demo.bf32_codec Demo.f_bf32_pri bf32_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Demo.bf32_codec Demo.f_bf32_pri))
+           bf32_buf 0));
 
   (* Space: CLCW.report — bf8 in bf_uint32be, 4B struct (real protocol) *)
   bench_flat "CLCW.report (bf8 in bf32be)" ~size:Space.clcw_size
     ~c_loop_fn:C_stubs.clcw_loop ~check_fn:C_stubs.clcw_check ~buf:clcw_buf
     ~get_fn:(fun () ->
-      ignore (Codec.get Space.clcw_codec Space.cw_report clcw_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Space.clcw_codec Space.cw_report))
+           clcw_buf 0));
 
   (* Net: TCP.dst_port — uint16be, 20B struct *)
   bench_flat "TCP.dst_port (uint16be)" ~size:Net.tcp_size
     ~c_loop_fn:(fun buf _off n -> C_stubs.tcp_loop buf 0 n)
     ~check_fn:C_stubs.tcp_check ~buf:tcp_only_buf
     ~get_fn:(fun () ->
-      ignore (Codec.get Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp_off));
+      ignore
+        ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_dst_port))
+           tcp_buf tcp_off));
 
   (* Net: TCP.syn — bool(bf1) in bf_uint16be flags, 20B struct *)
   let tcp_c = time_c_loop C_stubs.tcp_loop tcp_only_buf 0 n in
   let tcp_ffi = time_ffi n C_stubs.tcp_check tcp_only_buf in
   let tcp_syn_get =
     time_op n (fun () ->
-        ignore (Codec.get Net.tcp_codec Net.f_tcp_syn tcp_buf tcp_off))
+        ignore
+          ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_syn))
+             tcp_buf tcp_off))
   in
   let tcp_syn_alloc =
     alloc_words n (fun () ->
-        ignore (Codec.get Net.tcp_codec Net.f_tcp_syn tcp_buf tcp_off))
+        ignore
+          ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_syn))
+             tcp_buf tcp_off))
   in
   read_row "TCP.syn (bool bf1 in bf16be)" Net.tcp_size (Some tcp_c)
     (Some tcp_ffi) tcp_syn_get tcp_syn_alloc;
@@ -198,36 +217,58 @@ let () =
   bench_flat "AllInts.u64be (uint64be, boxed)" ~size:Demo.all_ints_size
     ~c_loop_fn:C_stubs.allints_loop ~check_fn:C_stubs.allints_check
     ~buf:ints_buf ~get_fn:(fun () ->
-      ignore (Codec.get Demo.all_ints_codec Demo.f_ints_u64be ints_buf 0));
+      ignore
+        ((Staged.unstage (Codec.get Demo.all_ints_codec Demo.f_ints_u64be))
+           ints_buf 0));
 
   (* Demo: LargeMixed.timestamp — uint64be, 26B struct, last of 10 fields *)
   bench_flat "LargeMixed.timestamp (uint64be, 26B)" ~size:Demo.large_mixed_size
     ~c_loop_fn:C_stubs.largemixed_loop ~check_fn:C_stubs.largemixed_check
     ~buf:mixed_buf ~get_fn:(fun () ->
       ignore
-        (Codec.get Demo.large_mixed_codec Demo.f_mixed_timestamp mixed_buf 0));
+        ((Staged.unstage
+            (Codec.get Demo.large_mixed_codec Demo.f_mixed_timestamp))
+           mixed_buf 0));
 
   (* Net: IPv4.src — uint32be (unboxed), 40B struct *)
   bench_flat "IPv4.src (uint32be, unboxed)" ~size:Net.ipv4_size
     ~c_loop_fn:(fun buf _off n -> C_stubs.ipv4_loop buf 0 n)
     ~check_fn:C_stubs.ipv4_check ~buf:ipv4_only_buf
     ~get_fn:(fun () ->
-      ignore (Codec.get Net.ipv4_codec Net.f_ip_src tcp_buf ip_off));
+      ignore
+        ((Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_src))
+           tcp_buf ip_off));
 
   Fmt.pr "\n";
 
   (* Nested: Eth -> IPv4 -> TCP.dst_port (3-layer traversal) *)
   let nested_dst_get =
     time_op n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        ignore (Codec.get Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp))
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        ignore
+          ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_dst_port))
+             tcp_buf tcp))
   in
   let nested_dst_alloc =
     alloc_words n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        ignore (Codec.get Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp))
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        ignore
+          ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_dst_port))
+             tcp_buf tcp))
   in
   read_row "Eth->IPv4->TCP.dst_port (3 layers)" Net.ethernet_size None None
     nested_dst_get nested_dst_alloc;
@@ -235,15 +276,29 @@ let () =
   (* Nested: Eth -> IPv4 -> TCP.syn (3-layer traversal, bitfield) *)
   let nested_syn_get =
     time_op n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        ignore (Codec.get Net.tcp_codec Net.f_tcp_syn tcp_buf tcp))
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        ignore
+          ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_syn)) tcp_buf tcp))
   in
   let nested_syn_alloc =
     alloc_words n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        ignore (Codec.get Net.tcp_codec Net.f_tcp_syn tcp_buf tcp))
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        ignore
+          ((Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_syn)) tcp_buf tcp))
   in
   read_row "Eth->IPv4->TCP.syn (3 layers)" Net.ethernet_size None None
     nested_syn_get nested_syn_alloc;
@@ -261,65 +316,78 @@ let () =
   (* Minimal.value *)
   let v =
     time_op n (fun () ->
-        Codec.set Demo.minimal_codec Demo.f_minimal_value minimal_buf 0 42)
+        (Staged.unstage (Codec.set Demo.minimal_codec Demo.f_minimal_value))
+          minimal_buf 0 42)
   in
   let a =
     alloc_words n (fun () ->
-        Codec.set Demo.minimal_codec Demo.f_minimal_value minimal_buf 0 42)
+        (Staged.unstage (Codec.set Demo.minimal_codec Demo.f_minimal_value))
+          minimal_buf 0 42)
   in
   write_row "Minimal.value (uint8)" v a;
 
   (* Bitfield8.value *)
   let v =
-    time_op n (fun () -> Codec.set Demo.bf8_codec Demo.f_bf8_value bf8_buf 0 19)
+    time_op n (fun () ->
+        (Staged.unstage (Codec.set Demo.bf8_codec Demo.f_bf8_value))
+          bf8_buf 0 19)
   in
   let a =
     alloc_words n (fun () ->
-        Codec.set Demo.bf8_codec Demo.f_bf8_value bf8_buf 0 19)
+        (Staged.unstage (Codec.set Demo.bf8_codec Demo.f_bf8_value))
+          bf8_buf 0 19)
   in
   write_row "Bitfield8.value (bf5, read-mod-write)" v a;
 
   (* BoolFields.active *)
   let v =
     time_op n (fun () ->
-        Codec.set Demo.bool_fields_codec Demo.f_bool_active bool_buf 0 true)
+        (Staged.unstage (Codec.set Demo.bool_fields_codec Demo.f_bool_active))
+          bool_buf 0 true)
   in
   let a =
     alloc_words n (fun () ->
-        Codec.set Demo.bool_fields_codec Demo.f_bool_active bool_buf 0 true)
+        (Staged.unstage (Codec.set Demo.bool_fields_codec Demo.f_bool_active))
+          bool_buf 0 true)
   in
   write_row "BoolFields.active (bool bf1, rmw)" v a;
 
   (* CLCW.report: read-modify-write bitfield *)
   let v =
     time_op n (fun () ->
-        Codec.set Space.clcw_codec Space.cw_report clcw_buf 0 42)
+        (Staged.unstage (Codec.set Space.clcw_codec Space.cw_report))
+          clcw_buf 0 42)
   in
   let a =
     alloc_words n (fun () ->
-        Codec.set Space.clcw_codec Space.cw_report clcw_buf 0 42)
+        (Staged.unstage (Codec.set Space.clcw_codec Space.cw_report))
+          clcw_buf 0 42)
   in
   write_row "CLCW.report (bf8, read-mod-write)" v a;
 
   (* TCP.dst_port: direct uint16be write *)
   let v =
     time_op n (fun () ->
-        Codec.set Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp_off 8080)
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_dst_port))
+          tcp_buf tcp_off 8080)
   in
   let a =
     alloc_words n (fun () ->
-        Codec.set Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp_off 8080)
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_dst_port))
+          tcp_buf tcp_off 8080)
   in
   write_row "TCP.dst_port (uint16be)" v a;
 
   (* TCP.syn: read-modify-write bool bitfield *)
   let v =
     time_op n (fun () ->
-        Codec.set Net.tcp_codec Net.f_tcp_syn tcp_buf tcp_off true)
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_syn))
+          tcp_buf tcp_off true)
   in
   let a =
     alloc_words n (fun () ->
-        Codec.set Net.tcp_codec Net.f_tcp_syn tcp_buf tcp_off true)
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_syn))
+          tcp_buf tcp_off true)
   in
   write_row "TCP.syn (bool bf1, read-mod-write)" v a;
 
@@ -328,29 +396,57 @@ let () =
   (* Nested writes: 3-layer traversal + set *)
   let v =
     time_op n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        Codec.set Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp 8080)
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_dst_port))
+          tcp_buf tcp 8080)
   in
   let a =
     alloc_words n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        Codec.set Net.tcp_codec Net.f_tcp_dst_port tcp_buf tcp 8080)
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_dst_port))
+          tcp_buf tcp 8080)
   in
   write_row "Eth->TCP.dst_port (3 layers)" v a;
 
   let v =
     time_op n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        Codec.set Net.tcp_codec Net.f_tcp_syn tcp_buf tcp true)
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_syn))
+          tcp_buf tcp true)
   in
   let a =
     alloc_words n (fun () ->
-        let ip = Codec.sub Net.ethernet_codec Net.f_eth_payload tcp_buf 0 in
-        let tcp = Codec.sub Net.ipv4_codec Net.f_ip_payload tcp_buf ip in
-        Codec.set Net.tcp_codec Net.f_tcp_syn tcp_buf tcp true)
+        let ip =
+          (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload))
+            tcp_buf 0
+        in
+        let tcp =
+          (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload))
+            tcp_buf ip
+        in
+        (Staged.unstage (Codec.set Net.tcp_codec Net.f_tcp_syn))
+          tcp_buf tcp true)
   in
   write_row "Eth->TCP.syn (3 layers)" v a;
 

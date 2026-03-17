@@ -96,9 +96,15 @@ let () =
     (float payload_bytes /. c_dt /. 1e6);
 
   (* Wire (staged): partial-apply get outside loop *)
-  let get_apid = C.get Space.packet_codec Space.f_sp_apid in
-  let get_seq = C.get Space.packet_codec Space.f_sp_seq_count in
-  let get_dlen = C.get Space.packet_codec Space.f_sp_data_len in
+  let get_apid =
+    Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_apid)
+  in
+  let get_seq =
+    Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_seq_count)
+  in
+  let get_dlen =
+    Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_data_len)
+  in
   time "wire (staged): get APID + SeqCount + DataLen" (fun () ->
       let off = ref 0 in
       for _ = 1 to n do
@@ -115,9 +121,17 @@ let () =
       let off = ref 0 in
       for _ = 1 to n do
         let o = !off in
-        let apid = C.get Space.packet_codec Space.f_sp_apid buf o in
-        let _seq = C.get Space.packet_codec Space.f_sp_seq_count buf o in
-        let dlen = C.get Space.packet_codec Space.f_sp_data_len buf o in
+        let apid =
+          (Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_apid)) buf o
+        in
+        let _seq =
+          (Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_seq_count))
+            buf o
+        in
+        let dlen =
+          (Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_data_len))
+            buf o
+        in
         dispatch routing_table.(apid);
         off := o + hdr + dlen + 1
       done);

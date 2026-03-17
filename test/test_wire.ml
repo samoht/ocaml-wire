@@ -584,8 +584,12 @@ let test_view_get_uint () =
   let buf = Bytes.create 4 in
   Bytes.set_uint16_be buf 0 0x1234;
   Bytes.set_uint16_be buf 2 0x5678;
-  Alcotest.(check int) "get x" 0x1234 (Codec.get codec f_x buf 0);
-  Alcotest.(check int) "get y" 0x5678 (Codec.get codec f_y buf 0)
+  Alcotest.(check int)
+    "get x" 0x1234
+    ((Staged.unstage (Codec.get codec f_x)) buf 0);
+  Alcotest.(check int)
+    "get y" 0x5678
+    ((Staged.unstage (Codec.get codec f_y)) buf 0)
 
 let test_view_get_bitfield () =
   let codec, f_a, f_d =
@@ -603,8 +607,10 @@ let test_view_get_bitfield () =
     (codec, f_a, f_d)
   in
   let buf = Bytes.of_string "\xB4\x12\x34\xAB" in
-  Alcotest.(check int) "get a" 5 (Codec.get codec f_a buf 0);
-  Alcotest.(check int) "get d" 0xAB (Codec.get codec f_d buf 0)
+  Alcotest.(check int) "get a" 5 ((Staged.unstage (Codec.get codec f_a)) buf 0);
+  Alcotest.(check int)
+    "get d" 0xAB
+    ((Staged.unstage (Codec.get codec f_d)) buf 0)
 
 let test_view_get_bool () =
   let codec, f_flag =
@@ -620,9 +626,13 @@ let test_view_get_bool () =
   in
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0x80;
-  Alcotest.(check bool) "get flag=true" true (Codec.get codec f_flag buf 0);
+  Alcotest.(check bool)
+    "get flag=true" true
+    ((Staged.unstage (Codec.get codec f_flag)) buf 0);
   Bytes.set_uint8 buf 0 0x00;
-  Alcotest.(check bool) "get flag=false" false (Codec.get codec f_flag buf 0)
+  Alcotest.(check bool)
+    "get flag=false" false
+    ((Staged.unstage (Codec.get codec f_flag)) buf 0)
 
 let test_view_set_bitfield () =
   let codec, f_a, f_d =
@@ -640,14 +650,18 @@ let test_view_set_bitfield () =
     (codec, f_a, f_d)
   in
   let buf = Bytes.of_string "\xB4\x12\x34\xAB" in
-  Codec.set codec f_a buf 0 3;
-  Alcotest.(check int) "get a after set" 3 (Codec.get codec f_a buf 0);
+  (Staged.unstage (Codec.set codec f_a)) buf 0 3;
+  Alcotest.(check int)
+    "get a after set" 3
+    ((Staged.unstage (Codec.get codec f_a)) buf 0);
   let r = Codec.decode codec buf 0 in
   Alcotest.(check int) "b preserved" 20 r.bf_b;
   Alcotest.(check int) "c preserved" 0x1234 r.bf_c;
   Alcotest.(check int) "d preserved" 0xAB r.bf_d;
-  Codec.set codec f_d buf 0 0x42;
-  Alcotest.(check int) "get d after set" 0x42 (Codec.get codec f_d buf 0);
+  (Staged.unstage (Codec.set codec f_d)) buf 0 0x42;
+  Alcotest.(check int)
+    "get d after set" 0x42
+    ((Staged.unstage (Codec.get codec f_d)) buf 0);
   let r = Codec.decode codec buf 0 in
   Alcotest.(check int) "a still 3" 3 r.bf_a;
   Alcotest.(check int) "b still 20" 20 r.bf_b;
@@ -666,9 +680,13 @@ let test_view_set_uint () =
   let buf = Bytes.create 4 in
   Bytes.set_uint16_be buf 0 0x1234;
   Bytes.set_uint16_be buf 2 0x5678;
-  Codec.set codec f_x buf 0 0xAAAA;
-  Alcotest.(check int) "get x after set" 0xAAAA (Codec.get codec f_x buf 0);
-  Alcotest.(check int) "y unchanged" 0x5678 (Codec.get codec f_y buf 0)
+  (Staged.unstage (Codec.set codec f_x)) buf 0 0xAAAA;
+  Alcotest.(check int)
+    "get x after set" 0xAAAA
+    ((Staged.unstage (Codec.get codec f_x)) buf 0);
+  Alcotest.(check int)
+    "y unchanged" 0x5678
+    ((Staged.unstage (Codec.get codec f_y)) buf 0)
 
 let test_view_bounds_check () =
   let codec =
@@ -692,7 +710,9 @@ let test_view_with_offset () =
   Bytes.set_uint16_be buf 0 0x1111;
   Bytes.set_uint16_be buf 2 0x2222;
   Bytes.set_uint16_be buf 4 0x3333;
-  Alcotest.(check int) "get at offset 2" 0x2222 (Codec.get codec f_a buf 2)
+  Alcotest.(check int)
+    "get at offset 2" 0x2222
+    ((Staged.unstage (Codec.get codec f_a)) buf 2)
 
 let test_view_set_bool () =
   let codec, f_flag =
@@ -708,15 +728,15 @@ let test_view_set_bool () =
   in
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0x00;
-  Codec.set codec f_flag buf 0 true;
+  (Staged.unstage (Codec.set codec f_flag)) buf 0 true;
   Alcotest.(check bool)
     "get flag after set true" true
-    (Codec.get codec f_flag buf 0);
+    ((Staged.unstage (Codec.get codec f_flag)) buf 0);
   Alcotest.(check int) "byte value" 0x80 (Bytes.get_uint8 buf 0);
-  Codec.set codec f_flag buf 0 false;
+  (Staged.unstage (Codec.set codec f_flag)) buf 0 false;
   Alcotest.(check bool)
     "get flag after set false" false
-    (Codec.get codec f_flag buf 0);
+    ((Staged.unstage (Codec.get codec f_flag)) buf 0);
   Alcotest.(check int) "byte cleared" 0x00 (Bytes.get_uint8 buf 0)
 
 (* Field sharing tests — same field spec used in two codecs *)
@@ -747,8 +767,12 @@ let test_view_shared_field_spec () =
   Bytes.set_uint16_be buf2 0 0x0000;
   Bytes.set_uint16_be buf2 2 0xCCCC;
   (* f1_x reads at offset 0, f2_x reads at offset 2 *)
-  Alcotest.(check int) "codec1 get x" 0xAAAA (Codec.get codec1 f1_x buf1 0);
-  Alcotest.(check int) "codec2 get x" 0xCCCC (Codec.get codec2 f2_x buf2 0)
+  Alcotest.(check int)
+    "codec1 get x" 0xAAAA
+    ((Staged.unstage (Codec.get codec1 f1_x)) buf1 0);
+  Alcotest.(check int)
+    "codec2 get x" 0xCCCC
+    ((Staged.unstage (Codec.get codec2 f2_x)) buf2 0)
 
 let test_view_shared_bitfield_spec () =
   (* Two codecs with different bitfield layouts, each with their own field "a".
@@ -774,8 +798,12 @@ let test_view_shared_bitfield_spec () =
      codec2 reads bottom 3 bits → 3 *)
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0xE3;
-  Alcotest.(check int) "codec1 get a (top 3)" 7 (Codec.get codec1 f1_a buf 0);
-  Alcotest.(check int) "codec2 get a (bot 3)" 3 (Codec.get codec2 f2_a buf 0)
+  Alcotest.(check int)
+    "codec1 get a (top 3)" 7
+    ((Staged.unstage (Codec.get codec1 f1_a)) buf 0);
+  Alcotest.(check int)
+    "codec2 get a (bot 3)" 3
+    ((Staged.unstage (Codec.get codec2 f2_a)) buf 0)
 
 let test_view_shared_set_independent () =
   (* set via one codec's field must not affect the other's interpretation *)
@@ -795,15 +823,19 @@ let test_view_shared_set_independent () =
   in
   (* Start: 0x00. Set codec1's field (top nibble) to 0xA *)
   let buf = Bytes.create 1 in
-  Codec.set codec1 f1 buf 0 0xA;
+  (Staged.unstage (Codec.set codec1 f1)) buf 0 0xA;
   Alcotest.(check int) "byte after set1" 0xA0 (Bytes.get_uint8 buf 0);
   (* codec2's field is bottom nibble — should still be 0 *)
-  Alcotest.(check int) "codec2 get after set1" 0 (Codec.get codec2 f2 buf 0);
+  Alcotest.(check int)
+    "codec2 get after set1" 0
+    ((Staged.unstage (Codec.get codec2 f2)) buf 0);
   (* Set codec2's field (bottom nibble) to 0x5 *)
-  Codec.set codec2 f2 buf 0 0x5;
+  (Staged.unstage (Codec.set codec2 f2)) buf 0 0x5;
   Alcotest.(check int) "byte after set2" 0xA5 (Bytes.get_uint8 buf 0);
   (* codec1's field should still be 0xA *)
-  Alcotest.(check int) "codec1 get after set2" 0xA (Codec.get codec1 f1 buf 0)
+  Alcotest.(check int)
+    "codec1 get after set2" 0xA
+    ((Staged.unstage (Codec.get codec1 f1)) buf 0)
 
 (* ── byte_slice tests ── *)
 
@@ -826,7 +858,7 @@ let test_view_byte_slice_get () =
   Bytes.set_uint8 buf 3 0x20;
   Bytes.set_uint8 buf 4 0x30;
   Bytes.set_uint8 buf 5 0x40;
-  let payload = Codec.get codec f_payload buf 0 in
+  let payload = (Staged.unstage (Codec.get codec f_payload)) buf 0 in
   (* payload should be a slice into buf at offset 2, length 4 *)
   Alcotest.(check int) "payload first" 2 (Bs.first payload);
   Alcotest.(check int) "payload length" 4 (Bs.length payload);
@@ -876,8 +908,10 @@ let test_view_byte_slice_nested () =
   let buf = Bytes.create 4 in
   Bytes.set_uint16_be buf 0 0x0001;
   Bytes.set_uint16_be buf 2 0x1234;
-  let payload_off = Codec.sub outer_codec f_payload buf 0 in
-  let inner_val = Codec.get inner_codec f_val buf payload_off in
+  let payload_off = (Staged.unstage (Codec.sub outer_codec f_payload)) buf 0 in
+  let inner_val =
+    (Staged.unstage (Codec.get inner_codec f_val)) buf payload_off
+  in
   Alcotest.(check int) "inner val via zero-copy" 0x1234 inner_val
 
 (* ── Raw access: get / set / sub ── *)
@@ -890,8 +924,12 @@ let test_raw_get_uint () =
   let buf = Bytes.create 3 in
   Bytes.set_uint16_be buf 0 0x1234;
   Bytes.set_uint8 buf 2 0xFF;
-  Alcotest.(check int) "get a" 0x1234 (Codec.get codec f_a buf 0);
-  Alcotest.(check int) "get b" 0xFF (Codec.get codec f_b buf 0)
+  Alcotest.(check int)
+    "get a" 0x1234
+    ((Staged.unstage (Codec.get codec f_a)) buf 0);
+  Alcotest.(check int)
+    "get b" 0xFF
+    ((Staged.unstage (Codec.get codec f_b)) buf 0)
 
 let test_raw_get_bitfield () =
   let open Codec in
@@ -901,8 +939,12 @@ let test_raw_get_bitfield () =
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0xA7;
   (* hi=0xA=10, lo=0x7=7 *)
-  Alcotest.(check int) "get hi" 0xA (Codec.get codec f_hi buf 0);
-  Alcotest.(check int) "get lo" 0x7 (Codec.get codec f_lo buf 0)
+  Alcotest.(check int)
+    "get hi" 0xA
+    ((Staged.unstage (Codec.get codec f_hi)) buf 0);
+  Alcotest.(check int)
+    "get lo" 0x7
+    ((Staged.unstage (Codec.get codec f_lo)) buf 0)
 
 let test_raw_set_uint () =
   let open Codec in
@@ -911,8 +953,8 @@ let test_raw_set_uint () =
   let codec = record "RawSU" (fun a b -> (a, b)) |+ f_a |+ f_b |> seal in
   let buf = Bytes.create 3 in
   Bytes.fill buf 0 3 '\x00';
-  Codec.set codec f_a buf 0 0xABCD;
-  Codec.set codec f_b buf 0 0x42;
+  (Staged.unstage (Codec.set codec f_a)) buf 0 0xABCD;
+  (Staged.unstage (Codec.set codec f_b)) buf 0 0x42;
   Alcotest.(check int) "set a" 0xABCD (Bytes.get_uint16_be buf 0);
   Alcotest.(check int) "set b" 0x42 (Bytes.get_uint8 buf 2)
 
@@ -923,8 +965,8 @@ let test_raw_set_bitfield () =
   let codec = record "RawSBF" (fun hi lo -> (hi, lo)) |+ f_hi |+ f_lo |> seal in
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0x00;
-  Codec.set codec f_hi buf 0 0xC;
-  Codec.set codec f_lo buf 0 0x3;
+  (Staged.unstage (Codec.set codec f_hi)) buf 0 0xC;
+  (Staged.unstage (Codec.set codec f_lo)) buf 0 0x3;
   Alcotest.(check int) "set bf byte" 0xC3 (Bytes.get_uint8 buf 0)
 
 let test_raw_sub_nested () =
@@ -943,9 +985,11 @@ let test_raw_sub_nested () =
   let buf = Bytes.create 4 in
   Bytes.set_uint16_be buf 0 0x0001;
   Bytes.set_uint16_be buf 2 0x5678;
-  let inner_off = Codec.sub outer_codec f_payload buf 0 in
+  let inner_off = (Staged.unstage (Codec.sub outer_codec f_payload)) buf 0 in
   Alcotest.(check int) "sub offset" 2 inner_off;
-  let inner_val = Codec.get inner_codec f_val buf inner_off in
+  let inner_val =
+    (Staged.unstage (Codec.get inner_codec f_val)) buf inner_off
+  in
   Alcotest.(check int) "inner val via sub+get" 0x5678 inner_val
 
 let test_raw_sub_three_layers () =
@@ -971,11 +1015,11 @@ let test_raw_sub_three_layers () =
   Bytes.set_uint16_be buf 0 0xAAAA;
   Bytes.set_uint8 buf 2 0xBB;
   Bytes.set_uint8 buf 3 0xCC;
-  let mid_off = Codec.sub outer f_body buf 0 in
+  let mid_off = (Staged.unstage (Codec.sub outer f_body)) buf 0 in
   Alcotest.(check int) "mid offset" 2 mid_off;
-  let inner_off = Codec.sub mid f_mid_payload buf mid_off in
+  let inner_off = (Staged.unstage (Codec.sub mid f_mid_payload)) buf mid_off in
   Alcotest.(check int) "inner offset" 3 inner_off;
-  let x = Codec.get inner f_x buf inner_off in
+  let x = (Staged.unstage (Codec.get inner f_x)) buf inner_off in
   Alcotest.(check int) "3-layer get" 0xCC x
 
 let test_raw_with_offset () =
@@ -985,10 +1029,10 @@ let test_raw_with_offset () =
   let codec = record "RawOff" (fun v -> v) |+ f_v |> seal in
   let buf = Bytes.create 20 in
   Bytes.fill buf 0 20 '\x00';
-  Codec.set codec f_v buf 10 0xDEADBEEF;
+  (Staged.unstage (Codec.set codec f_v)) buf 10 0xDEADBEEF;
   Alcotest.(check int)
     "get at offset 10" 0xDEADBEEF
-    (Codec.get codec f_v buf 10)
+    ((Staged.unstage (Codec.get codec f_v)) buf 10)
 
 (* FFI stub generation tests *)
 
@@ -1171,7 +1215,9 @@ let test_dep_bslice_get_payload () =
   Bytes.set_uint8 buf 3 0x20;
   Bytes.set_uint8 buf 4 0x30;
   Bytes.set_uint8 buf 5 0x40;
-  let payload = Codec.get dep_slice_codec f_ds_payload buf 0 in
+  let payload =
+    (Staged.unstage (Codec.get dep_slice_codec f_ds_payload)) buf 0
+  in
   Alcotest.(check int) "get payload first" 2 (Bs.first payload);
   Alcotest.(check int) "get payload length" 4 (Bs.length payload);
   Alcotest.(check int)
@@ -1181,23 +1227,23 @@ let test_dep_bslice_get_payload () =
 let test_dep_bslice_sub () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
-  let off = Codec.sub dep_slice_codec f_ds_payload buf 0 in
+  let off = (Staged.unstage (Codec.sub dep_slice_codec f_ds_payload)) buf 0 in
   Alcotest.(check int) "sub offset" 2 off
 
 let test_dep_bslice_set_length () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
-  Codec.set dep_slice_codec f_ds_length buf 0 8;
+  (Staged.unstage (Codec.set dep_slice_codec f_ds_length)) buf 0 8;
   Alcotest.(check int)
     "set length" 8
-    (Codec.get dep_slice_codec f_ds_length buf 0)
+    ((Staged.unstage (Codec.get dep_slice_codec f_ds_length)) buf 0)
 
 let test_dep_bslice_get_length () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 42;
   Alcotest.(check int)
     "get length" 42
-    (Codec.get dep_slice_codec f_ds_length buf 0)
+    ((Staged.unstage (Codec.get dep_slice_codec f_ds_length)) buf 0)
 
 (* ── Dependent-size byte_array tests ── *)
 
@@ -1236,7 +1282,9 @@ let test_dep_byte_array_get () =
   let buf = Bytes.create 5 in
   Bytes.set_uint16_be buf 0 3;
   Bytes.blit_string "xyz" 0 buf 2 3;
-  let payload = Codec.get dep_array_codec f_da_payload buf 0 in
+  let payload =
+    (Staged.unstage (Codec.get dep_array_codec f_da_payload)) buf 0
+  in
   Alcotest.(check string) "get payload" "xyz" payload
 
 (* ── Fixed field after variable field tests ── *)
@@ -1266,7 +1314,9 @@ let test_dep_trailer_get_checksum () =
   Bytes.set_uint8 buf 3 0x22;
   Bytes.set_uint8 buf 4 0x33;
   Bytes.set_uint16_be buf 5 0xBEEF;
-  let checksum = Codec.get trailer_codec f_tr_checksum buf 0 in
+  let checksum =
+    (Staged.unstage (Codec.get trailer_codec f_tr_checksum)) buf 0
+  in
   Alcotest.(check int) "get checksum" 0xBEEF checksum
 
 let test_dep_trailer_set_checksum () =
@@ -1276,7 +1326,7 @@ let test_dep_trailer_set_checksum () =
   Bytes.set_uint8 buf 3 0x22;
   Bytes.set_uint8 buf 4 0x33;
   Bytes.set_uint16_be buf 5 0x0000;
-  Codec.set trailer_codec f_tr_checksum buf 0 0xCAFE;
+  (Staged.unstage (Codec.set trailer_codec f_tr_checksum)) buf 0 0xCAFE;
   Alcotest.(check int) "set checksum" 0xCAFE (Bytes.get_uint16_be buf 5)
 
 let test_dep_trailer_decode () =

@@ -3154,36 +3154,40 @@ module Codec = struct
   let encode t v buf off = t.t_encode v buf off
   let to_struct t = struct' t.t_name t.t_struct_fields
 
-  let get (type a r) (_codec : r t) (f : (a, r) field) : bytes -> int -> a =
+  let get (type a r) (_codec : r t) (f : (a, r) field) :
+      (bytes -> int -> a) Staged.t =
     match f.f_acc with
     | Bf_u8 { byte_off; shift; mask } ->
-        fun buf off -> (unsafe_get_u8 buf (off + byte_off) lsr shift) land mask
+        Staged.stage (fun buf off ->
+            (unsafe_get_u8 buf (off + byte_off) lsr shift) land mask)
     | Bf_u16_le { byte_off; shift; mask } ->
-        fun buf off ->
-          (unsafe_get_u16_le buf (off + byte_off) lsr shift) land mask
+        Staged.stage (fun buf off ->
+            (unsafe_get_u16_le buf (off + byte_off) lsr shift) land mask)
     | Bf_u16_be { byte_off; shift; mask } ->
-        fun buf off ->
-          (unsafe_get_u16_be buf (off + byte_off) lsr shift) land mask
+        Staged.stage (fun buf off ->
+            (unsafe_get_u16_be buf (off + byte_off) lsr shift) land mask)
     | Bf_u32_le { byte_off; shift; mask } ->
-        fun buf off ->
-          (unsafe_get_u32_le buf (off + byte_off) lsr shift) land mask
+        Staged.stage (fun buf off ->
+            (unsafe_get_u32_le buf (off + byte_off) lsr shift) land mask)
     | Bf_u32_be { byte_off; shift; mask } ->
-        fun buf off ->
-          (unsafe_get_u32_be buf (off + byte_off) lsr shift) land mask
+        Staged.stage (fun buf off ->
+            (unsafe_get_u32_be buf (off + byte_off) lsr shift) land mask)
     | Sub { field_off; size } ->
-        fun buf off -> Slice.make buf ~first:(off + field_off) ~length:size
-    | Fn reader -> reader
+        Staged.stage (fun buf off ->
+            Slice.make buf ~first:(off + field_off) ~length:size)
+    | Fn reader -> Staged.stage reader
 
-  let sub (type r) (_codec : r t) (f : (Slice.t, r) field) : bytes -> int -> int
-      =
-    match f.f_acc with
-    | Sub { field_off; _ } -> fun _buf off -> off + field_off
-    | Fn reader -> fun buf off -> Slice.first (reader buf off)
-    | _ -> assert false
+  let sub (type r) (_codec : r t) (f : (Slice.t, r) field) :
+      (bytes -> int -> int) Staged.t =
+    Staged.stage
+      (match f.f_acc with
+      | Sub { field_off; _ } -> fun _buf off -> off + field_off
+      | Fn reader -> fun buf off -> Slice.first (reader buf off)
+      | _ -> assert false)
 
-  let set (type a r) (_codec : r t) (f : (a, r) field) (buf : bytes) (off : int)
-      (x : a) =
-    f.f_writer buf off x
+  let set (type a r) (_codec : r t) (f : (a, r) field) :
+      (bytes -> int -> a -> unit) Staged.t =
+    Staged.stage f.f_writer
 
   let ref (type a r) (f : (a, r) field) : int expr = Ref f.name
 end

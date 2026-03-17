@@ -83,10 +83,18 @@ let () =
     (float c_pkts /. c_dt /. 1e6);
 
   (* Wire: zero-copy field access (partial-apply get outside loop) *)
-  let get_vcid = C.get Space.tm_frame_codec Space.f_tf_vcid in
-  let get_fhp = C.get Space.tm_frame_codec Space.f_tf_first_hdr in
-  let get_apid = C.get Space.packet_codec Space.f_sp_apid in
-  let get_seq = C.get Space.packet_codec Space.f_sp_seq_count in
+  let get_vcid =
+    Wire.Staged.unstage (C.get Space.tm_frame_codec Space.f_tf_vcid)
+  in
+  let get_fhp =
+    Wire.Staged.unstage (C.get Space.tm_frame_codec Space.f_tf_first_hdr)
+  in
+  let get_apid =
+    Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_apid)
+  in
+  let get_seq =
+    Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_seq_count)
+  in
   time "wire: get VCID + FirstHdrPtr + walk pkts" (fun () ->
       let pkts = ref 0 in
       for frame = 0 to n - 1 do

@@ -91,23 +91,25 @@ let run_schema (Any s) =
 
 let run_zero_copy () =
   let data = clcw_data n_values in
+  let get_report = Wire.Staged.unstage (Wire.Codec.get clcw_codec cw_report) in
+  let set_report = Wire.Staged.unstage (Wire.Codec.set clcw_codec cw_report) in
   Fmt.pr "  CLCW zero-copy get...\n%!";
   for _ = 1 to iterations do
     for i = 0 to Array.length data - 1 do
-      ignore (Wire.Codec.get clcw_codec cw_report data.(i) 0)
+      ignore (get_report data.(i) 0)
     done
   done;
   Fmt.pr "  CLCW zero-copy set...\n%!";
   for _ = 1 to iterations do
     for i = 0 to Array.length data - 1 do
-      Wire.Codec.set clcw_codec cw_report data.(i) 0 42
+      set_report data.(i) 0 42
     done
   done;
   Fmt.pr "  CLCW zero-copy roundtrip...\n%!";
   for _ = 1 to iterations do
     for i = 0 to Array.length data - 1 do
-      let x = Wire.Codec.get clcw_codec cw_report data.(i) 0 in
-      Wire.Codec.set clcw_codec cw_report data.(i) 0 x
+      let x = get_report data.(i) 0 in
+      set_report data.(i) 0 x
     done
   done
 

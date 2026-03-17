@@ -37,10 +37,16 @@ let () =
     c_anomalies;
 
   (* Wire: bitfield accessors (partial-apply get outside loop) *)
-  let get_lockout = C.get Space.clcw_codec Space.cw_lockout in
-  let get_wait = C.get Space.clcw_codec Space.cw_wait in
-  let get_retransmit = C.get Space.clcw_codec Space.cw_retransmit in
-  let get_report = C.get Space.clcw_codec Space.cw_report in
+  let get_lockout =
+    Wire.Staged.unstage (C.get Space.clcw_codec Space.cw_lockout)
+  in
+  let get_wait = Wire.Staged.unstage (C.get Space.clcw_codec Space.cw_wait) in
+  let get_retransmit =
+    Wire.Staged.unstage (C.get Space.clcw_codec Space.cw_retransmit)
+  in
+  let get_report =
+    Wire.Staged.unstage (C.get Space.clcw_codec Space.cw_report)
+  in
   time "wire: get lockout+wait+retransmit+report" (fun () ->
       let anomalies = ref 0 in
       let expected_seq = ref 0 in

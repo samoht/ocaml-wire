@@ -742,7 +742,7 @@ val decode_make4_exn :
         |+ f_version |+ f_length |> seal
 
       (* Zero-copy field access *)
-      let get_length = Wire.Codec.get codec f_length
+      let get_length = Wire.Staged.unstage (Wire.Codec.get codec f_length)
     ]} *)
 
 module Codec : sig
@@ -803,31 +803,38 @@ module Codec : sig
   val to_struct : 'r t -> struct_
   (** [to_struct codec] converts the codec to a struct for 3D generation. *)
 
-  val get : 'r t -> ('a, 'r) field -> bytes -> int -> 'a
-  (** [get codec f buf off] reads field [f] from [buf] at offset [off]. Zero
-      allocation for immediate types (int, bool). Does not bounds-check — the
-      caller must ensure [buf] has at least [wire_size codec] bytes from [off].
-
-      For hot loops, partially apply [get codec f] once outside the loop to
-      resolve the field dispatch and obtain a specialized [bytes -> int -> 'a]
-      reader. *)
-
-  val set : 'r t -> ('a, 'r) field -> bytes -> int -> 'a -> unit
-  (** [set codec f buf off x] writes [x] into [buf] at offset [off]. For
-      bitfields, uses read-modify-write to preserve adjacent bits. Does not
-      bounds-check — the caller must ensure [buf] has at least [wire_size codec]
-      bytes from [off]. *)
-
-  val sub : 'r t -> (Bytesrw.Bytes.Slice.t, 'r) field -> bytes -> int -> int
-  (** [sub codec f buf off] returns the byte offset of the sub-protocol field
-      [f] within [buf]. Zero allocation — use with {!get} to traverse nested
-      protocols without intermediate slice allocations. Does not bounds-check.
-
+  val get : 'r t -> ('a, 'r) field -> (bytes -> int -> 'a) Staged.t
+  (** [get codec f] returns a staged reader for field [f]. Unstage once outside
+      the hot loop to resolve field dispatch:
       {[
-        let ip_off = Codec.sub ethernet_codec f_eth_payload buf 0 in
-        let tcp_off = Codec.sub ipv4_codec f_ip_payload buf ip_off in
-        Codec.get tcp_codec f_tcp_dst_port buf tcp_off
-      ]} *)
+        let get_apid = Staged.unstage (Codec.get packet_codec f_apid) in
+        for _ = 1 to n do
+          get_apid buf off
+        done
+      ]}
+      Does not bounds-check — the caller must ensure [buf] has at least
+      [wire_size codec] bytes from [off]. *)
+
+  val set : 'r t -> ('a, 'r) field -> (bytes -> int -> 'a -> unit) Staged.t
+  (** [set codec f] returns a staged writer for field [f]. Unstage once outside
+      the hot loop:
+      {[
+        let set_port = Staged.unstage (Codec.set tcp_codec f_dst_port) in
+        set_port buf off 8080
+      ]}
+      For bitfields, uses read-modify-write to preserve adjacent bits. Does not
+      bounds-check. *)
+
+  val sub :
+    'r t -> (Bytesrw.Bytes.Slice.t, 'r) field -> (bytes -> int -> int) Staged.t
+  (** [sub codec f] returns a staged sub-protocol offset reader. Unstage once
+      outside the hot loop:
+      {[
+        let sub_payload = Staged.unstage (Codec.sub ethernet_codec f_payload) in
+        let ip_off = sub_payload buf 0 in
+        ...
+      ]}
+      Does not bounds-check. *)
 
   val ref : ('a, 'r) field -> int expr
   (** [ref f] returns an expression referencing field [f] by name. Use this
