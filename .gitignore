@@ -2,3 +2,5 @@ _build/
 *.install
 *.bak
 *.ctf
+prof.txt
+prof.trace/
