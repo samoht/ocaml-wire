@@ -1915,40 +1915,40 @@ let encode_record_to_bytes : type r. r record_codec -> r encode_context option =
 (* Readers using stdlib primitives. Bytes.get_uint16_be etc. are single C
    loads + bswap, well-optimized. One bounds check per call. For u32/u64,
    use Bytes.get_int32_be / Bytes.get_int64_be directly. *)
-let[@inline] get_u8 buf off = Bytes.get_uint8 buf off
-let[@inline] get_u16_le buf off = Bytes.get_uint16_le buf off
-let[@inline] get_u16_be buf off = Bytes.get_uint16_be buf off
+let[@inline] u8 buf off = Bytes.get_uint8 buf off
+let[@inline] u16_le buf off = Bytes.get_uint16_le buf off
+let[@inline] u16_be buf off = Bytes.get_uint16_be buf off
 
-let[@inline] get_u32_le buf off =
+let[@inline] u32_le buf off =
   Bytes.get_int32_le buf off |> Int32.to_int |> ( land ) 0xFFFF_FFFF
 
-let[@inline] get_u32_be buf off =
+let[@inline] u32_be buf off =
   Bytes.get_int32_be buf off |> Int32.to_int |> ( land ) 0xFFFF_FFFF
 
-let[@inline] get_u64_le buf off = Bytes.get_int64_le buf off
-let[@inline] get_u64_be buf off = Bytes.get_int64_be buf off
+let[@inline] u64_le buf off = Bytes.get_int64_le buf off
+let[@inline] u64_be buf off = Bytes.get_int64_be buf off
 
 (* Writers using stdlib primitives. *)
-let[@inline] set_u8 buf off v = Bytes.set_uint8 buf off v
-let[@inline] set_u16_le buf off v = Bytes.set_uint16_le buf off v
-let[@inline] set_u16_be buf off v = Bytes.set_uint16_be buf off v
-let[@inline] set_u32_le buf off v = Bytes.set_int32_le buf off (Int32.of_int v)
-let[@inline] set_u32_be buf off v = Bytes.set_int32_be buf off (Int32.of_int v)
+let[@inline] w_u8 buf off v = Bytes.set_uint8 buf off v
+let[@inline] w_u16_le buf off v = Bytes.set_uint16_le buf off v
+let[@inline] w_u16_be buf off v = Bytes.set_uint16_be buf off v
+let[@inline] w_u32_le buf off v = Bytes.set_int32_le buf off (Int32.of_int v)
+let[@inline] w_u32_be buf off v = Bytes.set_int32_be buf off (Int32.of_int v)
 
 (** Build a direct field reader that reads at a fixed offset. No tuples, no refs
     \- just pure value read. Caller must ensure the buffer is large enough. *)
 let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
  fun typ field_off ->
   match typ with
-  | Uint8 -> fun buf base -> get_u8 buf (base + field_off)
-  | Uint16 Little -> fun buf base -> get_u16_le buf (base + field_off)
-  | Uint16 Big -> fun buf base -> get_u16_be buf (base + field_off)
-  | Uint32 Little -> fun buf base -> get_u32_le buf (base + field_off)
-  | Uint32 Big -> fun buf base -> get_u32_be buf (base + field_off)
+  | Uint8 -> fun buf base -> u8 buf (base + field_off)
+  | Uint16 Little -> fun buf base -> u16_le buf (base + field_off)
+  | Uint16 Big -> fun buf base -> u16_be buf (base + field_off)
+  | Uint32 Little -> fun buf base -> u32_le buf (base + field_off)
+  | Uint32 Big -> fun buf base -> u32_be buf (base + field_off)
   | Uint63 Little -> fun buf base -> UInt63.get_le buf (base + field_off)
   | Uint63 Big -> fun buf base -> UInt63.get_be buf (base + field_off)
-  | Uint64 Little -> fun buf base -> get_u64_le buf (base + field_off)
-  | Uint64 Big -> fun buf base -> get_u64_be buf (base + field_off)
+  | Uint64 Little -> fun buf base -> u64_le buf (base + field_off)
+  | Uint64 Big -> fun buf base -> u64_be buf (base + field_off)
   | Byte_array { size = Int n } ->
       fun buf base -> Bytes.sub_string buf (base + field_off) n
   | Byte_slice { size = Int n } ->
@@ -2606,39 +2606,39 @@ module Codec = struct
   let build_bf_reader base byte_off shift width =
     let mask = (1 lsl width) - 1 in
     match base with
-    | BF_U8 -> fun buf off -> (get_u8 buf (off + byte_off) lsr shift) land mask
+    | BF_U8 -> fun buf off -> (u8 buf (off + byte_off) lsr shift) land mask
     | BF_U16 Little ->
-        fun buf off -> (get_u16_le buf (off + byte_off) lsr shift) land mask
+        fun buf off -> (u16_le buf (off + byte_off) lsr shift) land mask
     | BF_U16 Big ->
-        fun buf off -> (get_u16_be buf (off + byte_off) lsr shift) land mask
+        fun buf off -> (u16_be buf (off + byte_off) lsr shift) land mask
     | BF_U32 Little ->
-        fun buf off -> (get_u32_le buf (off + byte_off) lsr shift) land mask
+        fun buf off -> (u32_le buf (off + byte_off) lsr shift) land mask
     | BF_U32 Big ->
-        fun buf off -> (get_u32_be buf (off + byte_off) lsr shift) land mask
+        fun buf off -> (u32_be buf (off + byte_off) lsr shift) land mask
 
   let build_bf_writer base byte_off shift width =
     let mask = (1 lsl width) - 1 in
     match base with
     | BF_U8 ->
         fun buf off value ->
-          let cur = get_u8 buf (off + byte_off) in
-          set_u8 buf (off + byte_off) (cur lor ((value land mask) lsl shift))
+          let cur = u8 buf (off + byte_off) in
+          w_u8 buf (off + byte_off) (cur lor ((value land mask) lsl shift))
     | BF_U16 Little ->
         fun buf off value ->
-          let cur = get_u16_le buf (off + byte_off) in
-          set_u16_le buf (off + byte_off) (cur lor ((value land mask) lsl shift))
+          let cur = u16_le buf (off + byte_off) in
+          w_u16_le buf (off + byte_off) (cur lor ((value land mask) lsl shift))
     | BF_U16 Big ->
         fun buf off value ->
-          let cur = get_u16_be buf (off + byte_off) in
-          set_u16_be buf (off + byte_off) (cur lor ((value land mask) lsl shift))
+          let cur = u16_be buf (off + byte_off) in
+          w_u16_be buf (off + byte_off) (cur lor ((value land mask) lsl shift))
     | BF_U32 Little ->
         fun buf off value ->
-          let cur = get_u32_le buf (off + byte_off) in
-          set_u32_le buf (off + byte_off) (cur lor ((value land mask) lsl shift))
+          let cur = u32_le buf (off + byte_off) in
+          w_u32_le buf (off + byte_off) (cur lor ((value land mask) lsl shift))
     | BF_U32 Big ->
         fun buf off value ->
-          let cur = get_u32_be buf (off + byte_off) in
-          set_u32_be buf (off + byte_off) (cur lor ((value land mask) lsl shift))
+          let cur = u32_be buf (off + byte_off) in
+          w_u32_be buf (off + byte_off) (cur lor ((value land mask) lsl shift))
 
   let build_bf_accessor_writer base byte_off shift width =
     let mask = (1 lsl width) - 1 in
@@ -2646,28 +2646,28 @@ module Codec = struct
     match base with
     | BF_U8 ->
         fun buf off value ->
-          let cur = get_u8 buf (off + byte_off) in
-          set_u8 buf (off + byte_off)
+          let cur = u8 buf (off + byte_off) in
+          w_u8 buf (off + byte_off)
             (cur land clear_mask lor ((value land mask) lsl shift))
     | BF_U16 Little ->
         fun buf off value ->
-          let cur = get_u16_le buf (off + byte_off) in
-          set_u16_le buf (off + byte_off)
+          let cur = u16_le buf (off + byte_off) in
+          w_u16_le buf (off + byte_off)
             (cur land clear_mask lor ((value land mask) lsl shift))
     | BF_U16 Big ->
         fun buf off value ->
-          let cur = get_u16_be buf (off + byte_off) in
-          set_u16_be buf (off + byte_off)
+          let cur = u16_be buf (off + byte_off) in
+          w_u16_be buf (off + byte_off)
             (cur land clear_mask lor ((value land mask) lsl shift))
     | BF_U32 Little ->
         fun buf off value ->
-          let cur = get_u32_le buf (off + byte_off) in
-          set_u32_le buf (off + byte_off)
+          let cur = u32_le buf (off + byte_off) in
+          w_u32_le buf (off + byte_off)
             (cur land clear_mask lor ((value land mask) lsl shift))
     | BF_U32 Big ->
         fun buf off value ->
-          let cur = get_u32_be buf (off + byte_off) in
-          set_u32_be buf (off + byte_off)
+          let cur = u32_be buf (off + byte_off) in
+          w_u32_be buf (off + byte_off)
             (cur land clear_mask lor ((value land mask) lsl shift))
 
   let build_bf_clear base byte_off =
@@ -2835,19 +2835,19 @@ module Codec = struct
                 | Some fo -> (
                     match typ with
                     | Uint8 ->
-                        (name, fun buf base -> get_u8 buf (base + fo))
+                        (name, fun buf base -> u8 buf (base + fo))
                         :: r.r_field_readers
                     | Uint16 Little ->
-                        (name, fun buf base -> get_u16_le buf (base + fo))
+                        (name, fun buf base -> u16_le buf (base + fo))
                         :: r.r_field_readers
                     | Uint16 Big ->
-                        (name, fun buf base -> get_u16_be buf (base + fo))
+                        (name, fun buf base -> u16_be buf (base + fo))
                         :: r.r_field_readers
                     | Uint32 Little ->
-                        (name, fun buf base -> get_u32_le buf (base + fo))
+                        (name, fun buf base -> u32_le buf (base + fo))
                         :: r.r_field_readers
                     | Uint32 Big ->
-                        (name, fun buf base -> get_u32_be buf (base + fo))
+                        (name, fun buf base -> u32_be buf (base + fo))
                         :: r.r_field_readers
                     | _ -> r.r_field_readers)
                 | None -> r.r_field_readers
@@ -3129,19 +3129,19 @@ module Codec = struct
     match f.f_acc with
     | Bf_u8 { byte_off; shift; mask } ->
         Staged.stage (fun buf off ->
-            (get_u8 buf (off + byte_off) lsr shift) land mask)
+            (u8 buf (off + byte_off) lsr shift) land mask)
     | Bf_u16_le { byte_off; shift; mask } ->
         Staged.stage (fun buf off ->
-            (get_u16_le buf (off + byte_off) lsr shift) land mask)
+            (u16_le buf (off + byte_off) lsr shift) land mask)
     | Bf_u16_be { byte_off; shift; mask } ->
         Staged.stage (fun buf off ->
-            (get_u16_be buf (off + byte_off) lsr shift) land mask)
+            (u16_be buf (off + byte_off) lsr shift) land mask)
     | Bf_u32_le { byte_off; shift; mask } ->
         Staged.stage (fun buf off ->
-            (get_u32_le buf (off + byte_off) lsr shift) land mask)
+            (u32_le buf (off + byte_off) lsr shift) land mask)
     | Bf_u32_be { byte_off; shift; mask } ->
         Staged.stage (fun buf off ->
-            (get_u32_be buf (off + byte_off) lsr shift) land mask)
+            (u32_be buf (off + byte_off) lsr shift) land mask)
     | Sub { field_off; size } ->
         Staged.stage (fun buf off ->
             Slice.make buf ~first:(off + field_off) ~length:size)
