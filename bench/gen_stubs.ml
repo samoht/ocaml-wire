@@ -34,7 +34,7 @@ let () =
     List.map
       (fun (name, s, wire_size) ->
         Wire_c.schema ~name
-          ~module_:(Wire.module_ name [ Wire.typedef ~entrypoint:true s ])
+          ~module_:(Wire.module_ [ Wire.typedef ~entrypoint:true s ])
           ~wire_size)
       entries
   in

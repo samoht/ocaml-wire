@@ -298,10 +298,7 @@ let () =
       (fun rs ->
         Wire_c.schema
           ~name:(Wire.struct_name rs.struct_)
-          ~module_:
-            (Wire.module_
-               (Wire.struct_name rs.struct_)
-               [ Wire.typedef ~entrypoint:true rs.struct_ ])
+          ~module_:(Wire.module_ [ Wire.typedef ~entrypoint:true rs.struct_ ])
           ~wire_size:rs.total_wire_size)
       schemas
   in
