@@ -3139,32 +3139,6 @@ module Codec = struct
       (bytes -> int -> a -> unit) Staged.t =
     Staged.stage f.f_writer
 
-  let load (type r) (_codec : r t) (f : (int, r) field) :
-      (bytes -> int -> int) Staged.t =
-    match f.f_acc with
-    | Bf_u8 { byte_off; _ } ->
-        Staged.stage (fun buf off -> u8 buf (off + byte_off))
-    | Bf_u16_le { byte_off; _ } ->
-        Staged.stage (fun buf off -> u16_le buf (off + byte_off))
-    | Bf_u16_be { byte_off; _ } ->
-        Staged.stage (fun buf off -> u16_be buf (off + byte_off))
-    | Bf_u32_le { byte_off; _ } ->
-        Staged.stage (fun buf off -> u32_le buf (off + byte_off))
-    | Bf_u32_be { byte_off; _ } ->
-        Staged.stage (fun buf off -> u32_be buf (off + byte_off))
-    | Sub _ | Fn _ -> invalid_arg "Codec.load: not a bitfield"
-
-  let extract (type r) (_codec : r t) (f : (int, r) field) :
-      (int -> int) Staged.t =
-    match f.f_acc with
-    | Bf_u8 { shift; mask; _ }
-    | Bf_u16_le { shift; mask; _ }
-    | Bf_u16_be { shift; mask; _ }
-    | Bf_u32_le { shift; mask; _ }
-    | Bf_u32_be { shift; mask; _ } ->
-        Staged.stage (fun word -> (word lsr shift) land mask)
-    | Sub _ | Fn _ -> invalid_arg "Codec.extract: not a bitfield"
-
   let ref (type a r) (f : (a, r) field) : int expr = Ref f.name
 end
 

@@ -141,35 +141,33 @@ CAMLprim value ep_c_gateway_pkts(value v_unit) {
 
 /* ── CLCW polling: read 4 bitfields from 32-bit word, check anomalies ── */
 
-CAMLprim value ep_c_clcw(value v_bufs, value v_n) {
-  /* v_bufs is an array of 4-byte Bytes buffers */
+/* ep_c_clcw_contiguous(buf, n) -> ns
+   Contiguous buffer of n packed 4-byte CLCW words. */
+CAMLprim value ep_c_clcw_contiguous(value v_buf, value v_n) {
+  uint8_t *buf = (uint8_t *)Bytes_val(v_buf);
   int n = Int_val(v_n);
   int anomalies = 0;
   int expected_seq = 0;
 
   int64_t t0 = now_ns();
   for (int i = 0; i < n; i++) {
-    value v_buf = Field(v_bufs, i);
-    uint8_t *buf = (uint8_t *)Bytes_val(v_buf);
-    /* CLCW: 32-bit big-endian word.
-       Lockout:    bit 8  (1 bit)
-       Wait:       bit 7  (1 bit)
-       Retransmit: bit 6  (1 bit)
-       ReportValue: bits 0-7 (8 bits) */
-    uint32_t w = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) |
-                 ((uint32_t)buf[2] << 8) | buf[3];
-    int lockout = (w >> 8) & 1;
-    int wait = (w >> 7) & 1;
-    int retransmit = (w >> 6) & 1;
+    int off = i * 4;
+    volatile uint32_t w = ((uint32_t)buf[off] << 24) |
+                          ((uint32_t)buf[off+1] << 16) |
+                          ((uint32_t)buf[off+2] << 8) | buf[off+3];
+    /* CLCW layout (MSB→LSB): Type(1) Ver(2) Status(3) COP(2) VCID(6)
+       Spare(2) NoRF(1) NoBitlock(1) Lockout(1) Wait(1) Retransmit(1)
+       FARMB(2) Report(8) */
+    int lockout = (w >> 12) & 1;
+    int wait = (w >> 11) & 1;
+    int retransmit = (w >> 10) & 1;
     int report = w & 0xFF;
     if (lockout || wait || retransmit || report != (expected_seq & 0xFF))
       anomalies++;
     expected_seq = report;
   }
   int64_t t1 = now_ns();
-  /* Encode anomalies in high bits, ns in low bits — but ns won't fit.
-     Return ns, get anomalies via separate call. */
-  last_gateway_pkts = anomalies; /* reuse static */
+  last_gateway_pkts = anomalies;
   return Val_int(t1 - t0);
 }
 

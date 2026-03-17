@@ -12,8 +12,9 @@ val gateway : bytes -> int -> int -> int
 val gateway_pkts : unit -> int
 (** [gateway_pkts ()] returns the packet count from the last [gateway] run. *)
 
-val clcw : bytes array -> int -> int
-(** [clcw words n] runs CLCW polling on [n] words. Returns ns. *)
+val clcw_contiguous : bytes -> int -> int
+(** [clcw_contiguous buf n] runs CLCW polling on [n] packed 4-byte words in
+    contiguous [buf]. Returns ns. *)
 
 val clcw_anomalies : unit -> int
 (** [clcw_anomalies ()] returns the anomaly count from the last [clcw] run. *)
