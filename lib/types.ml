@@ -276,3 +276,220 @@ let casetype_decl name params tag cases =
 type module_ = { doc : string option; decls : decl list }
 
 let module_ ?doc decls = { doc; decls }
+let pp_endian ppf = function Little -> () | Big -> Fmt.string ppf "BE"
+
+let pp_bitfield_base ppf = function
+  | BF_U8 -> Fmt.string ppf "UINT8"
+  | BF_U16 e -> Fmt.pf ppf "UINT16%a" pp_endian e
+  | BF_U32 e -> Fmt.pf ppf "UINT32%a" pp_endian e
+
+let pp_cast_type ppf = function
+  | `U8 -> Fmt.string ppf "UINT8"
+  | `U16 -> Fmt.string ppf "UINT16"
+  | `U32 -> Fmt.string ppf "UINT32"
+  | `U64 -> Fmt.string ppf "UINT64"
+
+let rec pp_expr : type a. a expr Fmt.t =
+ fun ppf expr ->
+  match expr with
+  | Int n when n < 0 -> Fmt.pf ppf "(%d)" n
+  | Int n -> Fmt.int ppf n
+  | Int64 n -> Fmt.pf ppf "%LduL" n
+  | Bool true -> Fmt.string ppf "true"
+  | Bool false -> Fmt.string ppf "false"
+  | Ref name -> Fmt.string ppf name
+  | Sizeof t -> Fmt.pf ppf "sizeof (%a)" pp_typ t
+  | Sizeof_this -> Fmt.string ppf "sizeof (this)"
+  | Field_pos -> Fmt.string ppf "field_pos"
+  | Add (a, b) -> Fmt.pf ppf "(%a + %a)" pp_expr a pp_expr b
+  | Sub (a, b) -> Fmt.pf ppf "(%a - %a)" pp_expr a pp_expr b
+  | Mul (a, b) -> Fmt.pf ppf "(%a * %a)" pp_expr a pp_expr b
+  | Div (a, b) -> Fmt.pf ppf "(%a / %a)" pp_expr a pp_expr b
+  | Mod (a, b) -> Fmt.pf ppf "(%a %% %a)" pp_expr a pp_expr b
+  | Land (a, b) -> Fmt.pf ppf "(%a & %a)" pp_expr a pp_expr b
+  | Lor (a, b) -> Fmt.pf ppf "(%a | %a)" pp_expr a pp_expr b
+  | Lxor (a, b) -> Fmt.pf ppf "(%a ^ %a)" pp_expr a pp_expr b
+  | Lnot a -> Fmt.pf ppf "(~%a)" pp_expr a
+  | Lsl (a, b) -> Fmt.pf ppf "(%a << %a)" pp_expr a pp_expr b
+  | Lsr (a, b) -> Fmt.pf ppf "(%a >> %a)" pp_expr a pp_expr b
+  | Eq (a, b) -> Fmt.pf ppf "(%a == %a)" pp_expr a pp_expr b
+  | Ne (a, b) -> Fmt.pf ppf "(%a != %a)" pp_expr a pp_expr b
+  | Lt (a, b) -> Fmt.pf ppf "(%a < %a)" pp_expr a pp_expr b
+  | Le (a, b) -> Fmt.pf ppf "(%a <= %a)" pp_expr a pp_expr b
+  | Gt (a, b) -> Fmt.pf ppf "(%a > %a)" pp_expr a pp_expr b
+  | Ge (a, b) -> Fmt.pf ppf "(%a >= %a)" pp_expr a pp_expr b
+  | And (a, b) -> Fmt.pf ppf "(%a && %a)" pp_expr a pp_expr b
+  | Or (a, b) -> Fmt.pf ppf "(%a || %a)" pp_expr a pp_expr b
+  | Not a -> Fmt.pf ppf "(!%a)" pp_expr a
+  | Cast (t, e) -> Fmt.pf ppf "((%a) %a)" pp_cast_type t pp_expr e
+
+and pp_typ : type a. a typ Fmt.t =
+ fun ppf typ ->
+  match typ with
+  | Uint8 -> Fmt.string ppf "UINT8"
+  | Uint16 e -> Fmt.pf ppf "UINT16%a" pp_endian e
+  | Uint32 e -> Fmt.pf ppf "UINT32%a" pp_endian e
+  | Uint63 e -> Fmt.pf ppf "UINT63%a" pp_endian e
+  | Uint64 e -> Fmt.pf ppf "UINT64%a" pp_endian e
+  | Bits { base; _ } -> pp_bitfield_base ppf base
+  | Unit -> Fmt.string ppf "unit"
+  | All_bytes -> Fmt.string ppf "all_bytes"
+  | All_zeros -> Fmt.string ppf "all_zeros"
+  | Where { cond; inner } -> Fmt.pf ppf "%a { %a }" pp_typ inner pp_expr cond
+  | Array { len; elem } -> Fmt.pf ppf "%a[%a]" pp_typ elem pp_expr len
+  | Byte_array { size } | Byte_slice { size } ->
+      Fmt.pf ppf "UINT8[:byte-size %a]" pp_expr size
+  | Single_elem { size; elem; at_most = false } ->
+      Fmt.pf ppf "%a[:byte-size-single-element-array %a]" pp_typ elem pp_expr
+        size
+  | Single_elem { size; elem; at_most = true } ->
+      Fmt.pf ppf "%a[:byte-size-single-element-array-at-most %a]" pp_typ elem
+        pp_expr size
+  | Enum { name; _ } -> Fmt.string ppf name
+  | Casetype { name; _ } -> Fmt.string ppf name
+  | Struct { name; _ } -> Fmt.string ppf name
+  | Type_ref name -> Fmt.string ppf name
+  | Qualified_ref { module_; name } -> Fmt.pf ppf "%s::%s" module_ name
+  | Apply { typ; args } ->
+      Fmt.pf ppf "%a(%a)" pp_typ typ Fmt.(list ~sep:comma pp_packed_expr) args
+  | Map { inner; _ } -> pp_typ ppf inner
+
+and pp_packed_expr ppf (Pack_expr e) = pp_expr ppf e
+
+let rec pp_action_stmt ppf = function
+  | Assign (ptr, e) -> Fmt.pf ppf "*%s = %a;" ptr pp_expr e
+  | Return e -> Fmt.pf ppf "return %a;" pp_expr e
+  | Abort -> Fmt.string ppf "abort;"
+  | If (cond, then_, None) ->
+      Fmt.pf ppf "if (%a) { %a }" pp_expr cond
+        Fmt.(list ~sep:sp pp_action_stmt)
+        then_
+  | If (cond, then_, Some else_) ->
+      Fmt.pf ppf "if (%a) { %a } else { %a }" pp_expr cond
+        Fmt.(list ~sep:sp pp_action_stmt)
+        then_
+        Fmt.(list ~sep:sp pp_action_stmt)
+        else_
+  | Var (name, e) -> Fmt.pf ppf "var %s = %a;" name pp_expr e
+
+let pp_action ppf = function
+  | On_success stmts ->
+      Fmt.pf ppf "{:on-success %a }" Fmt.(list ~sep:sp pp_action_stmt) stmts
+  | On_act stmts ->
+      Fmt.pf ppf "{:act %a }" Fmt.(list ~sep:sp pp_action_stmt) stmts
+
+(* Extract field suffix for arrays - the modifier goes after the field name *)
+type field_suffix =
+  | No_suffix
+  | Bitwidth of int
+  | Byte_array of int expr
+  | Single_elem of { size : int expr; at_most : bool }
+  | Array of int expr
+
+let field_suffix : type a. a typ -> field_suffix * (Format.formatter -> unit) =
+ fun typ ->
+  match typ with
+  | Bits { width; base } ->
+      (Bitwidth width, fun ppf -> pp_bitfield_base ppf base)
+  | Byte_array { size } | Byte_slice { size } ->
+      (Byte_array size, fun ppf -> Fmt.string ppf "UINT8")
+  | Single_elem { size; elem; at_most } ->
+      (Single_elem { size; at_most }, fun ppf -> pp_typ ppf elem)
+  | Array { len; elem } -> (Array len, fun ppf -> pp_typ ppf elem)
+  | _ -> (No_suffix, fun ppf -> pp_typ ppf typ)
+
+let pp_field ppf (Field f) =
+  match f.field_name with
+  | Some name ->
+      let suffix, pp_base = field_suffix f.field_typ in
+      Fmt.pf ppf "@,%t %s" pp_base name;
+      (* Print suffix after field name *)
+      (match suffix with
+      | No_suffix -> ()
+      | Bitwidth w -> Fmt.pf ppf " : %d" w
+      | Byte_array size -> Fmt.pf ppf "[:byte-size %a]" pp_expr size
+      | Single_elem { size; at_most = false } ->
+          Fmt.pf ppf "[:byte-size-single-element-array %a]" pp_expr size
+      | Single_elem { size; at_most = true } ->
+          Fmt.pf ppf "[:byte-size-single-element-array-at-most %a]" pp_expr size
+      | Array len -> Fmt.pf ppf "[%a]" pp_expr len);
+      Option.iter (Fmt.pf ppf " { %a }" pp_expr) f.constraint_;
+      Option.iter (Fmt.pf ppf " %a" pp_action) f.action;
+      Fmt.string ppf ";"
+  | None -> Fmt.pf ppf "@,%a;" pp_typ f.field_typ
+
+let pp_param ppf p =
+  let (Pack_typ t) = p.param_typ in
+  if p.mutable_ then Fmt.pf ppf "mutable %a *%s" pp_typ t p.param_name
+  else Fmt.pf ppf "%a %s" pp_typ t p.param_name
+
+let pp_params ppf params =
+  if not (List.is_empty params) then
+    Fmt.pf ppf "(%a)" Fmt.(list ~sep:comma pp_param) params
+
+let pp_struct ppf (s : struct_) =
+  Fmt.pf ppf "typedef struct _%s%a" s.name pp_params s.params;
+  Option.iter (Fmt.pf ppf "@,where (%a)" pp_expr) s.where;
+  Fmt.pf ppf "@,{@[<v 2>";
+  List.iter (pp_field ppf) s.fields;
+  Fmt.pf ppf "@]@,} %s" s.name
+
+let pp_decl ppf = function
+  | Typedef { entrypoint; export; doc; struct_ = st } ->
+      Option.iter (Fmt.pf ppf "/*++ %s --*/@,") doc;
+      if export then Fmt.pf ppf "export@,";
+      if entrypoint then Fmt.pf ppf "entrypoint@,";
+      Fmt.pf ppf "%a;@,@," pp_struct st
+  | Define { name; value } ->
+      if value < 0 then Fmt.pf ppf "#define %s (%d)@," name value
+      else Fmt.pf ppf "#define %s 0x%x@," name value
+  | Extern_fn { name; params; ret = Pack_typ ret } ->
+      Fmt.pf ppf "extern %a %s(%a);@,@," pp_typ ret name
+        Fmt.(list ~sep:comma pp_param)
+        params
+  | Extern_probe { init; name } ->
+      if init then Fmt.pf ppf "extern probe (INIT) %s;@,@," name
+      else Fmt.pf ppf "extern probe %s;@,@," name
+  | Enum_decl { name; cases; base = Pack_typ base } ->
+      Fmt.pf ppf "%a enum %s {@[<v 2>" pp_typ base name;
+      List.iteri
+        (fun i (cname, value) ->
+          if not (Int.equal i 0) then Fmt.string ppf ",";
+          Fmt.pf ppf "@,%s = %d" cname value)
+        cases;
+      Fmt.pf ppf "@]@,}@,@,"
+  | Casetype_decl { name; params; tag = Pack_typ _; cases } ->
+      (* First param is the switch discriminant *)
+      let disc_name =
+        match params with p :: _ -> p.param_name | [] -> "tag"
+      in
+      (* Internal name has underscore prefix, public name doesn't *)
+      let internal_name, public_name =
+        if String.length name > 0 && name.[0] = '_' then
+          (name, String.sub name 1 (String.length name - 1))
+        else ("_" ^ name, name)
+      in
+      Fmt.pf ppf "casetype %s%a {@[<v 2>@,switch (%s) {" internal_name pp_params
+        params disc_name;
+      List.iteri
+        (fun i (tag_opt, Pack_typ typ) ->
+          let field_name = Fmt.str "v%d" i in
+          match tag_opt with
+          | Some e ->
+              Fmt.pf ppf "@,case %a: %a %s;" pp_packed_expr e pp_typ typ
+                field_name
+          | None -> Fmt.pf ppf "@,default: %a %s;" pp_typ typ field_name)
+        cases;
+      Fmt.pf ppf "@,}@]@,} %s;@,@," public_name
+
+let pp_module ppf m =
+  Option.iter (Fmt.pf ppf "/*++ %s --*/@,@,") m.doc;
+  List.iter (pp_decl ppf) m.decls
+
+let to_3d m = Fmt.str "@[<v>%a@]" pp_module m
+
+let to_3d_file path m =
+  let oc = open_out path in
+  let ppf = Format.formatter_of_out_channel oc in
+  Fmt.pf ppf "@[<v>%a@]@." pp_module m;
+  close_out oc
