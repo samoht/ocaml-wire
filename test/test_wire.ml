@@ -1046,7 +1046,7 @@ let test_c_stubs () =
     struct_ "SimpleHeader"
       [ field "version" uint8; field "length" uint16; field "flags" uint8 ]
   in
-  let stubs = to_c_stubs [ s ] in
+  let stubs = Wire_c.to_c_stubs [ s ] in
   Alcotest.(check bool)
     "contains check stub" true
     (contains ~sub:"caml_wire_simpleheader_check" stubs);

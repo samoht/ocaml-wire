@@ -45,7 +45,7 @@ let () =
 
   (* Step 2: Generate c_stubs.c *)
   let oc = open_out "c_stubs.c" in
-  output_string oc (Wire.to_c_stubs structs);
+  output_string oc (Wire_c.to_c_stubs structs);
   let pr fmt = Printf.fprintf oc fmt in
 
   pr "\n/* ── Noop FFI stubs (measure call overhead) ── */\n\n";
@@ -72,7 +72,7 @@ let () =
   List.iter
     (fun s ->
       let name = Wire.struct_name s in
-      let ep = Wire.everparse_name name in
+      let ep = Wire_c.everparse_name name in
       let lower = String.lowercase_ascii name in
       pr "CAMLprim value ep_loop_%s(value v_buf, value v_off, value v_n) {\n"
         lower;
@@ -93,7 +93,7 @@ let () =
 
   (* Step 3: Generate c_stubs.ml *)
   let oc = open_out "c_stubs.ml" in
-  output_string oc (Wire.to_ml_stubs structs);
+  output_string oc (Wire_c.to_ml_stubs structs);
   let pr fmt = Printf.fprintf oc fmt in
   pr "(* Noop FFI stubs *)\n\n";
   pr "external noop : bytes -> bool = \"ep_noop\" [@@noalloc]\n\n";

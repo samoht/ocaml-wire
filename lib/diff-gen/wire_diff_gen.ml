@@ -7,7 +7,7 @@
 type schema = { name : string; module_ : Wire.module_; wire_size : int }
 
 let schema ~name ~struct_ ~module_ =
-  match Wire.size_of_struct struct_ with
+  match Wire_c.size_of_struct struct_ with
   | Some wire_size -> Some { name; module_; wire_size }
   | None -> None
 
