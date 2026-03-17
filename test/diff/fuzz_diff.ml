@@ -4,60 +4,53 @@
    Stage 1 — compile C roundtrip binary + start subprocess
    Stage 2 — Crowbar tests: OCaml roundtrip_struct vs C subprocess
 
-   The subprocess protocol is itself defined using wire record codecs:
+   The subprocess protocol is itself defined using wire Codec:
    - Request:  WireReq { index : uint32; length : uint32 } ++ data[length]
    - Response: WireResp { result : uint32 } ++ data[result]  (result < 0 = error)
 
    Both sides use wire-generated read/write functions. *)
 
 module Cr = Crowbar
-module Bs = Bytesrw.Bytes.Slice
 
-(* Helper: encode record to string using slice-based API *)
+(* Helper: encode record to string using Codec API *)
 let encode_to_string codec =
-  let encode = Wire.Staged.unstage (Wire.Record.encode codec) in
+  let ws = Wire.Codec.wire_size codec in
   fun v ->
-    let slice = encode v in
-    Bytes.sub_string (Bs.bytes slice) (Bs.first slice) (Bs.length slice)
+    let buf = Bytes.create ws in
+    Wire.Codec.encode codec v buf 0;
+    Bytes.unsafe_to_string buf
 
-(* Helper: decode record from bytes using slice-based API *)
+(* Helper: decode record from bytes using Codec API *)
 let decode_from_bytes codec =
-  let decode = Wire.Staged.unstage (Wire.Record.decode codec) in
+  let ws = Wire.Codec.wire_size codec in
   fun b ->
-    if Bytes.length b = 0 then
-      Error (Wire.Unexpected_eof { expected = 1; got = 0 })
-    else
-      let slice = Bs.of_bytes b ~first:0 ~last:(Bytes.length b - 1) in
-      Ok (decode slice)
+    if Bytes.length b < ws then
+      Error (Wire.Unexpected_eof { expected = ws; got = Bytes.length b })
+    else Ok (Wire.Codec.decode codec b 0)
 
 (* ---- One-space protocol (defined with wire) ---- *)
 
-type request_hdr = { req_index : int32; req_length : int32 }
+type request_hdr = { req_index : int; req_length : int }
 
 let request_hdr_codec =
-  Wire.Record.record "WireReq"
-    ~default:{ req_index = 0l; req_length = 0l }
-    [
-      Wire.Record.field "index" Wire.uint32
-        ~get:(fun r -> r.req_index)
-        ~set:(fun v r -> { r with req_index = v });
-      Wire.Record.field "length" Wire.uint32
-        ~get:(fun r -> r.req_length)
-        ~set:(fun v r -> { r with req_length = v });
-    ]
+  Wire.Codec.view "WireReq"
+    (fun req_index req_length -> { req_index; req_length })
+    Wire.Codec.
+      [
+        Wire.Codec.field "index" Wire.uint32 (fun r -> r.req_index);
+        Wire.Codec.field "length" Wire.uint32 (fun r -> r.req_length);
+      ]
 
-type response_hdr = { resp_result : int32 }
+type response_hdr = { resp_result : int }
 
 let response_hdr_codec =
-  Wire.Record.record "WireResp" ~default:{ resp_result = 0l }
-    [
-      Wire.Record.field "result" Wire.uint32
-        ~get:(fun r -> r.resp_result)
-        ~set:(fun v _r -> { resp_result = v });
-    ]
+  Wire.Codec.view "WireResp"
+    (fun resp_result -> { resp_result })
+    Wire.Codec.
+      [ Wire.Codec.field "result" Wire.uint32 (fun r -> r.resp_result) ]
 
-let request_hdr_struct = Wire.Record.to_struct request_hdr_codec
-let response_hdr_struct = Wire.Record.to_struct response_hdr_codec
+let request_hdr_struct = Wire.Codec.to_struct request_hdr_codec
+let response_hdr_struct = Wire.Codec.to_struct response_hdr_codec
 
 (* Stage the protocol encoders/decoders once *)
 let encode_request_hdr = encode_to_string request_hdr_codec
@@ -208,7 +201,7 @@ type subprocess = { ic : in_channel; oc : out_channel }
 
 let send_request sub idx buf =
   let len = String.length buf in
-  let hdr = { req_index = Int32.of_int idx; req_length = Int32.of_int len } in
+  let hdr = { req_index = idx; req_length = len } in
   let hdr_bytes = encode_request_hdr hdr in
   output_string sub.oc hdr_bytes;
   if len > 0 then output_string sub.oc buf;
@@ -220,7 +213,7 @@ let recv_response sub =
   match decode_response_hdr resp_buf with
   | Error _ -> None
   | Ok resp ->
-      let result = Int32.to_int resp.resp_result in
+      let result = resp.resp_result in
       if result < 0 then None
       else begin
         let out = Bytes.create result in

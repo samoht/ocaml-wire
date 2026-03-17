@@ -29,10 +29,9 @@
 
     Example:
     {[
-      let codec = Record.record "Packet" ~default ...
-      let encode = Staged.unstage (Record.encode codec)  (* pay cost here *)
+      let get_length = Staged.unstage (Codec.get codec f_length)  (* pay cost here *)
       for _ = 1 to n do
-        let _ = encode packet in  (* fast - no interpretation overhead *)
+        let _ = get_length buf off in  (* fast - no interpretation overhead *)
         ...
       done
     ]} *)
@@ -121,16 +120,6 @@ type action
 
 type action_stmt
 (** An action statement. *)
-
-type _ record_codec
-(** A record codec for encoding/decoding fixed-size binary records of type ['a].
-    Use the {!Record} module to create and use codecs. *)
-
-type ('a, 'r) field_codec
-(** A field codec for a field of type ['a] in record type ['r]. *)
-
-type _ field_codec_packed
-(** A type-erased field codec for a record of type ['r]. *)
 
 (** {1 Expressions}
 
@@ -571,156 +560,6 @@ val encode_to_bytes : 'a typ -> 'a -> bytes
 
 val encode_to_string : 'a typ -> 'a -> string
 (** [encode_to_string typ v] encodes [v] to a string. *)
-
-(** {1 Record Codec (Legacy API)}
-
-    The legacy record codec API using explicit field_codec, pack_field, and
-    record_codec. For new code, prefer the {!Codec} module. *)
-
-val field_codec :
-  string ->
-  ?constraint_:bool expr ->
-  'a typ ->
-  get:('r -> 'a) ->
-  set:('a -> 'r -> 'r) ->
-  ('a, 'r) field_codec
-(** [field_codec name ?constraint_ typ ~get ~set] creates a field codec. *)
-
-val pack_field : ('a, 'r) field_codec -> 'r field_codec_packed
-(** [pack_field fc] type-erases a field codec for use in a list. *)
-
-val record_codec :
-  string -> default:'r -> 'r field_codec_packed list -> 'r record_codec
-(** [record_codec name ~default fields] creates a record codec from packed
-    fields. *)
-
-val record_to_struct : 'r record_codec -> struct_
-(** [record_to_struct codec] converts a record codec to a struct for 3D
-    generation. *)
-
-val encode_record_to_slice :
-  'r record_codec -> ('r -> Bytesrw.Bytes.Slice.t) Staged.t
-(** [encode_record_to_slice codec] returns a staged encoder that writes a record
-    to a new slice. *)
-
-val decode_record_from_slice :
-  'r record_codec -> (Bytesrw.Bytes.Slice.t -> 'r) Staged.t
-(** [decode_record_from_slice codec] returns a staged decoder that reads a
-    record from a slice. *)
-
-type 'r encode_context = {
-  buffer : bytes;
-  wire_size : int;
-  encode : 'r -> unit;
-}
-(** Context for zero-copy encoding to a pre-allocated buffer. *)
-
-val encode_record_to_bytes : 'r record_codec -> 'r encode_context option
-(** [encode_record_to_bytes codec] returns a context for encoding records to a
-    shared buffer, or [None] if the codec has variable size. *)
-
-val decode_record_from_bytes : 'r record_codec -> (bytes -> int -> 'r) Staged.t
-(** [decode_record_from_bytes codec] returns a staged decoder that reads a
-    record from bytes at a given offset. *)
-
-(** {2 Record Module (Convenience API)}
-
-    A convenience module that wraps the legacy record codec API for cleaner
-    syntax. *)
-
-module Record : sig
-  type ('a, 'r) field = ('a, 'r) field_codec
-  (** A field in a record of type ['r]. *)
-
-  type 'r t = 'r record_codec
-  (** A record codec. *)
-
-  val field :
-    string ->
-    ?constraint_:bool expr ->
-    'a typ ->
-    get:('r -> 'a) ->
-    set:('a -> 'r -> 'r) ->
-    ('a, 'r) field
-  (** [field name ?constraint_ typ ~get ~set] creates a field specification. *)
-
-  val record : string -> default:'r -> ('a, 'r) field list -> 'r t
-  (** [record name ~default fields] creates a record codec. *)
-
-  val encode : 'r t -> ('r -> Bytesrw.Bytes.Slice.t) Staged.t
-  (** [encode codec] returns a staged encoder for records. *)
-
-  val decode : 'r t -> (Bytesrw.Bytes.Slice.t -> 'r) Staged.t
-  (** [decode codec] returns a staged decoder for records. *)
-
-  val encode_bytes : 'r t -> 'r encode_context option
-  (** [encode_bytes codec] returns a context for encoding to bytes. *)
-
-  val decode_bytes : 'r t -> (bytes -> int -> 'r) Staged.t
-  (** [decode_bytes codec] returns a staged decoder from bytes. *)
-
-  val to_struct : 'r t -> struct_
-  (** [to_struct codec] converts to a struct for 3D generation. *)
-end
-
-(** {1 Direct Decoders}
-
-    Zero-allocation decoders built from type specifications. These compile field
-    readers at construction time for maximum decode performance. *)
-
-val decode_make1 : 'a1 typ -> make:('a1 -> 'r) -> (bytes -> int -> 'r) Staged.t
-(** Build decoder for 1-field record. *)
-
-val decode_make2 :
-  'a1 typ -> 'a2 typ -> make:('a1 -> 'a2 -> 'r) -> (bytes -> int -> 'r) Staged.t
-(** Build decoder for 2-field record. *)
-
-val decode_make3 :
-  'a1 typ ->
-  'a2 typ ->
-  'a3 typ ->
-  make:('a1 -> 'a2 -> 'a3 -> 'r) ->
-  (bytes -> int -> 'r) Staged.t
-(** Build decoder for 3-field record. *)
-
-val decode_make4 :
-  'a1 typ ->
-  'a2 typ ->
-  'a3 typ ->
-  'a4 typ ->
-  make:('a1 -> 'a2 -> 'a3 -> 'a4 -> 'r) ->
-  (bytes -> int -> 'r) Staged.t
-(** Build decoder for 4-field record. *)
-
-(** {2 Bounds-checked Decoders}
-
-    Same as [decode_make*] but with bounds checking that raises {!Parse_error}.
-*)
-
-val decode_make1_exn :
-  'a1 typ -> make:('a1 -> 'r) -> (bytes -> int -> 'r) Staged.t
-(** Build bounds-checked decoder for 1-field record. *)
-
-val decode_make2_exn :
-  'a1 typ -> 'a2 typ -> make:('a1 -> 'a2 -> 'r) -> (bytes -> int -> 'r) Staged.t
-(** Build bounds-checked decoder for 2-field record. *)
-
-val decode_make3_exn :
-  'a1 typ ->
-  'a2 typ ->
-  'a3 typ ->
-  make:('a1 -> 'a2 -> 'a3 -> 'r) ->
-  (bytes -> int -> 'r) Staged.t
-(** Build bounds-checked decoder for 3-field record. *)
-
-val decode_make4_exn :
-  'a1 typ ->
-  'a2 typ ->
-  'a3 typ ->
-  'a4 typ ->
-  make:('a1 -> 'a2 -> 'a3 -> 'a4 -> 'r) ->
-  (bytes -> int -> 'r) Staged.t
-(** Build bounds-checked decoder for 4-field record. *)
 
 (** {1 Typed Record Codec}
 
