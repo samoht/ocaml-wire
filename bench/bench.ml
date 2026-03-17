@@ -8,6 +8,7 @@
     Usage: BUILD_EVERPARSE=1 dune exec bench/bench.exe [-- ITERATIONS] *)
 
 open Wire
+module Slice = Bytesrw.Bytes.Slice
 
 (* ── Timing and allocation ── *)
 
@@ -83,10 +84,14 @@ let tcp_buf = (Net.tcp_frame_data 1).(0)
 
 (* Sub-offsets for nested protocol access *)
 let ip_off =
-  (Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload)) tcp_buf 0
+  Slice.first
+    ((Staged.unstage (Codec.get Net.ethernet_codec Net.f_eth_payload))
+       tcp_buf 0)
 
 let tcp_off =
-  (Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload)) tcp_buf ip_off
+  Slice.first
+    ((Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_payload))
+       tcp_buf ip_off)
 
 (* Isolated buffers for flat EverParse validation *)
 let ipv4_only_buf = Bytes.sub tcp_buf 14 Net.ipv4_size
@@ -117,11 +122,11 @@ let mixed_timestamp =
 
 let ip_src = Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_src)
 
-(* Sub (nested traversal) accessors *)
-let sub_eth_payload =
-  Staged.unstage (Codec.sub Net.ethernet_codec Net.f_eth_payload)
+(* Get (nested traversal) accessors *)
+let get_eth_payload =
+  Staged.unstage (Codec.get Net.ethernet_codec Net.f_eth_payload)
 
-let sub_ip_payload = Staged.unstage (Codec.sub Net.ipv4_codec Net.f_ip_payload)
+let get_ip_payload = Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_payload)
 
 (* Write accessors *)
 let set_minimal_value =
@@ -256,14 +261,14 @@ let () =
   (* Nested: Eth -> IPv4 -> TCP.dst_port (3-layer traversal) *)
   let nested_dst_get =
     time_op n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         ignore (tcp_dst_port tcp_buf tcp))
   in
   let nested_dst_alloc =
     alloc_words n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         ignore (tcp_dst_port tcp_buf tcp))
   in
   read_row "Eth->IPv4->TCP.dst_port (3 layers)" Net.ethernet_size None None
@@ -272,14 +277,14 @@ let () =
   (* Nested: Eth -> IPv4 -> TCP.syn (3-layer traversal, bitfield) *)
   let nested_syn_get =
     time_op n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         ignore (tcp_syn tcp_buf tcp))
   in
   let nested_syn_alloc =
     alloc_words n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         ignore (tcp_syn tcp_buf tcp))
   in
   read_row "Eth->IPv4->TCP.syn (3 layers)" Net.ethernet_size None None
@@ -330,28 +335,28 @@ let () =
   (* Nested writes: 3-layer traversal + set *)
   let v =
     time_op n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         set_tcp_dst_port tcp_buf tcp 8080)
   in
   let a =
     alloc_words n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         set_tcp_dst_port tcp_buf tcp 8080)
   in
   write_row "Eth->TCP.dst_port (3 layers)" v a;
 
   let v =
     time_op n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         set_tcp_syn tcp_buf tcp true)
   in
   let a =
     alloc_words n (fun () ->
-        let ip = sub_eth_payload tcp_buf 0 in
-        let tcp = sub_ip_payload tcp_buf ip in
+        let ip = Slice.first (get_eth_payload tcp_buf 0) in
+        let tcp = Slice.first (get_ip_payload tcp_buf ip) in
         set_tcp_syn tcp_buf tcp true)
   in
   write_row "Eth->TCP.syn (3 layers)" v a;

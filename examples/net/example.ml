@@ -1,10 +1,11 @@
 (** Demonstrates zero-copy TCP/IP header parsing with Wire.
 
-    Three nested protocol layers accessed via [sub] and [get] — no intermediate
-    record allocation, no buffer copies. *)
+    Three nested protocol layers accessed via [get] — no intermediate record
+    allocation, no buffer copies. *)
 
 open Wire
 open Net
+module Slice = Bytesrw.Bytes.Slice
 
 let () =
   let buf = (tcp_frame_data 1).(0) in
@@ -18,7 +19,8 @@ let () =
     (Staged.unstage (Codec.get ethernet_codec f_eth_ethertype)) buf 0
   in
   let ip_off =
-    (Staged.unstage (Codec.sub ethernet_codec f_eth_payload)) buf 0
+    Slice.first
+      ((Staged.unstage (Codec.get ethernet_codec f_eth_payload)) buf 0)
   in
   Fmt.pr "Ethernet: ethertype=0x%04X payload_off=%d\n" etype ip_off;
 
@@ -29,7 +31,8 @@ let () =
   let src = (Staged.unstage (Codec.get ipv4_codec f_ip_src)) buf ip_off in
   let dst = (Staged.unstage (Codec.get ipv4_codec f_ip_dst)) buf ip_off in
   let tcp_off =
-    (Staged.unstage (Codec.sub ipv4_codec f_ip_payload)) buf ip_off
+    Slice.first
+      ((Staged.unstage (Codec.get ipv4_codec f_ip_payload)) buf ip_off)
   in
   Fmt.pr "IPv4:     protocol=%d src=%a dst=%a payload_off=%d\n" protocol
     pp_ipv4_addr src pp_ipv4_addr dst tcp_off;

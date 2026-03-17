@@ -3142,14 +3142,6 @@ module Codec = struct
       (bytes -> int -> a) Staged.t =
     Staged.stage f.f_reader
 
-  let sub (type r) (_codec : r t) (f : (Slice.t, r) field) :
-      (bytes -> int -> int) Staged.t =
-    Staged.stage
-      (match f.f_acc with
-      | Sub { field_off; _ } -> fun _buf off -> off + field_off
-      | Fn reader -> fun buf off -> Slice.first (reader buf off)
-      | _ -> assert false)
-
   let set (type a r) (_codec : r t) (f : (a, r) field) :
       (bytes -> int -> a -> unit) Staged.t =
     Staged.stage f.f_writer

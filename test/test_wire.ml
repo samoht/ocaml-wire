@@ -910,7 +910,9 @@ let test_view_byte_slice_nested () =
   let buf = Bytes.create 4 in
   Bytes.set_uint16_be buf 0 0x0001;
   Bytes.set_uint16_be buf 2 0x1234;
-  let payload_off = (Staged.unstage (Codec.sub outer_codec f_payload)) buf 0 in
+  let payload_off =
+    Bs.first ((Staged.unstage (Codec.get outer_codec f_payload)) buf 0)
+  in
   let inner_val =
     (Staged.unstage (Codec.get inner_codec f_val)) buf payload_off
   in
@@ -984,7 +986,9 @@ let test_raw_sub_nested () =
   let buf = Bytes.create 4 in
   Bytes.set_uint16_be buf 0 0x0001;
   Bytes.set_uint16_be buf 2 0x5678;
-  let inner_off = (Staged.unstage (Codec.sub outer_codec f_payload)) buf 0 in
+  let inner_off =
+    Bs.first ((Staged.unstage (Codec.get outer_codec f_payload)) buf 0)
+  in
   Alcotest.(check int) "sub offset" 2 inner_off;
   let inner_val =
     (Staged.unstage (Codec.get inner_codec f_val)) buf inner_off
@@ -1015,9 +1019,11 @@ let test_raw_sub_three_layers () =
   Bytes.set_uint16_be buf 0 0xAAAA;
   Bytes.set_uint8 buf 2 0xBB;
   Bytes.set_uint8 buf 3 0xCC;
-  let mid_off = (Staged.unstage (Codec.sub outer f_body)) buf 0 in
+  let mid_off = Bs.first ((Staged.unstage (Codec.get outer f_body)) buf 0) in
   Alcotest.(check int) "mid offset" 2 mid_off;
-  let inner_off = (Staged.unstage (Codec.sub mid f_mid_payload)) buf mid_off in
+  let inner_off =
+    Bs.first ((Staged.unstage (Codec.get mid f_mid_payload)) buf mid_off)
+  in
   Alcotest.(check int) "inner offset" 3 inner_off;
   let x = (Staged.unstage (Codec.get inner f_x)) buf inner_off in
   Alcotest.(check int) "3-layer get" 0xCC x
@@ -1225,7 +1231,9 @@ let test_dep_bslice_get_payload () =
 let test_dep_bslice_sub () =
   let buf = Bytes.create 6 in
   Bytes.set_uint16_be buf 0 4;
-  let off = (Staged.unstage (Codec.sub dep_slice_codec f_ds_payload)) buf 0 in
+  let off =
+    Bs.first ((Staged.unstage (Codec.get dep_slice_codec f_ds_payload)) buf 0)
+  in
   Alcotest.(check int) "sub offset" 2 off
 
 let test_dep_bslice_set_length () =

@@ -822,17 +822,6 @@ module Codec : sig
       For bitfields, uses read-modify-write to preserve adjacent bits. Does not
       bounds-check. *)
 
-  val sub :
-    'r t -> (Bytesrw.Bytes.Slice.t, 'r) field -> (bytes -> int -> int) Staged.t
-  (** [sub codec f] returns a staged sub-protocol offset reader. Unstage once
-      outside the hot loop:
-      {[
-        let sub_payload = Staged.unstage (Codec.sub ethernet_codec f_payload) in
-        let ip_off = sub_payload buf 0 in
-        ...
-      ]}
-      Does not bounds-check. *)
-
   val ref : ('a, 'r) field -> int expr
   (** [ref f] returns an expression referencing field [f] by name. Use this
       instead of {!val:Wire.ref} for type-safe field references in constraints
