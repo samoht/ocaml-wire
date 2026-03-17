@@ -29,16 +29,20 @@ let () =
   let words = Space.clcw_data n_words in
   Fmt.pr "CLCW polling loop (%d words, %dB each)\n\n" n_words Space.clcw_size;
 
-  (* Wire: bitfield accessors *)
+  (* Wire: bitfield accessors (partial-apply get outside loop) *)
+  let get_lockout = C.get Space.clcw_codec Space.cw_lockout in
+  let get_wait = C.get Space.clcw_codec Space.cw_wait in
+  let get_retransmit = C.get Space.clcw_codec Space.cw_retransmit in
+  let get_report = C.get Space.clcw_codec Space.cw_report in
   time "wire: get lockout+wait+retransmit+report" (fun () ->
       let anomalies = ref 0 in
       let expected_seq = ref 0 in
       Array.iter
         (fun buf ->
-          let lockout = C.get Space.clcw_codec Space.cw_lockout buf 0 in
-          let wait = C.get Space.clcw_codec Space.cw_wait buf 0 in
-          let retransmit = C.get Space.clcw_codec Space.cw_retransmit buf 0 in
-          let report = C.get Space.clcw_codec Space.cw_report buf 0 in
+          let lockout = get_lockout buf 0 in
+          let wait = get_wait buf 0 in
+          let retransmit = get_retransmit buf 0 in
+          let report = get_report buf 0 in
           if
             lockout <> 0 || wait <> 0 || retransmit <> 0
             || report <> !expected_seq land 0xFF

@@ -807,7 +807,10 @@ module Codec : sig
   (** [get codec f buf off] reads field [f] from [buf] at offset [off]. Zero
       allocation for immediate types (int, bool). Does not bounds-check — the
       caller must ensure [buf] has at least [wire_size codec] bytes from [off].
-  *)
+
+      For hot loops, partially apply [get codec f] once outside the loop to
+      resolve the field dispatch and obtain a specialized [bytes -> int -> 'a]
+      reader. *)
 
   val set : 'r t -> ('a, 'r) field -> bytes -> int -> 'a -> unit
   (** [set codec f buf off x] writes [x] into [buf] at offset [off]. For

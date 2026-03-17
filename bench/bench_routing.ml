@@ -91,14 +91,17 @@ let () =
 
   let hdr = Space.packet_size in
 
-  (* Wire: zero-copy field access *)
+  (* Wire: zero-copy field access (partial-apply get outside loop) *)
+  let get_apid = C.get Space.packet_codec Space.f_sp_apid in
+  let get_seq = C.get Space.packet_codec Space.f_sp_seq_count in
+  let get_dlen = C.get Space.packet_codec Space.f_sp_data_len in
   time "wire: get APID + SeqCount + DataLen + dispatch" (fun () ->
       let off = ref 0 in
       for _ = 1 to n do
         let o = !off in
-        let apid = C.get Space.packet_codec Space.f_sp_apid buf o in
-        let _seq = C.get Space.packet_codec Space.f_sp_seq_count buf o in
-        let dlen = C.get Space.packet_codec Space.f_sp_data_len buf o in
+        let apid = get_apid buf o in
+        let _seq = get_seq buf o in
+        let dlen = get_dlen buf o in
         dispatch routing_table.(apid);
         off := o + hdr + dlen + 1
       done);

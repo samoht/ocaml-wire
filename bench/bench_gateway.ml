@@ -81,20 +81,23 @@ let () =
   let pkt_payload = 64 in
   let pkt_size = sp_hdr + pkt_payload in
 
-  (* Wire: zero-copy field access *)
+  (* Wire: zero-copy field access (partial-apply get outside loop) *)
+  let get_vcid = C.get Space.tm_frame_codec Space.f_tf_vcid in
+  let get_fhp = C.get Space.tm_frame_codec Space.f_tf_first_hdr in
+  let get_apid = C.get Space.packet_codec Space.f_sp_apid in
+  let get_seq = C.get Space.packet_codec Space.f_sp_seq_count in
   time "wire: get VCID + FirstHdrPtr + walk pkts" (fun () ->
       let pkts = ref 0 in
       for frame = 0 to n - 1 do
         let base = frame * cadu_size in
-        let vcid = C.get Space.tm_frame_codec Space.f_tf_vcid buf base in
-        let fhp = C.get Space.tm_frame_codec Space.f_tf_first_hdr buf base in
+        let vcid = get_vcid buf base in
+        let fhp = get_fhp buf base in
         ignore (Sys.opaque_identity vcid);
-        (* Walk packets starting at First Header Pointer *)
         let data_start = base + tm_hdr in
         let off = ref (data_start + fhp) in
         while !off + pkt_size <= data_start + data_field_size do
-          let _apid = C.get Space.packet_codec Space.f_sp_apid buf !off in
-          let _seq = C.get Space.packet_codec Space.f_sp_seq_count buf !off in
+          let _apid = get_apid buf !off in
+          let _seq = get_seq buf !off in
           off := !off + pkt_size;
           incr pkts
         done

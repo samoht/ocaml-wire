@@ -5,13 +5,17 @@
 ```
 make build              # dune build
 make test               # dune runtest
-make bench              # BUILD_EVERPARSE=1 dune exec bench/bench.exe
+make bench              # EverParse C vs OCaml (needs 3d.exe)
+make bench-routing      # APID demux throughput (wire vs hand-written)
+make bench-gateway      # TM frame reassembly (wire vs hand-written)
+make bench-clcw         # CLCW polling loop (wire vs hand-written)
 make prof               # CPU profile with Instruments (open prof.trace)
 make memtrace           # allocation hotspots via memtrace
 make clean              # dune clean
 ```
 
 `make bench` requires EverParse (`3d.exe` in PATH or `~/.local/everparse/bin/`).
+All bench/prof/memtrace targets use `--profile=release`.
 
 ## Project structure
 
