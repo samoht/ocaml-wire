@@ -157,7 +157,7 @@ let test_casetype_random n =
   let cases = List.init n (fun i -> Wire.C.decl_case i Wire.uint8) in
   let ct =
     Wire.C.casetype_decl "_RandCase"
-      [ Wire.C.param "tag" Wire.uint8 ]
+      [ Wire.Param.decl (Wire.Param.input "tag" Wire.uint8) ]
       Wire.uint8 cases
   in
   let m = Wire.C.module_ [ ct ] in
@@ -328,7 +328,8 @@ let test_anon_field () =
 let test_param_struct n =
   let n = (n mod 5) + 1 in
   let params =
-    List.init n (fun i -> Wire.C.param (Fmt.str "p%d" i) Wire.uint32)
+    List.init n (fun i ->
+        Wire.Param.decl (Wire.Param.input (Fmt.str "p%d" i) Wire.uint32))
   in
   let ps =
     Wire.C.param_struct "Parametric" params [ Wire.C.field "x" Wire.uint8 ]
@@ -341,7 +342,7 @@ let test_param_struct n =
 let test_mutable_param () =
   let ps =
     Wire.C.param_struct "MutParam"
-      [ Wire.C.mutable_param "out" Wire.uint32 ]
+      [ Wire.Param.decl (Wire.Param.output "out" Wire.uint32) ]
       [ Wire.C.field "x" Wire.uint8 ]
   in
   let m = Wire.C.module_ [ Wire.C.typedef ps ] in
@@ -456,7 +457,7 @@ let test_extern_fn () =
     Wire.C.module_
       [
         Wire.C.extern_fn "validate"
-          [ Wire.C.param "len" Wire.uint32 ]
+          [ Wire.Param.decl (Wire.Param.input "len" Wire.uint32) ]
           Wire.uint8;
         Wire.C.typedef (Wire.C.struct_ "S" [ Wire.C.field "x" Wire.uint8 ]);
       ]

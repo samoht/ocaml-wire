@@ -643,6 +643,18 @@ module C : sig
   val struct_typ : struct_ -> unit typ
   (** View a 3D struct as a wire description. *)
 
+  val param : string -> 'a typ -> param
+  (** [param name typ] is [Param.decl (Param.input name typ)].
+
+      Convenience shorthand for 3D-only code that does not need typed handles.
+  *)
+
+  val mutable_param : string -> 'a typ -> param
+  (** [mutable_param name typ] is [Param.decl (Param.output name typ)].
+
+      Convenience shorthand for 3D-only code that does not need typed handles.
+  *)
+
   val param_struct :
     string -> param list -> ?where:bool expr -> field list -> struct_
   (** Parameterised 3D struct.
@@ -681,6 +693,9 @@ module C : sig
 
   val wire_size : struct_ -> int option
   (** Fixed wire size of a struct, if known statically. *)
+
+  val ml_type_of : 'a typ -> string
+  (** OCaml type name for a wire type, used by the {!Wire_c} stub generators. *)
 
   val of_module : name:string -> module_:module_ -> wire_size:int -> schema
   (** Wraps an existing 3D module as a schema. *)
