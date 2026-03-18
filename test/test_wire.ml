@@ -224,7 +224,7 @@ let test_parse_param_struct_with_params () =
   let out_len = Param.output "out_len" uint16be in
   let s =
     param_struct "BoundedPayload"
-      [ Param.decl max_len; Param.decl out_len ]
+      [ Param.v max_len; Param.v out_len ]
       ~where:Expr.(field_ref "Length" <= field_ref "max_len")
       [
         field "Length"
@@ -238,7 +238,7 @@ let test_parse_param_struct_with_params () =
     Param.empty |> fun env ->
     Param.bind env max_len 3 |> fun env -> Param.init env out_len 0
   in
-  match decode_string ~params (struct_typ s) "\x00\x03abc" with
+  match decode_string ~env:params (struct_typ s) "\x00\x03abc" with
   | Ok () -> Alcotest.(check int) "out_len" 3 (Param.get params out_len)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
@@ -247,7 +247,7 @@ let test_parse_param_struct_where_fail () =
   let out_len = Param.output "out_len" uint16be in
   let s =
     param_struct "BoundedPayload"
-      [ Param.decl max_len; Param.decl out_len ]
+      [ Param.v max_len; Param.v out_len ]
       ~where:Expr.(field_ref "Length" <= field_ref "max_len")
       [
         field "Length"
@@ -261,7 +261,7 @@ let test_parse_param_struct_where_fail () =
     Param.empty |> fun env ->
     Param.bind env max_len 2 |> fun env -> Param.init env out_len 0
   in
-  match decode_string ~params (struct_typ s) "\x00\x03abc" with
+  match decode_string ~env:params (struct_typ s) "\x00\x03abc" with
   | Ok () -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e

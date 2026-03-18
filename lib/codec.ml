@@ -919,10 +919,10 @@ let wire_size_at t buf off =
 let is_fixed t =
   match t.t_wire_size with Fixed _ -> true | Variable _ -> false
 
-let decode ?(params = Param.empty) t buf off =
+let decode ?(env = Param.empty) t buf off =
   let v = t.t_decode buf off in
-  let ctx = t.t_validate (ctx_of_params params) buf off in
-  commit_params ctx params;
+  let ctx = t.t_validate (ctx_of_params env) buf off in
+  commit_params ctx env;
   v
 
 let encode t v buf off = t.t_encode v buf off

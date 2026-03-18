@@ -12,9 +12,6 @@
 type schema
 type struct_ = Types.struct_
 type field = Types.field
-type param = Types.param
-type action = Action.t
-type action_stmt = Action.stmt
 type decl = Types.decl
 type decl_case = Types.decl_case
 type module_ = Types.module_
@@ -33,14 +30,14 @@ val generate : outdir:string -> schema list -> unit
 
 val typedef : ?entrypoint:bool -> ?export:bool -> ?doc:string -> struct_ -> decl
 val define : string -> int -> decl
-val extern_fn : string -> param list -> 'a Types.typ -> decl
+val extern_fn : string -> Types.param list -> 'a Types.typ -> decl
 val extern_probe : ?init:bool -> string -> decl
 val enum_decl : string -> (string * int) list -> 'a Types.typ -> decl
 val decl_case : int -> 'a Types.typ -> decl_case
 val decl_default : 'a Types.typ -> decl_case
 
 val casetype_decl :
-  string -> param list -> 'a Types.typ -> decl_case list -> decl
+  string -> Types.param list -> 'a Types.typ -> decl_case list -> decl
 
 val module_ : ?doc:string -> decl list -> module_
 val to_3d : module_ -> string
@@ -51,7 +48,7 @@ val to_3d_file : string -> module_ -> unit
 val field :
   string ->
   ?constraint_:bool Types.expr ->
-  ?action:action ->
+  ?action:Action.t ->
   'a Types.typ ->
   field
 
@@ -59,11 +56,11 @@ val anon_field : 'a Types.typ -> field
 val struct_ : string -> field list -> struct_
 val struct_name : struct_ -> string
 val struct_typ : struct_ -> unit Types.typ
-val param : string -> 'a Types.typ -> param
-val mutable_param : string -> 'a Types.typ -> param
+val param : string -> 'a Types.typ -> Types.param
+val mutable_param : string -> 'a Types.typ -> Types.param
 
 val param_struct :
-  string -> param list -> ?where:bool Types.expr -> field list -> struct_
+  string -> Types.param list -> ?where:bool Types.expr -> field list -> struct_
 
 val apply : 'a Types.typ -> int Types.expr list -> 'a Types.typ
 val type_ref : string -> 'a Types.typ

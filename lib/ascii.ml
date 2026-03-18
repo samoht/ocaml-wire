@@ -237,5 +237,5 @@ let render_struct (s : Types.struct_) =
 
 let of_struct = render_struct
 let of_codec t = render_struct (Codec.to_struct t)
-let pp_struct ppf s = Format.pp_print_string ppf (render_struct s)
+let pp_struct ppf s = Fmt.string ppf (render_struct s)
 let pp_codec ppf t = pp_struct ppf (Codec.to_struct t)

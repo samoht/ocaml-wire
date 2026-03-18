@@ -52,7 +52,7 @@ let input name typ = { id = next_id (); spec = Types.param name typ; typ }
 let output name typ =
   { id = next_id (); spec = Types.mutable_param name typ; typ }
 
-let decl t = t.spec
+let v t = t.spec
 let same_handle t (Pack (u, _)) = t.id = u.id
 let same_name name (Pack (u, _)) = String.equal name u.spec.param_name
 let empty = []

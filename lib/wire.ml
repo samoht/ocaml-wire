@@ -13,7 +13,7 @@ type bitfield = U8 | U16 | U16be | U32 | U32be
 type param = Types.param
 
 let field_ref = Types.ref
-let to_bool = Types.bool
+let bool_of = Types.bool
 let empty = Types.unit
 let wire_size = Types.field_wire_size
 let lookup = Types.cases
@@ -46,13 +46,13 @@ type ctx = int Ctx.t
 
 let empty_ctx = Ctx.empty
 
-let ctx_of_params params =
+let ctx_of_params env =
   List.fold_left
     (fun ctx (name, v) -> Ctx.add name v ctx)
-    empty_ctx (Param.to_ctx params)
+    empty_ctx (Param.to_ctx env)
 
-let commit_params ctx params =
-  Ctx.iter (fun name v -> Param.store_name params name v) ctx
+let commit_params ctx env =
+  Ctx.iter (fun name v -> Param.store_name env name v) ctx
 
 (* Convert a typed value to [int] for context storage. All types that
    appear in constraint expressions are numeric, so this conversion is
@@ -480,12 +480,12 @@ and parse_struct_fields dec ctx fields =
   in
   go ctx None fields
 
-let parse ?(params = Param.empty) typ reader =
+let parse ?(env = Param.empty) typ reader =
   let dec = decoder reader in
-  let ctx = ctx_of_params params in
+  let ctx = ctx_of_params env in
   match parse_with dec ctx typ with
   | v, ctx' ->
-      commit_params ctx' params;
+      commit_params ctx' env;
       Ok v
   | exception Parse_exn e -> Error e
 
@@ -552,15 +552,15 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a =
       let v, _ = parse_with dec empty_ctx typ in
       v
 
-let parse_string ?(params = Param.empty) typ s =
+let parse_string ?(env = Param.empty) typ s =
   let buf = Bytes.unsafe_of_string s in
   let len = Bytes.length buf in
-  if not (Param.is_empty params) then
+  if not (Param.is_empty env) then
     let dec = decoder_of_bytes buf len in
-    let ctx = ctx_of_params params in
+    let ctx = ctx_of_params env in
     match parse_with dec ctx typ with
     | v, ctx' ->
-        commit_params ctx' params;
+        commit_params ctx' env;
         Ok v
     | exception Parse_exn e -> Error e
   else
@@ -570,13 +570,13 @@ let parse_string ?(params = Param.empty) typ s =
 
 let decode_string = parse_string
 
-let parse_bytes ?(params = Param.empty) typ b =
-  if not (Param.is_empty params) then
+let parse_bytes ?(env = Param.empty) typ b =
+  if not (Param.is_empty env) then
     let dec = decoder_of_bytes b (Bytes.length b) in
-    let ctx = ctx_of_params params in
+    let ctx = ctx_of_params env in
     match parse_with dec ctx typ with
     | v, ctx' ->
-        commit_params ctx' params;
+        commit_params ctx' env;
         Ok v
     | exception Parse_exn e -> Error e
   else
@@ -850,9 +850,8 @@ let encode_to_string typ v =
 module Codec = struct
   include Codec_backend
 
-  let decode ?(params = Param.empty) t buf off =
-    try Ok (Codec_backend.decode ~params t buf off)
-    with Parse_error e -> Error e
+  let decode ?(env = Param.empty) t buf off =
+    try Ok (Codec_backend.decode ~env t buf off) with Parse_error e -> Error e
 end
 
 module C = C_backend

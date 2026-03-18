@@ -104,7 +104,7 @@ let test_pp_map () =
   ()
 
 let test_pp_bool () =
-  let t = Wire.to_bool (Wire.bits ~width:1 Wire.U8) in
+  let t = Wire.bool_of (Wire.bits ~width:1 Wire.U8) in
   let _ = Fmt.str "%a" Wire.C.pp_typ t in
   ()
 
@@ -157,7 +157,7 @@ let test_casetype_random n =
   let cases = List.init n (fun i -> Wire.C.decl_case i Wire.uint8) in
   let ct =
     Wire.C.casetype_decl "_RandCase"
-      [ Wire.Param.decl (Wire.Param.input "tag" Wire.uint8) ]
+      [ Wire.C.param "tag" Wire.uint8 ]
       Wire.uint8 cases
   in
   let m = Wire.C.module_ [ ct ] in
@@ -328,8 +328,7 @@ let test_anon_field () =
 let test_param_struct n =
   let n = (n mod 5) + 1 in
   let params =
-    List.init n (fun i ->
-        Wire.Param.decl (Wire.Param.input (Fmt.str "p%d" i) Wire.uint32))
+    List.init n (fun i -> Wire.C.param (Fmt.str "p%d" i) Wire.uint32)
   in
   let ps =
     Wire.C.param_struct "Parametric" params [ Wire.C.field "x" Wire.uint8 ]
@@ -342,7 +341,7 @@ let test_param_struct n =
 let test_mutable_param () =
   let ps =
     Wire.C.param_struct "MutParam"
-      [ Wire.Param.decl (Wire.Param.output "out" Wire.uint32) ]
+      [ Wire.C.mutable_param "out" Wire.uint32 ]
       [ Wire.C.field "x" Wire.uint8 ]
   in
   let m = Wire.C.module_ [ Wire.C.typedef ps ] in
@@ -457,7 +456,7 @@ let test_extern_fn () =
     Wire.C.module_
       [
         Wire.C.extern_fn "validate"
-          [ Wire.Param.decl (Wire.Param.input "len" Wire.uint32) ]
+          [ Wire.C.param "len" Wire.uint32 ]
           Wire.uint8;
         Wire.C.typedef (Wire.C.struct_ "S" [ Wire.C.field "x" Wire.uint8 ]);
       ]
@@ -591,7 +590,7 @@ let test_parse_map buf =
 
 let test_parse_bool buf =
   let buf = truncate buf in
-  let t = Wire.to_bool Wire.uint8 in
+  let t = Wire.bool_of Wire.uint8 in
   let _ = Wire.decode_string t buf in
   ()
 
@@ -795,7 +794,7 @@ let test_roundtrip_map n =
 
 let test_roundtrip_bool n =
   let v = n mod 2 = 0 in
-  let t = Wire.to_bool Wire.uint8 in
+  let t = Wire.bool_of Wire.uint8 in
   let encoded = Wire.encode_to_string t v in
   match Wire.decode_string t encoded with
   | Ok decoded -> if v <> decoded then fail "bool roundtrip mismatch"
@@ -897,7 +896,7 @@ let bool_record_codec =
     (fun flag value -> { flag; value })
     Wire.Codec.
       [
-        Wire.Codec.field "flag" (Wire.to_bool Wire.uint8) (fun r -> r.flag);
+        Wire.Codec.field "flag" (Wire.bool_of Wire.uint8) (fun r -> r.flag);
         Wire.Codec.field "value" Wire.uint16 (fun r -> r.value);
       ]
 

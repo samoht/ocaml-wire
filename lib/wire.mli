@@ -52,7 +52,9 @@ end
 type 'a expr
 type bitfield = U8 | U16 | U16be | U32 | U32be
 type 'a typ
+
 type param
+(** Untyped formal parameter declaration. Create via {!Param.v}. *)
 
 module Param : sig
   (** Typed handles for formal parameters and their runtime environment.
@@ -85,7 +87,12 @@ module Param : sig
   (** Typed handle for one formal parameter. *)
 
   type env = Param.env
-  (** Runtime environment for the parameters of one decode. *)
+  (** Runtime environment for the parameters of one decode.
+
+      {b Mutation warning.} Output parameters are backed by mutable storage.
+      Decoding updates the storage in place, so {!get} on the same [env] after
+      decode observes the final values. Do not reuse the same [env] across
+      independent decodes — build a fresh one each time. *)
 
   val input : string -> 'a typ -> ('a, input) t
   (** Declares a named immutable input parameter. *)
@@ -94,7 +101,7 @@ module Param : sig
   (** Declares a named mutable output parameter. In 3D this becomes a mutable
       pointer parameter; in OCaml decoding it can be bound to a slot. *)
 
-  val decl : ('a, 'k) t -> param
+  val v : ('a, 'k) t -> param
   (** Formal declaration corresponding to the typed handle. Use this when
       attaching parameters to codecs or 3D declarations. *)
 
@@ -117,16 +124,38 @@ module Param : sig
 end
 
 module Action : sig
-  type t = Action.t
-  type stmt = Action.stmt
+  (** Small imperative language for side-effects during validation.
+
+      Actions are attached to struct fields and run after each field is
+      successfully parsed. They can assign to mutable output parameters,
+      conditionally abort validation, or introduce local variables. *)
+
+  type t
+  (** An action block. *)
+
+  type stmt
+  (** A statement inside an action block. *)
 
   val on_success : stmt list -> t
+  (** Action run after successful validation of the annotated field. *)
+
   val on_act : stmt list -> t
+  (** Action block for the 3D [:act] form. *)
+
   val assign : string -> int expr -> stmt
+  (** Assignment to a named mutable out-parameter. *)
+
   val return_bool : bool expr -> stmt
+  (** Boolean return: [true] continues, [false] fails validation. *)
+
   val abort : stmt
+  (** Unconditional validation failure. *)
+
   val if_ : bool expr -> stmt list -> stmt list option -> stmt
+  (** Conditional execution. *)
+
   val var : string -> int expr -> stmt
+  (** Local variable binding inside an action block. *)
 end
 
 val int : int -> int expr
@@ -156,6 +185,11 @@ val field_pos : int expr
     dependent field constraints and projections. *)
 
 module Expr : sig
+  (** Arithmetic, bitwise, and comparison operators on expressions.
+
+      Open this module locally to build constraint and size expressions:
+      [Expr.(field_ref "x" + int 1)]. *)
+
   val ( + ) : int expr -> int expr -> int expr
   val ( - ) : int expr -> int expr -> int expr
   val ( * ) : int expr -> int expr -> int expr
@@ -226,7 +260,7 @@ val bits : width:int -> bitfield -> int typ
 val map : ('w -> 'a) -> ('a -> 'w) -> 'w typ -> 'a typ
 (** View a wire value through decode and encode functions. *)
 
-val to_bool : int typ -> bool typ
+val bool_of : int typ -> bool typ
 (** Boolean view over an integer wire value. Zero is [false], non-zero is
     [true]. *)
 
@@ -331,27 +365,23 @@ val pp_parse_error : Format.formatter -> parse_error -> unit
     allocating an OCaml record for each read. *)
 
 val decode :
-  ?params:Param.env ->
-  'a typ ->
-  Bytesrw.Bytes.Reader.t ->
-  ('a, parse_error) result
+  ?env:Param.env -> 'a typ -> Bytesrw.Bytes.Reader.t -> ('a, parse_error) result
 (** Decodes one value from the current reader position.
 
-    [params] provides runtime bindings for any formal parameters referenced by
-    the description. Input bindings seed the decode environment; output bindings
-    are updated by actions during decoding.
+    [env] provides runtime bindings for any formal parameters referenced by the
+    description. Input bindings seed the decode environment; output bindings are
+    updated by actions during decoding.
 
     Decoding is prefix-based: success does not imply that the reader is
     exhausted afterwards. *)
 
 val decode_string :
-  ?params:Param.env -> 'a typ -> string -> ('a, parse_error) result
+  ?env:Param.env -> 'a typ -> string -> ('a, parse_error) result
 (** Decodes one value from the start of the string.
 
     Trailing bytes, if any, are left uninterpreted. *)
 
-val decode_bytes :
-  ?params:Param.env -> 'a typ -> bytes -> ('a, parse_error) result
+val decode_bytes : ?env:Param.env -> 'a typ -> bytes -> ('a, parse_error) result
 (** Decodes one value from the start of the byte sequence.
 
     Trailing bytes, if any, are left uninterpreted. *)
@@ -436,10 +466,10 @@ module Codec : sig
       The constructor is applied in field order at decode time; the field
       projections are used at encode time.
 
-      [params] declares the formal parameters of the record description. Runtime
-      values for these parameters are supplied later via the optional [~params]
-      argument of {!decode}. [where] is a record-level constraint checked after
-      all fields and actions have run.
+      [params] declares {e formal} parameter specifications (the [param list]
+      produced by {!Param.v}). Runtime values for these are supplied later via
+      the [~env] argument of {!decode}, which takes a {!Param.env}. [where] is a
+      record-level constraint checked after all fields and actions have run.
 
       Example:
       {[
@@ -470,7 +500,7 @@ module Codec : sig
   (** [true] iff the codec has a statically known size. *)
 
   val decode :
-    ?params:Param.env -> 'r t -> bytes -> int -> ('r, parse_error) result
+    ?env:Param.env -> 'r t -> bytes -> int -> ('r, parse_error) result
   (** Decodes one record value from a buffer at the given base offset.
 
       The optional runtime [params] play the same role as for {!Wire.decode}:
@@ -507,47 +537,29 @@ end
     in OCaml, but to describe or emit EverParse 3D artefacts from the same wire
     definitions.
 
-    For the target language itself, see the official EverParse manual:
-    {{:https://project-everest.github.io/everparse/3d.html}3d manual} and the
-    {{:https://project-everest.github.io/everparse/3d-lang.html}language
-    {{:https://project-everest.github.io/everparse/3d-lang.html#base-types}base
-    types},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#structs}structs},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#constraints}constraints},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#constants-and-enumerations}constants
-    and enumerations},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#parameterized-data-types}parameterized
-    data types},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#tagged-unions-or-casetype}casetype},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#arrays}arrays},
-    {{:https://project-everest.github.io/everparse/3d-lang.html#actions}actions},
-    and
-    {{:https://project-everest.github.io/everparse/3d-lang.html#modular-structure-and-files}modular
-    structure}. *)
+    For the target language itself, see the
+    {{:https://project-everest.github.io/everparse/3d.html}EverParse manual} and
+    the
+    {{:https://project-everest.github.io/everparse/3d-lang.html}3d language
+     reference}. *)
 
 module C : sig
-  type schema = C.schema
+  type schema
   (** A named 3D schema together with its output module and wire size. *)
 
-  type struct_ = C.struct_
+  type struct_
   (** 3D struct declaration. *)
 
-  type field = C.field
+  type field
   (** Field of a 3D struct. *)
 
-  type nonrec param = param
-  (** Parameter of a parameterised 3D declaration.
-
-      Construct via {!Param.input} or {!Param.output} followed by {!Param.decl}.
-  *)
-
-  type decl = C.decl
+  type decl
   (** Top-level 3D declaration. *)
 
-  type decl_case = C.decl_case
+  type decl_case
   (** Case of a top-level 3D casetype declaration. *)
 
-  type module_ = C.module_
+  type module_
   (** A 3D module. *)
 
   val struct_of_codec : 'r Codec.t -> struct_
@@ -644,15 +656,17 @@ module C : sig
   (** View a 3D struct as a wire description. *)
 
   val param : string -> 'a typ -> param
-  (** [param name typ] is [Param.decl (Param.input name typ)].
+  (** Immutable parameter declaration.
 
-      Convenience shorthand for 3D-only code that does not need typed handles.
-  *)
+      Corresponds to 3D
+      {{:https://project-everest.github.io/everparse/3d-lang.html#parameterized-data-types}parameterized
+       data types}. *)
 
   val mutable_param : string -> 'a typ -> param
-  (** [mutable_param name typ] is [Param.decl (Param.output name typ)].
+  (** Mutable parameter declaration.
 
-      Convenience shorthand for 3D-only code that does not need typed handles.
+      Corresponds to mutable pointer parameters in 3D
+      {{:https://project-everest.github.io/everparse/3d-lang.html#actions}actions}.
   *)
 
   val param_struct :

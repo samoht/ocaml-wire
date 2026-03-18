@@ -123,8 +123,7 @@ let projection_codec =
   Codec.view "ProjectionCodec"
     ~params:
       [
-        Param.decl (Param.input "limit" uint8);
-        Param.decl (Param.output "outx" uint8);
+        Param.v (Param.input "limit" uint8); Param.v (Param.output "outx" uint8);
       ]
     ~where:Expr.(Wire.field_ref "x" <= Wire.field_ref "limit")
     (fun x -> { x })
@@ -146,7 +145,7 @@ let test_codec_metadata_decode_with_params () =
     Param.empty |> fun env ->
     Param.bind env limit 10 |> fun env -> Param.init env outx 0
   in
-  let v = decode_ok (Codec.decode ~params projection_codec buf 0) in
+  let v = decode_ok (Codec.decode ~env:params projection_codec buf 0) in
   Alcotest.(check int) "x" 8 v.x;
   Alcotest.(check int) "outx" 8 (Param.get params outx)
 
@@ -158,7 +157,7 @@ let test_codec_metadata_decode_where_fail () =
     Param.empty |> fun env ->
     Param.bind env limit 7 |> fun env -> Param.init env outx 0
   in
-  match Codec.decode ~params projection_codec buf 0 with
+  match Codec.decode ~env:params projection_codec buf 0 with
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
   | Ok _ -> Alcotest.fail "expected decode failure"
@@ -414,7 +413,7 @@ let test_view_get_bitfield () =
 
 let test_view_get_bool () =
   let codec, f_flag =
-    let f_flag = Codec.field "flag" (to_bool (bits ~width:1 U8)) fst in
+    let f_flag = Codec.field "flag" (bool_of (bits ~width:1 U8)) fst in
     let codec =
       Codec.view "ViewBool"
         (fun flag code -> (flag, code))
@@ -515,7 +514,7 @@ let test_view_with_offset () =
 
 let test_view_set_bool () =
   let codec, f_flag =
-    let f_flag = Codec.field "flag" (to_bool (bits ~width:1 U8)) fst in
+    let f_flag = Codec.field "flag" (bool_of (bits ~width:1 U8)) fst in
     let codec =
       Codec.view "ViewSetBool"
         (fun flag code -> (flag, code))

@@ -4,11 +4,11 @@
 open Wire
 open Wire.C
 
-(* ── Param.input / Param.output / Param.decl ── *)
+(* ── Param.input / Param.output / Param.v ── *)
 
 let test_input_spec () =
   let p = Param.input "limit" uint8 in
-  let spec = Param.decl p in
+  let spec = Param.v p in
   let s = param_struct "T" [ spec ] [ field "x" uint8 ] in
   let m = module_ [ typedef s ] in
   let output = to_3d m in
@@ -21,7 +21,7 @@ let test_input_spec () =
 
 let test_output_spec () =
   let p = Param.output "out" uint16be in
-  let spec = Param.decl p in
+  let spec = Param.v p in
   let s = param_struct "T" [ spec ] [ field "x" uint8 ] in
   let m = module_ [ typedef s ] in
   let output = to_3d m in
@@ -50,7 +50,7 @@ let test_input_param_constraint () =
   let limit = Param.input "limit" uint8 in
   let s =
     param_struct "Bounded"
-      [ Param.decl limit ]
+      [ Param.v limit ]
       [
         field "x"
           ~constraint_:Expr.(Wire.field_ref "x" <= Wire.field_ref "limit")
@@ -59,12 +59,12 @@ let test_input_param_constraint () =
   in
   let params = Param.bind Param.empty limit 10 in
   (* limit=10, x=5: passes *)
-  (match decode_string ~params (struct_typ s) "\x05" with
+  (match decode_string ~env:params (struct_typ s) "\x05" with
   | Ok () -> ()
   | Error e -> Alcotest.failf "pass: %a" pp_parse_error e);
   (* limit=3, x=5: fails *)
   let params = Param.bind Param.empty limit 3 in
-  match decode_string ~params (struct_typ s) "\x05" with
+  match decode_string ~env:params (struct_typ s) "\x05" with
   | Ok _ -> Alcotest.fail "expected constraint failure"
   | Error (Constraint_failed _) -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
@@ -75,7 +75,7 @@ let test_output_param_action () =
   let out = Param.output "out" uint8 in
   let s =
     param_struct "Writer"
-      [ Param.decl out ]
+      [ Param.v out ]
       [
         field "x"
           ~action:
@@ -84,7 +84,7 @@ let test_output_param_action () =
       ]
   in
   let params = Param.init Param.empty out 0 in
-  match decode_string ~params (struct_typ s) "\x2A" with
+  match decode_string ~env:params (struct_typ s) "\x2A" with
   | Ok () -> Alcotest.(check int) "out" 42 (Param.get params out)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
@@ -92,7 +92,7 @@ let test_output_param_computed () =
   let out = Param.output "out" uint16be in
   let s =
     param_struct "Computed"
-      [ Param.decl out ]
+      [ Param.v out ]
       [
         field "x"
           ~action:
@@ -102,7 +102,7 @@ let test_output_param_computed () =
       ]
   in
   let params = Param.init Param.empty out 0 in
-  match decode_string ~params (struct_typ s) "\x15" with
+  match decode_string ~env:params (struct_typ s) "\x15" with
   | Ok () -> Alcotest.(check int) "out" 42 (Param.get params out)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
@@ -112,7 +112,7 @@ let test_where_clause_pass () =
   let max_len = Param.input "max_len" uint16be in
   let s =
     param_struct "Bounded"
-      [ Param.decl max_len ]
+      [ Param.v max_len ]
       ~where:Expr.(Wire.field_ref "len" <= Wire.field_ref "max_len")
       [
         field "len" uint16be;
@@ -121,7 +121,7 @@ let test_where_clause_pass () =
   in
   (* max_len=5, len=3, data="abc" *)
   let params = Param.bind Param.empty max_len 5 in
-  match decode_string ~params (struct_typ s) "\x00\x03abc" with
+  match decode_string ~env:params (struct_typ s) "\x00\x03abc" with
   | Ok () -> ()
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
@@ -129,7 +129,7 @@ let test_where_clause_fail () =
   let max_len = Param.input "max_len" uint16be in
   let s =
     param_struct "Bounded"
-      [ Param.decl max_len ]
+      [ Param.v max_len ]
       ~where:Expr.(Wire.field_ref "len" <= Wire.field_ref "max_len")
       [
         field "len" uint16be;
@@ -138,7 +138,7 @@ let test_where_clause_fail () =
   in
   (* max_len=2, len=3: where clause fails *)
   let params = Param.bind Param.empty max_len 2 in
-  match decode_string ~params (struct_typ s) "\x00\x03abc" with
+  match decode_string ~env:params (struct_typ s) "\x00\x03abc" with
   | Ok _ -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
@@ -150,7 +150,7 @@ let test_mixed_params () =
   let out_sum = Param.output "out_sum" uint8 in
   let s =
     param_struct "Mixed"
-      [ Param.decl max_val; Param.decl out_sum ]
+      [ Param.v max_val; Param.v out_sum ]
       ~where:Expr.(Wire.field_ref "out_sum" <= Wire.field_ref "max_val")
       [
         field "a"
@@ -172,7 +172,7 @@ let test_mixed_params () =
     Param.empty |> fun env ->
     Param.bind env max_val 50 |> fun env -> Param.init env out_sum 0
   in
-  (match decode_string ~params (struct_typ s) "\x0A\x14" with
+  (match decode_string ~env:params (struct_typ s) "\x0A\x14" with
   | Ok () -> Alcotest.(check int) "out_sum" 30 (Param.get params out_sum)
   | Error e -> Alcotest.failf "%a" pp_parse_error e);
   (* a=10, b=20 => out_sum=30, max_val=20 => 30 > 20: FAIL *)
@@ -180,7 +180,7 @@ let test_mixed_params () =
     Param.empty |> fun env ->
     Param.bind env max_val 20 |> fun env -> Param.init env out_sum 0
   in
-  match decode_string ~params (struct_typ s) "\x0A\x14" with
+  match decode_string ~env:params (struct_typ s) "\x0A\x14" with
   | Ok _ -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed _) -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
@@ -193,7 +193,7 @@ let param_codec =
   let limit = Param.input "limit" uint8 in
   let outx = Param.output "outx" uint8 in
   Codec.view "ParamCodec"
-    ~params:[ Param.decl limit; Param.decl outx ]
+    ~params:[ Param.v limit; Param.v outx ]
     ~where:Expr.(Wire.field_ref "x" <= Wire.field_ref "limit")
     (fun x -> { x })
     Codec.
@@ -214,7 +214,7 @@ let test_codec_param_decode () =
     Param.bind env limit 10 |> fun env -> Param.init env outx 0
   in
   let v =
-    match Codec.decode ~params param_codec buf 0 with
+    match Codec.decode ~env:params param_codec buf 0 with
     | Ok v -> v
     | Error e -> Alcotest.failf "%a" pp_parse_error e
   in
@@ -229,7 +229,7 @@ let test_codec_param_where_fail () =
     Param.empty |> fun env ->
     Param.bind env limit 3 |> fun env -> Param.init env outx 0
   in
-  match Codec.decode ~params param_codec buf 0 with
+  match Codec.decode ~env:params param_codec buf 0 with
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
   | Ok _ -> Alcotest.fail "expected decode failure"
@@ -241,7 +241,7 @@ let test_3d_rendering () =
   let out = Param.output "out" uint32be in
   let s =
     param_struct "Rendered"
-      [ Param.decl limit; Param.decl out ]
+      [ Param.v limit; Param.v out ]
       ~where:Expr.(Wire.field_ref "x" <= Wire.field_ref "limit")
       [
         field "x"

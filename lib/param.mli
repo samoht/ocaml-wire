@@ -5,7 +5,7 @@ type env
 
 val input : string -> 'a Types.typ -> ('a, input) t
 val output : string -> 'a Types.typ -> ('a, output) t
-val decl : ('a, 'k) t -> Types.param
+val v : ('a, 'k) t -> Types.param
 val empty : env
 val is_empty : env -> bool
 val bind : env -> ('a, input) t -> 'a -> env
