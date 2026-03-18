@@ -1202,6 +1202,54 @@ let test_dep_trailer_to_struct () =
     "contains Checksum" true
     (contains ~sub:"Checksum" output)
 
+(* ── sizeof_this / field_pos in codec ── *)
+
+type pos_record = { pa : int; pb : int; pc : int }
+
+let test_codec_sizeof_this () =
+  let out = Param.output "out" uint8 in
+  let codec =
+    Codec.view "SizeofThisCodec"
+      ~params:[ Param.v out ]
+      (fun a b c -> { pa = a; pb = b; pc = c })
+      Codec.
+        [
+          Codec.field "a" uint8 (fun r -> r.pa);
+          Codec.field "b" uint16be (fun r -> r.pb);
+          Codec.field "c"
+            ~action:(Action.on_success [ Action.assign out sizeof_this ])
+            uint8
+            (fun r -> r.pc);
+        ]
+  in
+  let buf = Bytes.of_string "\x01\x00\x02\x03" in
+  let env = Param.init Param.empty out 0 in
+  let _v = decode_ok (Codec.decode ~env codec buf 0) in
+  (* sizeof_this at field c = 1 (uint8) + 2 (uint16be) = 3 *)
+  Alcotest.(check int) "sizeof_this at c" 3 (Param.get env out)
+
+let test_codec_field_pos () =
+  let out = Param.output "out" uint8 in
+  let codec =
+    Codec.view "FieldPosCodec"
+      ~params:[ Param.v out ]
+      (fun a b c -> { pa = a; pb = b; pc = c })
+      Codec.
+        [
+          Codec.field "a" uint8 (fun r -> r.pa);
+          Codec.field "b" uint8 (fun r -> r.pb);
+          Codec.field "c"
+            ~action:(Action.on_success [ Action.assign out field_pos ])
+            uint8
+            (fun r -> r.pc);
+        ]
+  in
+  let buf = Bytes.of_string "\x01\x02\x03" in
+  let env = Param.init Param.empty out 0 in
+  let _v = decode_ok (Codec.decode ~env codec buf 0) in
+  (* field_pos at c = 2 (third field, zero-indexed) *)
+  Alcotest.(check int) "field_pos at c" 2 (Param.get env out)
+
 (* ── Suite ── *)
 
 let suite =
@@ -1319,4 +1367,7 @@ let suite =
       Alcotest.test_case "dep: struct_of_codec" `Quick test_dep_to_struct;
       Alcotest.test_case "dep: trailer struct_of_codec" `Quick
         test_dep_trailer_to_struct;
+      (* sizeof_this / field_pos *)
+      Alcotest.test_case "codec: sizeof_this" `Quick test_codec_sizeof_this;
+      Alcotest.test_case "codec: field_pos" `Quick test_codec_field_pos;
     ] )

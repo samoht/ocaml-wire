@@ -205,7 +205,8 @@ type ('f, 'r) record =
           (* sum of all fixed-size fields — minimum buffer size *)
       r_next_off : next_off; (* where the next field starts *)
       r_fields_rev : Types.field list;
-      r_validators_rev : (ctx -> bytes -> int -> ctx) list;
+      r_validators_rev :
+        (int (* byte offset *) * (ctx -> bytes -> int -> ctx)) list;
       r_bf : bf_codec_state option;
       r_configurators_rev : (unit -> unit) list;
       r_field_readers : (string * (bytes -> int -> int)) list;
@@ -239,7 +240,7 @@ let record_start ?(params = []) ?where name make =
       r_min_wire_size = 0;
       r_next_off = Static_next 0;
       r_fields_rev = [];
-      r_validators_rev = [];
+      r_validators_rev = [] (* (byte_offset, validator) pairs *);
       r_bf = None;
       r_configurators_rev = [];
       r_field_readers = [];
@@ -362,16 +363,18 @@ let build_bf_clear base byte_off =
 let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
     =
  fun (Record r) ({ name; typ; get; _ } as fld) ->
-  let build_validator typ reader =
-   fun ctx buf base ->
-    let ctx' = ctx_add name (int_of_typ_value typ (reader buf base)) ctx in
-    let ctx' =
-      match fld.constraint_ with
-      | Some c when not (eval_expr_ctx ctx' c) ->
-          raise (Parse_error (Constraint_failed "field constraint"))
-      | _ -> ctx'
+  let build_validator ~byte_off typ reader =
+    let v ctx buf base =
+      let ctx' = ctx_add name (int_of_typ_value typ (reader buf base)) ctx in
+      let ctx' =
+        match fld.constraint_ with
+        | Some c when not (eval_expr_ctx ctx' c) ->
+            raise (Parse_error (Constraint_failed "field constraint"))
+        | _ -> ctx'
+      in
+      apply_action ctx' fld.action
     in
-    apply_action ctx' fld.action
+    (byte_off, v)
   in
   let extend ~readers ~writers_rev ~min_wire_size ~next_off ~fields_rev
       ~validators_rev ~bf ~configurators_rev ~field_readers =
@@ -468,7 +471,9 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
           ~min_wire_size:(r.r_min_wire_size + size_delta)
           ~next_off:(Static_next (static_off + size_delta))
           ~fields_rev:(struct_field fld :: r.r_fields_rev)
-          ~validators_rev:(build_validator typ raw_reader :: r.r_validators_rev)
+          ~validators_rev:
+            (build_validator ~byte_off:static_off typ raw_reader
+            :: r.r_validators_rev)
           ~bf:(Some new_bf)
           ~configurators_rev:(configurator :: r.r_configurators_rev)
           ~field_readers:((name, int_reader) :: r.r_field_readers)
@@ -540,7 +545,8 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
               ~next_off:new_next_off
               ~fields_rev:(struct_field fld :: r.r_fields_rev)
               ~validators_rev:
-                (build_validator typ raw_reader :: r.r_validators_rev)
+                (build_validator ~byte_off:field_off typ raw_reader
+                :: r.r_validators_rev)
               ~bf:None
               ~configurators_rev:(configurator :: r.r_configurators_rev)
               ~field_readers:((name, int_reader) :: r.r_field_readers)
@@ -599,7 +605,9 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
                 :: r.r_writers_rev)
               ~min_wire_size:r.r_min_wire_size ~next_off:new_next_off
               ~fields_rev:(struct_field fld :: r.r_fields_rev)
-              ~validators_rev:(build_validator typ reader :: r.r_validators_rev)
+              ~validators_rev:
+                (build_validator ~byte_off:field_off typ reader
+                :: r.r_validators_rev)
               ~bf:None
               ~configurators_rev:(configurator :: r.r_configurators_rev)
               ~field_readers:((name, int_reader) :: r.r_field_readers))
@@ -721,12 +729,15 @@ let seal : type r. (r, r) record -> r t =
         fun buf off -> apply_fwd make fwd buf off
   in
   let raw_decode = build_decode r.r_make r.r_readers in
+  let validators = List.rev r.r_validators_rev in
   let validate ctx buf off =
     let ctx =
       List.fold_left
-        (fun ctx f -> f ctx buf off)
-        ctx
-        (List.rev r.r_validators_rev)
+        (fun (field_pos, ctx) (byte_off, f) ->
+          let ctx = Eval.set_pos ctx ~sizeof_this:byte_off ~field_pos in
+          (field_pos + 1, f ctx buf off))
+        (0, ctx) validators
+      |> snd
     in
     match r.r_where with
     | Some cond when not (eval_expr_ctx ctx cond) ->
