@@ -91,17 +91,21 @@ let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
   | Unit -> fun _buf _base -> ()
   | _ -> fun _buf _base -> failwith "build_field_reader: unsupported type"
 
-module Ctx = Map.Make (String)
+module Fields = Map.Make (String)
 
-type ctx = int Ctx.t
+type ctx = { fields : int Fields.t; sizeof_this : int; field_pos : int }
+
+let empty_ctx = { fields = Fields.empty; sizeof_this = 0; field_pos = 0 }
 
 let ctx_of_params params =
   List.fold_left
-    (fun ctx (name, v) -> Ctx.add name v ctx)
-    Ctx.empty (Param.to_ctx params)
+    (fun ctx (name, v) -> { ctx with fields = Fields.add name v ctx.fields })
+    empty_ctx (Param.to_ctx params)
 
 let commit_params ctx params =
-  Ctx.iter (fun name v -> Param.store_name params name v) ctx
+  Fields.iter (fun name v -> Param.store_name params name v) ctx.fields
+
+let ctx_add name v ctx = { ctx with fields = Fields.add name v ctx.fields }
 
 let rec int_of_typ_value : type a. a typ -> a -> int =
  fun typ v ->
@@ -126,10 +130,10 @@ let rec eval_expr_ctx : type a. ctx -> a expr -> a =
   | Int n -> n
   | Int64 n -> n
   | Bool b -> b
-  | Ref name -> Ctx.find name ctx
+  | Ref name -> Fields.find name ctx.fields
   | Sizeof t -> field_wire_size t |> Option.value ~default:0
-  | Sizeof_this -> 0
-  | Field_pos -> 0
+  | Sizeof_this -> ctx.sizeof_this
+  | Field_pos -> ctx.field_pos
   | Add (a, b) -> eval_expr_ctx ctx a + eval_expr_ctx ctx b
   | Sub (a, b) -> eval_expr_ctx ctx a - eval_expr_ctx ctx b
   | Mul (a, b) -> eval_expr_ctx ctx a * eval_expr_ctx ctx b
@@ -158,14 +162,18 @@ type action_outcome =
   | Action_abort
 
 let rec exec_action_stmt ctx = function
-  | Assign (name, e) -> Action_continue (Ctx.add name (eval_expr_ctx ctx e) ctx)
+  | Assign (name, e) ->
+      Action_continue
+        { ctx with fields = Fields.add name (eval_expr_ctx ctx e) ctx.fields }
   | Return e -> Action_return (eval_expr_ctx ctx e, ctx)
   | Abort -> Action_abort
   | If (cond, then_, else_) ->
       exec_action_stmts ctx
         (if eval_expr_ctx ctx cond then then_
          else Option.value else_ ~default:[])
-  | Var (name, e) -> Action_continue (Ctx.add name (eval_expr_ctx ctx e) ctx)
+  | Var (name, e) ->
+      Action_continue
+        { ctx with fields = Fields.add name (eval_expr_ctx ctx e) ctx.fields }
 
 and exec_action_stmts ctx = function
   | [] -> Action_continue ctx
@@ -531,7 +539,7 @@ let ( |+ ) : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record =
             r_validators_rev =
               (fun ctx buf base ->
                 let ctx' =
-                  Ctx.add name (int_of_typ_value typ (raw_reader buf base)) ctx
+                  ctx_add name (int_of_typ_value typ (raw_reader buf base)) ctx
                 in
                 let ctx' =
                   match fld.constraint_ with
@@ -625,7 +633,7 @@ let ( |+ ) : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record =
                 r_validators_rev =
                   (fun ctx buf base ->
                     let ctx' =
-                      Ctx.add name
+                      ctx_add name
                         (int_of_typ_value typ (raw_reader buf base))
                         ctx
                     in
@@ -710,7 +718,7 @@ let ( |+ ) : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record =
                 r_validators_rev =
                   (fun ctx buf base ->
                     let v = reader buf base in
-                    let ctx' = Ctx.add name (int_of_typ_value typ v) ctx in
+                    let ctx' = ctx_add name (int_of_typ_value typ v) ctx in
                     let ctx' =
                       match fld.constraint_ with
                       | Some c when not (eval_expr_ctx ctx' c) ->

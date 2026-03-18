@@ -40,19 +40,19 @@ module Slice = Bytesrw.Bytes.Slice
    All field values are stored as [int] after conversion via [val_to_int].
    This is sound because constraint expressions (the only consumers of
    context values) operate on integers. *)
-module Ctx = Map.Make (String)
+module Fields = Map.Make (String)
 
-type ctx = int Ctx.t
+type ctx = { fields : int Fields.t; sizeof_this : int; field_pos : int }
 
-let empty_ctx = Ctx.empty
+let empty_ctx = { fields = Fields.empty; sizeof_this = 0; field_pos = 0 }
 
 let ctx_of_params env =
   List.fold_left
-    (fun ctx (name, v) -> Ctx.add name v ctx)
+    (fun ctx (name, v) -> { ctx with fields = Fields.add name v ctx.fields })
     empty_ctx (Param.to_ctx env)
 
 let commit_params ctx env =
-  Ctx.iter (fun name v -> Param.store_name env name v) ctx
+  Fields.iter (fun name v -> Param.store_name env name v) ctx.fields
 
 (* Convert a typed value to [int] for context storage. All types that
    appear in constraint expressions are numeric, so this conversion is
@@ -79,7 +79,7 @@ let rec val_to_int : type a. a typ -> a -> int =
       0
 
 let ctx_get ctx name =
-  match Ctx.find_opt name ctx with
+  match Fields.find_opt name ctx.fields with
   | Some v -> v
   | None -> failwith ("unbound field: " ^ name)
 
@@ -228,9 +228,9 @@ let rec eval_expr : type a. ctx -> a expr -> a =
   | Int64 n -> n
   | Bool b -> b
   | Ref name -> ctx_get ctx name
-  | Sizeof _ -> 0 (* TODO: compute actual size *)
-  | Sizeof_this -> 0
-  | Field_pos -> 0
+  | Sizeof t -> field_wire_size t |> Option.value ~default:0
+  | Sizeof_this -> ctx.sizeof_this
+  | Field_pos -> ctx.field_pos
   | Add (a, b) -> eval_expr ctx a + eval_expr ctx b
   | Sub (a, b) -> eval_expr ctx a - eval_expr ctx b
   | Mul (a, b) -> eval_expr ctx a * eval_expr ctx b
@@ -343,13 +343,17 @@ type action_outcome =
   | Action_abort
 
 let rec exec_action_stmt ctx = function
-  | Assign (name, e) -> Action_continue (Ctx.add name (eval_expr ctx e) ctx)
+  | Assign (name, e) ->
+      Action_continue
+        { ctx with fields = Fields.add name (eval_expr ctx e) ctx.fields }
   | Return e -> Action_return (eval_expr ctx e, ctx)
   | Abort -> Action_abort
   | If (cond, then_, else_) ->
       exec_action_stmts ctx
         (if eval_expr ctx cond then then_ else Option.value else_ ~default:[])
-  | Var (name, e) -> Action_continue (Ctx.add name (eval_expr ctx e) ctx)
+  | Var (name, e) ->
+      Action_continue
+        { ctx with fields = Fields.add name (eval_expr ctx e) ctx.fields }
 
 and exec_action_stmts ctx = function
   | [] -> Action_continue ctx
@@ -447,6 +451,7 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
   | Apply _ -> failwith "apply requires a type registry"
 
 and parse_struct_fields dec ctx fields =
+  let start_pos = dec.position in
   let parse_field_with_bf : type a.
       bf_accum option -> a typ -> a * bf_accum option =
    fun accum_opt typ ->
@@ -456,29 +461,40 @@ and parse_struct_fields dec ctx fields =
         let v, _ = parse_with dec ctx typ in
         (v, None)
   in
-  let rec go ctx' accum_opt = function
+  let set_pos ctx' field_idx =
+    { ctx' with sizeof_this = dec.position - start_pos; field_pos = field_idx }
+  in
+  let rec go ctx' accum_opt field_idx = function
     | [] -> ((), ctx')
     | Field { field_name; field_typ = Bits _ as ft; constraint_; action }
       :: rest ->
+        let ctx' = set_pos ctx' field_idx in
         let v, accum_opt' = parse_field_with_bf accum_opt ft in
         let ctx'' =
-          match field_name with Some n -> Ctx.add n v ctx' | None -> ctx'
+          match field_name with
+          | Some n -> { ctx' with fields = Fields.add n v ctx'.fields }
+          | None -> ctx'
         in
         check_constraint ctx'' constraint_;
         let ctx''' = apply_action ctx'' action in
-        go ctx''' accum_opt' rest
+        go ctx''' accum_opt' (field_idx + 1) rest
     | Field { field_name; field_typ; constraint_; action } :: rest ->
+        let ctx' = set_pos ctx' field_idx in
         let v, ctx'' = parse_with dec ctx' field_typ in
         let ctx'' =
           match field_name with
-          | Some n -> Ctx.add n (val_to_int field_typ v) ctx''
+          | Some n ->
+              {
+                ctx'' with
+                fields = Fields.add n (val_to_int field_typ v) ctx''.fields;
+              }
           | None -> ctx''
         in
         check_constraint ctx'' constraint_;
         let ctx''' = apply_action ctx'' action in
-        go ctx''' None rest
+        go ctx''' None (field_idx + 1) rest
   in
-  go ctx None fields
+  go ctx None 0 fields
 
 let parse ?(env = Param.empty) typ reader =
   let dec = decoder reader in
