@@ -34,15 +34,18 @@ val schema : name:string -> module_:Wire.C.module_ -> wire_size:int -> schema
 val generate_3d : outdir:string -> schema list -> unit
 (** [generate_3d ~outdir schemas] generates [.3d] files from Wire modules. *)
 
-val generate_c : outdir:string -> schema list -> unit
-(** [generate_c ~outdir schemas] invokes EverParse on existing [.3d] files to
-    produce C parsers and generates [test.c].
+val generate_c : ?quiet:bool -> outdir:string -> schema list -> unit
+(** [generate_c ?quiet ~outdir schemas] invokes EverParse on existing [.3d]
+    files to produce C parsers and generates [test.c].
+
+    If [quiet] is [true] (the default), EverParse output is suppressed. If
+    [quiet] is [false], EverParse stdout/stderr are left visible.
 
     Requires [3d.exe] (EverParse) in PATH. *)
 
-val generate : outdir:string -> schema list -> unit
-(** [generate ~outdir schemas] runs both steps: {!generate_3d} then
-    {!generate_c}. *)
+val generate : ?quiet:bool -> outdir:string -> schema list -> unit
+(** [generate ?quiet ~outdir schemas] runs both steps: {!generate_3d} then
+    {!generate_c}. The [quiet] flag is passed through to EverParse execution. *)
 
 val main : package:string -> schema list -> unit
 (** [main ~package schemas] dispatches based on [Sys.argv]:
@@ -99,8 +102,13 @@ val to_ml_stub : Wire.C.struct_ -> string
       external check : bytes -> bool = "caml_wire_foo_check"
     ]} *)
 
-val run_everparse : outdir:string -> schema list -> unit
-(** [run_everparse ~outdir schemas] invokes EverParse on .3d files in [outdir].
+val run_everparse : ?quiet:bool -> outdir:string -> schema list -> unit
+(** [run_everparse ?quiet ~outdir schemas] invokes EverParse on [.3d] files in
+    [outdir].
+
+    If [quiet] is [true] (the default), EverParse output is suppressed. If
+    [quiet] is [false], EverParse stdout/stderr are left visible.
+
     Requires [3d.exe] in PATH. *)
 
 val has_3d_exe : unit -> bool

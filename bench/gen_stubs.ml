@@ -51,7 +51,7 @@ let () =
 
   (* Step 1: Generate .3d files and run EverParse *)
   Wire_c.generate_3d ~outdir:schema_dir schemas;
-  Wire_c.run_everparse ~outdir:schema_dir schemas;
+  Wire_c.run_everparse ~quiet:false ~outdir:schema_dir schemas;
 
   (* Step 2: Generate c_stubs.c *)
   let oc = open_out "c_stubs.c" in

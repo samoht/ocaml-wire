@@ -194,7 +194,7 @@ let copy_everparse_endianness ~outdir =
 
 let has_3d_exe () = locate_3d_exe () <> None
 
-let run_everparse ~outdir schemas =
+let run_everparse ?(quiet = true) ~outdir schemas =
   let exe =
     match locate_3d_exe () with
     | Some e -> e
@@ -203,9 +203,8 @@ let run_everparse ~outdir schemas =
   List.iter
     (fun s ->
       let f = s.name ^ ".3d" in
-      let cmd =
-        Fmt.str "cd %s && %s --batch %s > /dev/null 2>&1" outdir exe f
-      in
+      let redirect = if quiet then " > /dev/null 2>&1" else "" in
+      let cmd = Fmt.str "cd %s && %s --batch %s%s" outdir exe f redirect in
       let ret = Sys.command cmd in
       if ret <> 0 then Fmt.failwith "EverParse failed on %s with code %d" f ret)
     schemas;
@@ -297,19 +296,19 @@ let generate_3d ~outdir schemas =
   ensure_dir outdir;
   generate_3d_files ~outdir schemas
 
-let generate_c ~outdir schemas =
+let generate_c ?(quiet = true) ~outdir schemas =
   ensure_dir outdir;
   if has_3d_exe () then begin
-    run_everparse ~outdir schemas;
+    run_everparse ~quiet ~outdir schemas;
     generate_test ~outdir schemas
   end
   else
     failwith
       "3d.exe not found in PATH. Install EverParse to regenerate C files."
 
-let generate ~outdir schemas =
+let generate ?(quiet = true) ~outdir schemas =
   generate_3d ~outdir schemas;
-  generate_c ~outdir schemas
+  generate_c ~quiet ~outdir schemas
 
 let generate_dune ~outdir ~package schemas =
   let oc = open_out (Filename.concat outdir "dune.inc") in
