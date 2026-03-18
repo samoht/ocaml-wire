@@ -1,7 +1,6 @@
 (** Fuzz tests for 3D/C projection: pretty-printing and code generation. *)
 
-open Crowbar
-open Crowbar_util
+open Alcobar
 
 (** {1 Pretty-printing Tests} *)
 

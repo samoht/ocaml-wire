@@ -10,7 +10,7 @@
 
    Both sides use wire-generated read/write functions. *)
 
-module Cr = Crowbar
+module Cr = Alcobar
 
 (* Helper: encode record to string using Codec API *)
 let encode_to_string codec =

@@ -74,7 +74,13 @@ let rec expr : type a. ctx -> a expr -> a =
   | And (a, b) -> expr ctx a && expr ctx b
   | Or (a, b) -> expr ctx a || expr ctx b
   | Not a -> not (expr ctx a)
-  | Cast (_, e) -> expr ctx e (* TODO: proper casting *)
+  | Cast (width, e) -> (
+      let v = expr ctx e in
+      match width with
+      | `U8 -> v land 0xFF
+      | `U16 -> v land 0xFFFF
+      | `U32 -> v land 0xFFFF_FFFF
+      | `U64 -> v)
 
 type action_outcome = Continue of ctx | Return of bool * ctx | Abort
 

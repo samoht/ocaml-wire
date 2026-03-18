@@ -11,10 +11,6 @@ rules:
   - files: examples/net/net.ml
     exclude: [E350]
 
-  # Crowbar_util.test_case vs Crowbar.test_case — type alias, not wrong
-  - files: fuzz/fuzz_*.mli
-    exclude: [E705]
-
   # Linter contradiction: wants both lowercase and matching uInt filename
   - files: test/test_uInt32.ml
     exclude: [E617]

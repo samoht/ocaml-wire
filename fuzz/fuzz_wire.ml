@@ -1,8 +1,7 @@
 (** Fuzz tests for wire library: parse crash safety, roundtrip correctness,
     record codec roundtrip, streaming, and dependent-size fields. *)
 
-open Crowbar
-open Crowbar_util
+open Alcobar
 
 (* Silence unused variable warnings for parse error handling *)
 let _ = Wire.pp_parse_error

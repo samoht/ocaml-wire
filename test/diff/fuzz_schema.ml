@@ -3,8 +3,8 @@
     These tests verify that our OCaml encoder/decoder round-trips correctly.
     When EverParse C integration is available, we can add differential tests. *)
 
-module Cr = Crowbar
-module Cu = Crowbar_util
+module Cr = Alcobar
+module Cu = Alcobar
 open Wire
 
 let truncate buf =

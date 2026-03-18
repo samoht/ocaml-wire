@@ -4,7 +4,7 @@
     inputs. The [packed_test] abstraction generates valid record values by
     decoding random bytes through the OCaml codec. *)
 
-module Cr = Crowbar
+module Cr = Alcobar
 module D = Wire_diff.Diff
 
 let truncate buf =

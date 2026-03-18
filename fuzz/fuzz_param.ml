@@ -1,7 +1,6 @@
 (** Fuzz tests for param/action/eval runtime parse safety. *)
 
-open Crowbar
-open Crowbar_util
+open Alcobar
 
 (** Truncate input to reasonable size for protocol messages. *)
 let truncate buf =
