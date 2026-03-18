@@ -191,12 +191,25 @@ type priority = Low | Medium | High | Critical
 type mapped = { mp_priority : priority; mp_value : int }
 
 val mapped_codec : mapped Wire.Codec.t
+(** Mapped-priority codec. *)
+
 val mapped_struct : Wire.C.struct_
+(** 3D struct for mapped. *)
+
 val f_mp_priority : (priority, mapped) Wire.Codec.field
+(** Priority field. *)
+
 val f_mp_value : (int, mapped) Wire.Codec.field
+(** Value field. *)
+
 val mapped_size : int
+(** Wire size. *)
+
 val mapped_default : mapped
+(** Default value. *)
+
 val mapped_data : int -> bytes
+(** Test data. *)
 
 (** {1 CasesDemo (1 byte)} *)
 
@@ -204,12 +217,25 @@ type ptype = Telemetry | Telecommand
 type cases_demo = { cd_type : ptype; cd_id : int }
 
 val cases_demo_codec : cases_demo Wire.Codec.t
+(** Cases-demo codec. *)
+
 val cases_demo_struct : Wire.C.struct_
+(** 3D struct for cases-demo. *)
+
 val f_cd_type : (ptype, cases_demo) Wire.Codec.field
+(** Type field. *)
+
 val f_cd_id : (int, cases_demo) Wire.Codec.field
+(** ID field. *)
+
 val cases_demo_size : int
+(** Wire size. *)
+
 val cases_demo_default : cases_demo
+(** Default value. *)
+
 val cases_demo_data : int -> bytes
+(** Test data. *)
 
 (** {1 EnumDemo (2 bytes)} *)
 
@@ -217,24 +243,50 @@ type status = [ `Ok | `Warn | `Err | `Crit ]
 type enum_demo = { en_status : status; en_code : int }
 
 val enum_demo_codec : enum_demo Wire.Codec.t
+(** Enum-demo codec. *)
+
 val enum_demo_struct : Wire.C.struct_
+(** 3D struct for enum-demo. *)
+
 val f_en_status : (status, enum_demo) Wire.Codec.field
+(** Status field. *)
+
 val f_en_code : (int, enum_demo) Wire.Codec.field
+(** Code field. *)
+
 val enum_demo_size : int
+(** Wire size. *)
+
 val enum_demo_default : enum_demo
+(** Default value. *)
+
 val enum_demo_data : int -> bytes
+(** Test data. *)
 
 (** {1 Constrained (2 bytes)} *)
 
 type constrained = { co_version : int; co_data : int }
 
 val constrained_codec : constrained Wire.Codec.t
+(** Constrained codec. *)
+
 val constrained_struct : Wire.C.struct_
+(** 3D struct for constrained. *)
+
 val f_co_version : (int, constrained) Wire.Codec.field
+(** Version field. *)
+
 val f_co_data : (int, constrained) Wire.Codec.field
+(** Data field. *)
+
 val constrained_size : int
+(** Wire size. *)
+
 val constrained_default : constrained
+(** Default value. *)
+
 val constrained_data : int -> bytes
+(** Test data. *)
 
 (** {1 3D Feature Coverage}
 
@@ -242,16 +294,43 @@ val constrained_data : int -> bytes
     that target EverParse 3D output. They don't have Codec views. *)
 
 val array_struct : Wire.C.struct_
+(** Array field demo. *)
+
 val byte_array_struct : Wire.C.struct_
+(** Byte-array field demo. *)
+
 val all_bytes_struct : Wire.C.struct_
+(** All-bytes field demo. *)
+
 val all_zeros_struct : Wire.C.struct_
+(** All-zeros field demo. *)
+
 val single_elem_struct : Wire.C.struct_
+(** Single-element array demo. *)
+
 val single_elem_at_most_struct : Wire.C.struct_
+(** Single-element at-most demo. *)
+
 val anon_field_struct : Wire.C.struct_
+(** Anonymous field demo. *)
+
 val action_struct : Wire.C.struct_
+(** Action field demo. *)
+
 val action_full_struct : Wire.C.struct_
+(** Full action demo with mutable param. *)
+
 val param_demo_struct : Wire.C.struct_
+(** Parameterised struct demo. *)
+
 val casetype_module : Wire.C.module_
+(** Casetype module demo. *)
+
 val extern_module : Wire.C.module_
+(** Extern function module demo. *)
+
 val type_ref_module : Wire.C.module_
+(** Type-reference module demo. *)
+
 val qualified_ref_example : unit Wire.typ
+(** Qualified-reference demo. *)

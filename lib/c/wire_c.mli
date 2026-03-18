@@ -68,8 +68,9 @@ val everparse_name : string -> string
     [Tmframe]). Names with standard camelCase are preserved. *)
 
 val ml_type_of : 'a Wire.typ -> string
-(** [ml_type_of typ] returns the OCaml type name for a wire type (e.g., ["int"],
-    ["int32"], ["int64"]). *)
+(** [ml_type_of typ] returns the OCaml type name for a wire type: ["int"] for
+    all integer types that fit in an OCaml [int] (uint8 through uint63,
+    bitfields), ["int64"] for uint64. *)
 
 val to_c_stubs : Wire.C.struct_ list -> string
 (** [to_c_stubs structs] generates a C file with OCaml FFI stubs that call

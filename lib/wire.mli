@@ -324,9 +324,10 @@ val lookup : 'a list -> int typ -> 'a typ
 (** [lookup table t] decodes an integer as a zero-based index into a finite
     table.
 
-    The decoded integer selects the corresponding element from the list.
-    Decoding raises [Invalid_argument] if the index is out of bounds; encoding
-    raises [Invalid_argument] if the value is not in the table. *)
+    The decoded integer selects the corresponding element from the list. An
+    out-of-range index produces an {!Invalid_tag} parse error (reported via
+    [result] in {!decode} / {!decode_string} / {!decode_bytes}). Encoding raises
+    [Invalid_argument] if the value is not in the table. *)
 
 val empty : unit typ
 (** [empty] is a description carrying no bytes and producing [()]. *)

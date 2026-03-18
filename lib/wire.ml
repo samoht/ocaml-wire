@@ -339,9 +339,11 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
           raise (Parse_exn (Constraint_failed "where clause"))
       | _ -> ());
       ((), ctx')
-  | Map { inner; decode; _ } ->
+  | Map { inner; decode; _ } -> (
       let v, ctx' = parse_with dec ctx inner in
-      (decode v, ctx')
+      match decode v with
+      | r -> (r, ctx')
+      | exception Lookup_out_of_range n -> raise (Parse_exn (Invalid_tag n)))
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
@@ -447,7 +449,10 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a =
       in
       word land ((1 lsl width) - 1)
   | Unit -> ()
-  | Map { inner; decode; _ } -> decode (parse_direct inner buf off len)
+  | Map { inner; decode; _ } -> (
+      match decode (parse_direct inner buf off len) with
+      | r -> r
+      | exception Lookup_out_of_range n -> raise (Parse_exn (Invalid_tag n)))
   | Where { inner; _ } -> parse_direct inner buf off len
   | Enum { base; cases; _ } ->
       let v = parse_direct base buf off len in

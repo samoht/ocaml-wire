@@ -160,15 +160,17 @@ let is_set n = n <> 0
 let map decode encode inner = Map { inner; decode; encode }
 let bool inner = Map { inner; decode = is_set; encode = bit }
 
+exception Lookup_out_of_range of int
+
 let cases variants inner =
   let arr = Array.of_list variants in
   let decode n =
     if n >= 0 && n < Array.length arr then arr.(n)
-    else Fmt.invalid_arg "Wire.cases: unknown value %d" n
+    else raise (Lookup_out_of_range n)
   in
   let encode v =
     let rec go i =
-      if i >= Array.length arr then invalid_arg "Wire.cases: unknown variant"
+      if i >= Array.length arr then invalid_arg "Wire.lookup: unknown variant"
       else if arr.(i) = v then i
       else go (i + 1)
     in
