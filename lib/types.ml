@@ -160,13 +160,23 @@ let is_set n = n <> 0
 let map decode encode inner = Map { inner; decode; encode }
 let bool inner = Map { inner; decode = is_set; encode = bit }
 
-exception Lookup_out_of_range of int
+(* Parse errors — moved here so combinators like [cases] can raise them
+   directly rather than through intermediate exceptions. *)
+
+type parse_error =
+  | Unexpected_eof of { expected : int; got : int }
+  | Constraint_failed of string
+  | Invalid_enum of { value : int; valid : int list }
+  | Invalid_tag of int
+  | All_zeros_failed of { offset : int }
+
+exception Parse_error of parse_error
 
 let cases variants inner =
   let arr = Array.of_list variants in
   let decode n =
     if n >= 0 && n < Array.length arr then arr.(n)
-    else raise (Lookup_out_of_range n)
+    else raise (Parse_error (Invalid_tag n))
   in
   let encode v =
     let rec go i =
@@ -565,17 +575,6 @@ let to_3d_file path m =
   let ppf = Format.formatter_of_out_channel oc in
   Fmt.pf ppf "@[<v>%a@]@." pp_module m;
   close_out oc
-
-(* Parse errors — shared between streaming parser and Codec *)
-
-type parse_error =
-  | Unexpected_eof of { expected : int; got : int }
-  | Constraint_failed of string
-  | Invalid_enum of { value : int; valid : int list }
-  | Invalid_tag of int
-  | All_zeros_failed of { offset : int }
-
-exception Parse_error of parse_error
 
 let raise_eof ~expected ~got =
   raise (Parse_error (Unexpected_eof { expected; got }))

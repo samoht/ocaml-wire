@@ -56,33 +56,38 @@ let tcp_only_buf = Bytes.sub tcp_buf 34 Net.tcp_size
 let get_minimal =
   Staged.unstage (Codec.get Demo.minimal_codec Demo.f_minimal_value)
 
-let get_bf8 = Staged.unstage (Codec.get Demo.bf8_codec Demo.f_bf8_value)
-let get_bf16 = Staged.unstage (Codec.get Demo.bf16_codec Demo.f_bf16_id)
+let read_bf8 = Staged.unstage (Codec.get Demo.bf8_codec Demo.f_bf8_value)
+let read_bf16 = Staged.unstage (Codec.get Demo.bf16_codec Demo.f_bf16_id)
 
-let get_bool =
+let read_bool =
   Staged.unstage (Codec.get Demo.bool_fields_codec Demo.f_bool_active)
 
-let get_bf32 = Staged.unstage (Codec.get Demo.bf32_codec Demo.f_bf32_pri)
-let get_u64be = Staged.unstage (Codec.get Demo.all_ints_codec Demo.f_ints_u64be)
+let read_bf32 = Staged.unstage (Codec.get Demo.bf32_codec Demo.f_bf32_pri)
 
-let get_mixed =
+let read_u64be =
+  Staged.unstage (Codec.get Demo.all_ints_codec Demo.f_ints_u64be)
+
+let read_mixed =
   Staged.unstage (Codec.get Demo.large_mixed_codec Demo.f_mixed_timestamp)
 
-let get_clcw = Staged.unstage (Codec.get Space.clcw_codec Space.cw_report)
-let get_ip_src = Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_src)
-let get_tcp_port = Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_dst_port)
-let get_tcp_syn = Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_syn)
-let get_mapped = Staged.unstage (Codec.get Demo.mapped_codec Demo.f_mp_priority)
-let get_cases = Staged.unstage (Codec.get Demo.cases_demo_codec Demo.f_cd_type)
-let get_enum = Staged.unstage (Codec.get Demo.enum_demo_codec Demo.f_en_status)
+let read_clcw = Staged.unstage (Codec.get Space.clcw_codec Space.cw_report)
+let read_ip_src = Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_src)
+let read_tcp_port = Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_dst_port)
+let read_tcp_syn = Staged.unstage (Codec.get Net.tcp_codec Net.f_tcp_syn)
 
-let get_constrained =
+let read_mapped =
+  Staged.unstage (Codec.get Demo.mapped_codec Demo.f_mp_priority)
+
+let read_cases = Staged.unstage (Codec.get Demo.cases_demo_codec Demo.f_cd_type)
+let read_enum = Staged.unstage (Codec.get Demo.enum_demo_codec Demo.f_en_status)
+
+let read_constrained =
   Staged.unstage (Codec.get Demo.constrained_codec Demo.f_co_data)
 
-let get_eth_payload =
+let read_eth_payload =
   Staged.unstage (Codec.get Net.ethernet_codec Net.f_eth_payload)
 
-let get_ip_payload = Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_payload)
+let read_ip_payload = Staged.unstage (Codec.get Net.ipv4_codec Net.f_ip_payload)
 
 let set_minimal =
   Staged.unstage (Codec.set Demo.minimal_codec Demo.f_minimal_value)
@@ -125,48 +130,48 @@ let () =
       contig ~label:"AllInts.u64be (uint64be, boxed)" ~size:Demo.all_ints_size
         ~data:ints_buf ~c_loop:C_stubs.allints_loop
         ~ffi_check:C_stubs.allints_check ~read_fn:(fun buf off ->
-          ignore (get_u64be buf off));
+          ignore (read_u64be buf off));
       contig ~label:"LargeMixed.timestamp (uint64be, 26B)"
         ~size:Demo.large_mixed_size ~data:mixed_buf
         ~c_loop:C_stubs.largemixed_loop ~ffi_check:C_stubs.largemixed_check
-        ~read_fn:(fun buf off -> ignore (get_mixed buf off));
+        ~read_fn:(fun buf off -> ignore (read_mixed buf off));
       (* Bitfields *)
       contig ~label:"Bitfield8.value (bf5 in bf_uint8)" ~size:Demo.bf8_size
         ~data:bf8_buf ~c_loop:C_stubs.bitfield8_loop
         ~ffi_check:C_stubs.bitfield8_check ~read_fn:(fun buf off ->
-          ignore (get_bf8 buf off));
+          ignore (read_bf8 buf off));
       contig ~label:"Bitfield16.id (bf11 in bf_uint16be)" ~size:Demo.bf16_size
         ~data:bf16_buf ~c_loop:C_stubs.bitfield16_loop
         ~ffi_check:C_stubs.bitfield16_check ~read_fn:(fun buf off ->
-          ignore (get_bf16 buf off));
+          ignore (read_bf16 buf off));
       contig ~label:"Bitfield32.pri (bf8 in bf_uint32be)" ~size:Demo.bf32_size
         ~data:bf32_buf ~c_loop:C_stubs.bitfield32_loop
         ~ffi_check:C_stubs.bitfield32_check ~read_fn:(fun buf off ->
-          ignore (get_bf32 buf off));
+          ignore (read_bf32 buf off));
       (* Bool (map) *)
       contig ~label:"BoolFields.active (bool bf1 in bf_uint8)"
         ~size:Demo.bool_fields_size ~data:bool_buf
         ~c_loop:C_stubs.boolfields_loop ~ffi_check:C_stubs.boolfields_check
-        ~read_fn:(fun buf off -> ignore (get_bool buf off));
+        ~read_fn:(fun buf off -> ignore (read_bool buf off));
       (* Real protocols *)
       contig ~label:"CLCW.report (bf8 in bf32be)" ~size:Space.clcw_size
         ~data:clcw_buf ~c_loop:C_stubs.clcw_loop ~ffi_check:C_stubs.clcw_check
-        ~read_fn:(fun buf off -> ignore (get_clcw buf off));
+        ~read_fn:(fun buf off -> ignore (read_clcw buf off));
       contig ~label:"IPv4.src (uint32be, unboxed)" ~size:Net.ipv4_size
         ~data:ipv4_only_buf ~n_items:1
         ~c_loop:(fun buf _off n -> C_stubs.ipv4_loop buf 0 n)
         ~ffi_check:C_stubs.ipv4_check
-        ~read_fn:(fun _buf _off -> ignore (get_ip_src tcp_buf ip_off));
+        ~read_fn:(fun _buf _off -> ignore (read_ip_src tcp_buf ip_off));
       contig ~label:"TCP.dst_port (uint16be)" ~size:Net.tcp_size
         ~data:tcp_only_buf ~n_items:1
         ~c_loop:(fun buf _off n -> C_stubs.tcp_loop buf 0 n)
         ~ffi_check:C_stubs.tcp_check
-        ~read_fn:(fun _buf _off -> ignore (get_tcp_port tcp_buf tcp_off));
+        ~read_fn:(fun _buf _off -> ignore (read_tcp_port tcp_buf tcp_off));
       contig ~label:"TCP.syn (bool bf1 in bf16be)" ~size:Net.tcp_size
         ~data:tcp_only_buf ~n_items:1
         ~c_loop:(fun buf _off n -> C_stubs.tcp_loop buf 0 n)
         ~ffi_check:C_stubs.tcp_check
-        ~read_fn:(fun _buf _off -> ignore (get_tcp_syn tcp_buf tcp_off));
+        ~read_fn:(fun _buf _off -> ignore (read_tcp_syn tcp_buf tcp_off));
     ];
 
   section "Type combinators";
@@ -177,22 +182,22 @@ let () =
       contig ~label:"Mapped.priority (map fn, 2B)" ~size:Demo.mapped_size
         ~data:mapped_buf ~c_loop:C_stubs.mapped_loop
         ~ffi_check:C_stubs.mapped_check ~read_fn:(fun buf off ->
-          ignore (get_mapped buf off));
+          ignore (read_mapped buf off));
       (* cases: variant dispatch via array lookup *)
       contig ~label:"CasesDemo.type (cases variant, 1B)"
         ~size:Demo.cases_demo_size ~data:cases_buf
         ~c_loop:C_stubs.casesdemo_loop ~ffi_check:C_stubs.casesdemo_check
-        ~read_fn:(fun buf off -> ignore (get_cases buf off));
+        ~read_fn:(fun buf off -> ignore (read_cases buf off));
       (* enum + map: C validates enum, OCaml decodes variant *)
       contig ~label:"EnumDemo.status (enum+map variant, 2B)"
         ~size:Demo.enum_demo_size ~data:enum_buf ~c_loop:C_stubs.enumdemo_loop
         ~ffi_check:C_stubs.enumdemo_check ~read_fn:(fun buf off ->
-          ignore (get_enum buf off));
+          ignore (read_enum buf off));
       (* where: C validates constraint, OCaml skips it *)
       contig ~label:"Constrained.data (where, 2B)" ~size:Demo.constrained_size
         ~data:constrained_buf ~c_loop:C_stubs.constrained_loop
         ~ffi_check:C_stubs.constrained_check ~read_fn:(fun buf off ->
-          ignore (get_constrained buf off));
+          ignore (read_constrained buf off));
     ];
 
   (* ── Write benchmarks ── *)
@@ -234,16 +239,16 @@ let () =
         w_label = "Eth->TCP.dst_port (3 layers)";
         ocaml_write =
           (fun () ->
-            let ip = Slice.first (get_eth_payload tcp_buf 0) in
-            let tcp = Slice.first (get_ip_payload tcp_buf ip) in
+            let ip = Slice.first (read_eth_payload tcp_buf 0) in
+            let tcp = Slice.first (read_ip_payload tcp_buf ip) in
             set_tcp_port tcp_buf tcp 8080);
       };
       {
         w_label = "Eth->TCP.syn (3 layers)";
         ocaml_write =
           (fun () ->
-            let ip = Slice.first (get_eth_payload tcp_buf 0) in
-            let tcp = Slice.first (get_ip_payload tcp_buf ip) in
+            let ip = Slice.first (read_eth_payload tcp_buf 0) in
+            let tcp = Slice.first (read_ip_payload tcp_buf ip) in
             set_tcp_syn tcp_buf tcp true);
       };
     ];

@@ -343,7 +343,7 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
       let v, ctx' = parse_with dec ctx inner in
       match decode v with
       | r -> (r, ctx')
-      | exception Lookup_out_of_range n -> raise (Parse_exn (Invalid_tag n)))
+      | exception Parse_error e -> raise (Parse_exn e))
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
@@ -452,7 +452,7 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a =
   | Map { inner; decode; _ } -> (
       match decode (parse_direct inner buf off len) with
       | r -> r
-      | exception Lookup_out_of_range n -> raise (Parse_exn (Invalid_tag n)))
+      | exception Parse_error e -> raise (Parse_exn e))
   | Where { inner; _ } -> parse_direct inner buf off len
   | Enum { base; cases; _ } ->
       let v = parse_direct base buf off len in

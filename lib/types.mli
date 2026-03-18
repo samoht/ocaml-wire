@@ -282,10 +282,6 @@ val map : ('w -> 'a) -> ('a -> 'w) -> 'w typ -> 'a typ
 val bool : int typ -> bool typ
 (** Map an integer type to boolean (0 = false). *)
 
-exception Lookup_out_of_range of int
-(** Raised by [cases] decode on out-of-range index. Caught and translated to
-    {!Parse_error} ([Invalid_tag]) by the decode functions. *)
-
 val cases : 'a list -> int typ -> 'a typ
 (** Map integer values to a list of cases by index. *)
 
