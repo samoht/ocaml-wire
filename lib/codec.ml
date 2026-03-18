@@ -1,5 +1,6 @@
 open Types
 module Slice = Bytesrw.Bytes.Slice
+module Param = Param
 
 (** Build a specialized field encoder: writes field value to bytes at offset.
     Returns the new offset. Works directly on the slice's underlying bytes. *)
@@ -93,6 +94,19 @@ let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
 module Ctx = Map.Make (String)
 
 type ctx = int Ctx.t
+
+let ctx_of_params params =
+  List.fold_left
+    (fun ctx b -> Ctx.add (Param.name b) (Param.load b) ctx)
+    Ctx.empty params
+
+let commit_params ctx params =
+  List.iter
+    (fun b ->
+      match Ctx.find_opt (Param.name b) ctx with
+      | Some v -> Param.store b v
+      | None -> ())
+    params
 
 let rec int_of_typ_value : type a. a typ -> a -> int =
  fun typ v ->
@@ -300,6 +314,7 @@ type 'r t = {
   t_encode : 'r -> bytes -> int -> unit;
   t_wire_size : wire_size_info;
   t_struct_fields : Types.field list;
+  t_validate : ctx -> bytes -> int -> ctx;
   t_params : param list;
   t_where : bool expr option;
 }
@@ -834,17 +849,17 @@ let seal : type r. (r, r) record -> r t =
         fun buf off -> apply_fwd make fwd buf off
   in
   let raw_decode = build_decode r.r_make r.r_readers in
-  let validate buf off =
+  let validate ctx buf off =
     let ctx =
       List.fold_left
         (fun ctx f -> f ctx buf off)
-        Ctx.empty
+        ctx
         (List.rev r.r_validators_rev)
     in
     match r.r_where with
     | Some cond when not (eval_expr_ctx ctx cond) ->
         raise (Parse_error (Constraint_failed "where clause"))
-    | _ -> ()
+    | _ -> ctx
   in
   {
     t_name = r.r_name;
@@ -852,9 +867,7 @@ let seal : type r. (r, r) record -> r t =
       (fun buf off ->
         if off + min_size > Bytes.length buf then
           raise_eof ~expected:min_size ~got:(Bytes.length buf - off);
-        let v = raw_decode buf off in
-        validate buf off;
-        v);
+        raw_decode buf off);
     t_encode =
       (fun v buf off ->
         if off + min_size > Bytes.length buf then
@@ -867,6 +880,7 @@ let seal : type r. (r, r) record -> r t =
         done);
     t_wire_size = wire_size_info;
     t_struct_fields = List.rev r.r_fields_rev;
+    t_validate = validate;
     t_params = r.r_params;
     t_where = r.r_where;
   }
@@ -910,7 +924,12 @@ let wire_size_at t buf off =
 let is_fixed t =
   match t.t_wire_size with Fixed _ -> true | Variable _ -> false
 
-let decode t buf off = t.t_decode buf off
+let decode ?(params : Param.binding list = []) t buf off =
+  let v = t.t_decode buf off in
+  let ctx = t.t_validate (ctx_of_params params) buf off in
+  if params <> [] then commit_params ctx params;
+  v
+
 let encode t v buf off = t.t_encode v buf off
 
 let to_struct t =

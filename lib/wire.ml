@@ -4,6 +4,7 @@ module Staged = Staged
 module UInt32 = UInt32
 module UInt63 = UInt63
 module Action = Action
+module Param = Param
 include Types
 
 type bitfield = U8 | U16 | U16be | U32 | U32be
@@ -44,6 +45,19 @@ module Ctx = Map.Make (String)
 type ctx = int Ctx.t
 
 let empty_ctx = Ctx.empty
+
+let ctx_of_params params =
+  List.fold_left
+    (fun ctx b -> Ctx.add (Param.name b) (Param.load b) ctx)
+    empty_ctx params
+
+let commit_params ctx params =
+  List.iter
+    (fun b ->
+      match Ctx.find_opt (Param.name b) ctx with
+      | Some v -> Param.store b v
+      | None -> ())
+    params
 
 (* Convert a typed value to [int] for context storage. All types that
    appear in constraint expressions are numeric, so this conversion is
@@ -423,7 +437,13 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
         | (None, case_typ) :: _ -> parse_with dec ctx' case_typ
       in
       find_case cases
-  | Struct { fields; _ } -> (parse_struct_fields dec ctx fields : unit * ctx)
+  | Struct { fields; where; _ } ->
+      let (), ctx' = parse_struct_fields dec ctx fields in
+      (match where with
+      | Some cond when not (eval_expr ctx' cond) ->
+          raise (Parse_exn (Constraint_failed "where clause"))
+      | _ -> ());
+      ((), ctx')
   | Map { inner; decode; _ } ->
       let v, ctx' = parse_with dec ctx inner in
       (decode v, ctx')
@@ -465,10 +485,13 @@ and parse_struct_fields dec ctx fields =
   in
   go ctx None fields
 
-let parse typ reader =
+let parse ?(params = []) typ reader =
   let dec = decoder reader in
-  match parse_with dec empty_ctx typ with
-  | v, _ -> Ok v
+  let ctx = ctx_of_params params in
+  match parse_with dec ctx typ with
+  | v, ctx' ->
+      commit_params ctx' params;
+      Ok v
   | exception Parse_exn e -> Error e
 
 let decode = parse
@@ -534,19 +557,37 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a =
       let v, _ = parse_with dec empty_ctx typ in
       v
 
-let parse_string typ s =
+let parse_string ?(params = []) typ s =
   let buf = Bytes.unsafe_of_string s in
   let len = Bytes.length buf in
-  match parse_direct typ buf 0 len with
-  | v -> Ok v
-  | exception Parse_exn e -> Error e
+  if params <> [] then
+    let dec = decoder_of_bytes buf len in
+    let ctx = ctx_of_params params in
+    match parse_with dec ctx typ with
+    | v, ctx' ->
+        commit_params ctx' params;
+        Ok v
+    | exception Parse_exn e -> Error e
+  else
+    match parse_direct typ buf 0 len with
+    | v -> Ok v
+    | exception Parse_exn e -> Error e
 
 let decode_string = parse_string
 
-let parse_bytes typ b =
-  match parse_direct typ b 0 (Bytes.length b) with
-  | v -> Ok v
-  | exception Parse_exn e -> Error e
+let parse_bytes ?(params = []) typ b =
+  if params <> [] then
+    let dec = decoder_of_bytes b (Bytes.length b) in
+    let ctx = ctx_of_params params in
+    match parse_with dec ctx typ with
+    | v, ctx' ->
+        commit_params ctx' params;
+        Ok v
+    | exception Parse_exn e -> Error e
+  else
+    match parse_direct typ b 0 (Bytes.length b) with
+    | v -> Ok v
+    | exception Parse_exn e -> Error e
 
 let decode_bytes = parse_bytes
 

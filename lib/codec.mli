@@ -30,7 +30,7 @@ val wire_size : 'r t -> int
 val min_wire_size : 'r t -> int
 val wire_size_at : 'r t -> bytes -> int -> int
 val is_fixed : 'r t -> bool
-val decode : 'r t -> bytes -> int -> 'r
+val decode : ?params:Param.binding list -> 'r t -> bytes -> int -> 'r
 val encode : 'r t -> 'r -> bytes -> int -> unit
 val to_struct : 'r t -> Types.struct_
 val get : 'r t -> ('a, 'r) field -> (bytes -> int -> 'a) Staged.t

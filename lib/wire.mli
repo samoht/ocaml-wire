@@ -32,6 +32,20 @@ type bitfield = U8 | U16 | U16be | U32 | U32be
 type 'a typ
 type param
 
+module Param : sig
+  type 'a t
+  type binding
+
+  val input : string -> 'a typ -> 'a t
+  val output : string -> 'a typ -> 'a t
+  val spec : 'a t -> param
+  val value : 'a t -> 'a -> binding
+  val slot : 'a t -> 'a ref -> binding
+  val name : binding -> string
+  val load : binding -> int
+  val store : binding -> int -> unit
+end
+
 module Action : sig
   type t = Action.t
   type stmt = Action.stmt
@@ -261,18 +275,24 @@ exception Parse_error of parse_error
     repeated access to individual fields in an existing buffer, without
     allocating an OCaml record for each read. *)
 
-val decode : 'a typ -> Bytesrw.Bytes.Reader.t -> ('a, parse_error) result
+val decode :
+  ?params:Param.binding list ->
+  'a typ ->
+  Bytesrw.Bytes.Reader.t ->
+  ('a, parse_error) result
 (** Decodes one value from the current reader position.
 
     Decoding is prefix-based: success does not imply that the reader is
     exhausted afterwards. *)
 
-val decode_string : 'a typ -> string -> ('a, parse_error) result
+val decode_string :
+  ?params:Param.binding list -> 'a typ -> string -> ('a, parse_error) result
 (** Decodes one value from the start of the string.
 
     Trailing bytes, if any, are left uninterpreted. *)
 
-val decode_bytes : 'a typ -> bytes -> ('a, parse_error) result
+val decode_bytes :
+  ?params:Param.binding list -> 'a typ -> bytes -> ('a, parse_error) result
 (** Decodes one value from the start of the byte sequence.
 
     Trailing bytes, if any, are left uninterpreted. *)
@@ -376,7 +396,7 @@ module Codec : sig
   val is_fixed : 'r t -> bool
   (** [true] iff the codec has a statically known size. *)
 
-  val decode : 'r t -> bytes -> int -> 'r
+  val decode : ?params:Param.binding list -> 'r t -> bytes -> int -> 'r
   (** Decodes one record value from a buffer at the given base offset.
 
       This function is exception-based and raises {!Parse_error} on malformed
