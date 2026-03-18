@@ -266,6 +266,103 @@ let test_parse_param_where_fail () =
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
+(* ── sizeof / sizeof_this / field_pos ── *)
+
+let test_sizeof () =
+  (* sizeof(uint32) = 4, use it in a constraint *)
+  let s =
+    struct_ "SizeofTest"
+      [ field "x" ~constraint_:Expr.(field_ref "x" = sizeof uint32be) uint8 ]
+  in
+  (* x=4 => sizeof(uint32be) = 4, constraint passes *)
+  (match decode_string (struct_typ s) "\x04" with
+  | Ok () -> ()
+  | Error e -> Alcotest.failf "sizeof pass: %a" pp_parse_error e);
+  (* x=3 => sizeof(uint32be) = 4, constraint fails *)
+  match decode_string (struct_typ s) "\x03" with
+  | Ok _ -> Alcotest.fail "expected sizeof constraint failure"
+  | Error (Constraint_failed _) -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+
+let test_sizeof_this () =
+  (* sizeof_this tracks bytes consumed: after field a (1 byte) and b (2 bytes),
+     sizeof_this should be 3 at the point field c is parsed. *)
+  let s =
+    struct_ "SizeofThis"
+      [
+        field "a" uint8;
+        field "b" uint16be;
+        field "c" ~constraint_:Expr.(sizeof_this = int 3) uint8;
+      ]
+  in
+  (* a=1, b=2, sizeof_this=3 at c, c=0: constraint passes *)
+  match decode_string (struct_typ s) "\x01\x00\x02\x00" with
+  | Ok () -> ()
+  | Error e -> Alcotest.failf "sizeof_this: %a" pp_parse_error e
+
+let test_sizeof_this_fail () =
+  (* sizeof_this should be 1 at field b, not 2 *)
+  let s =
+    struct_ "SizeofThisFail"
+      [
+        field "a" uint8; field "b" ~constraint_:Expr.(sizeof_this = int 2) uint8;
+      ]
+  in
+  (* sizeof_this=1 at b, constraint says =2: fails *)
+  match decode_string (struct_typ s) "\x01\x02" with
+  | Ok _ -> Alcotest.fail "expected sizeof_this constraint failure"
+  | Error (Constraint_failed _) -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+
+let test_field_pos () =
+  (* field_pos is 0 for the first field, 1 for the second, etc. *)
+  let s =
+    struct_ "FieldPos"
+      [
+        field "a" ~constraint_:Expr.(field_pos = int 0) uint8;
+        field "b" ~constraint_:Expr.(field_pos = int 1) uint8;
+        field "c" ~constraint_:Expr.(field_pos = int 2) uint8;
+      ]
+  in
+  match decode_string (struct_typ s) "\x01\x02\x03" with
+  | Ok () -> ()
+  | Error e -> Alcotest.failf "field_pos: %a" pp_parse_error e
+
+let test_field_pos_fail () =
+  let s =
+    struct_ "FieldPosFail"
+      [
+        field "a" uint8;
+        field "b"
+          ~constraint_:Expr.(field_pos = int 0) (* wrong: should be 1 *)
+          uint8;
+      ]
+  in
+  match decode_string (struct_typ s) "\x01\x02" with
+  | Ok _ -> Alcotest.fail "expected field_pos constraint failure"
+  | Error (Constraint_failed _) -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+
+let test_sizeof_this_with_action () =
+  (* sizeof_this visible to actions: assign out = sizeof_this at field c *)
+  let out = Param.output "out" uint8 in
+  let s =
+    param_struct "SizeofThisAction"
+      [ Param.v out ]
+      [
+        field "a" uint8;
+        field "b" uint16be;
+        field "c"
+          ~action:(Action.on_success [ Action.assign "out" sizeof_this ])
+          uint8;
+      ]
+  in
+  let params = Param.empty |> fun env -> Param.init env out 0 in
+  match decode_string ~env:params (struct_typ s) "\x01\x00\x02\x00" with
+  | Ok () ->
+      Alcotest.(check int) "sizeof_this via action" 3 (Param.get params out)
+  | Error e -> Alcotest.failf "sizeof_this action: %a" pp_parse_error e
+
 (* ── Encoding tests ── *)
 
 let test_encode_uint8 () =
@@ -469,6 +566,14 @@ let suite =
         test_parse_param_with_params;
       Alcotest.test_case "parse: param struct where fail" `Quick
         test_parse_param_where_fail;
+      (* sizeof / sizeof_this / field_pos *)
+      Alcotest.test_case "sizeof" `Quick test_sizeof;
+      Alcotest.test_case "sizeof_this" `Quick test_sizeof_this;
+      Alcotest.test_case "sizeof_this fail" `Quick test_sizeof_this_fail;
+      Alcotest.test_case "field_pos" `Quick test_field_pos;
+      Alcotest.test_case "field_pos fail" `Quick test_field_pos_fail;
+      Alcotest.test_case "sizeof_this with action" `Quick
+        test_sizeof_this_with_action;
       (* encoding *)
       Alcotest.test_case "encode: uint8" `Quick test_encode_uint8;
       Alcotest.test_case "encode: uint16 le" `Quick test_encode_uint16_le;
