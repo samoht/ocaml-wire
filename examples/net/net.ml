@@ -329,7 +329,7 @@ type 'a schema = {
   codec : 'a Codec.t;
   struct_ : Wire.C.struct_;
   size : int;
-  decode : bytes -> int -> 'a;
+  decode : bytes -> int -> ('a, Wire.parse_error) result;
 }
 
 let schema name codec struct_ size =

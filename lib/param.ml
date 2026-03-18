@@ -1,5 +1,15 @@
-type 'a t = { spec : Types.param; typ : 'a Types.typ }
-type binding = { name : string; load : int; store : int -> unit }
+type input
+type output
+type ('a, 'k) t = { id : int; spec : Types.param; typ : 'a Types.typ }
+type packed = Pack : ('a, 'k) t * int ref -> packed
+type env = packed list
+
+let next_id =
+  let r = ref 0 in
+  fun () ->
+    let id = !r in
+    incr r;
+    id
 
 let rec to_int : type a. a Types.typ -> a -> int =
  fun typ v ->
@@ -37,20 +47,40 @@ let rec of_int : type a. a Types.typ -> int -> a =
   | Casetype _ | Struct _ | Type_ref _ | Qualified_ref _ ->
       invalid_arg "Param: unsupported parameter type"
 
-let input name typ = { spec = Types.param name typ; typ }
-let output name typ = { spec = Types.mutable_param name typ; typ }
-let spec t = t.spec
+let input name typ = { id = next_id (); spec = Types.param name typ; typ }
 
-let value t v =
-  { name = t.spec.param_name; load = to_int t.typ v; store = (fun _ -> ()) }
+let output name typ =
+  { id = next_id (); spec = Types.mutable_param name typ; typ }
 
-let slot t r =
-  {
-    name = t.spec.param_name;
-    load = to_int t.typ !r;
-    store = (fun v -> r := of_int t.typ v);
-  }
+let decl t = t.spec
+let same_handle t (Pack (u, _)) = t.id = u.id
+let same_name name (Pack (u, _)) = String.equal name u.spec.param_name
+let empty = []
+let is_empty env = env = []
 
-let name b = b.name
-let load b = b.load
-let store b = b.store
+let add env t v =
+  let env = List.filter (fun p -> not (same_handle t p)) env in
+  if List.exists (same_name t.spec.param_name) env then
+    invalid_arg ("Param.bind: duplicate parameter name " ^ t.spec.param_name)
+  else Pack (t, ref (to_int t.typ v)) :: env
+
+let bind env t v = add env t v
+let init env t v = add env t v
+
+let get env t =
+  let rec loop = function
+    | [] -> invalid_arg ("Param.get: unbound parameter " ^ t.spec.param_name)
+    | Pack (u, cell) :: rest ->
+        if t.id = u.id then of_int t.typ !cell else loop rest
+  in
+  loop env
+
+let to_ctx env =
+  List.rev_map (fun (Pack (t, cell)) -> (t.spec.param_name, !cell)) env
+
+let store_name env name v =
+  List.iter
+    (function
+      | Pack (t, cell) when String.equal t.spec.param_name name -> cell := v
+      | _ -> ())
+    env

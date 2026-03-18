@@ -14,7 +14,7 @@ type 'a schema = {
   size : int;
   default : 'a;
   make_data : int -> bytes array;
-  decode : bytes -> int -> 'a;
+  decode : bytes -> int -> ('a, Wire.parse_error) result;
   encode : 'a -> bytes -> int -> unit;
 }
 
@@ -83,7 +83,7 @@ let run_schema (Any s) =
   for _ = 1 to iterations do
     for i = 0 to Array.length data - 1 do
       let v = s.decode data.(i) 0 in
-      s.encode v buf 0
+      match v with Ok v -> s.encode v buf 0 | Error _ -> ()
     done
   done
 

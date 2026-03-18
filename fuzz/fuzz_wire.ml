@@ -22,7 +22,7 @@ let decode_record_from_string codec s =
   let ws = Wire.Codec.wire_size codec in
   if String.length s < ws then
     Error (Wire.Unexpected_eof { expected = ws; got = String.length s })
-  else Ok (Wire.Codec.decode codec (Bytes.of_string s) 0)
+  else Wire.Codec.decode codec (Bytes.of_string s) 0
 
 (** Truncate input to reasonable size for protocol messages. *)
 let truncate buf =
@@ -1157,7 +1157,11 @@ let test_depsize_slice_roundtrip payload_str =
   let total = 2 + len in
   let buf = Bytes.create total in
   Wire.Codec.encode slice_msg_codec original buf 0;
-  let decoded = Wire.Codec.decode slice_msg_codec buf 0 in
+  let decoded =
+    match Wire.Codec.decode slice_msg_codec buf 0 with
+    | Ok v -> v
+    | Error e -> fail (Fmt.str "depsize slice decode: %a" Wire.pp_parse_error e)
+  in
   if decoded.sl_length <> len then fail "depsize slice length mismatch";
   let dec_payload =
     Bytes.sub_string
@@ -1172,7 +1176,12 @@ let test_depsize_slice_empty () =
   let original = { sl_length = 0; sl_payload = payload } in
   let buf = Bytes.create 2 in
   Wire.Codec.encode slice_msg_codec original buf 0;
-  let decoded = Wire.Codec.decode slice_msg_codec buf 0 in
+  let decoded =
+    match Wire.Codec.decode slice_msg_codec buf 0 with
+    | Ok v -> v
+    | Error e ->
+        fail (Fmt.str "depsize slice empty decode: %a" Wire.pp_parse_error e)
+  in
   if decoded.sl_length <> 0 then fail "depsize slice empty length mismatch";
   if Slice.length decoded.sl_payload <> 0 then
     fail "depsize slice empty payload mismatch"
@@ -1204,7 +1213,11 @@ let test_depsize_array_roundtrip payload_str =
   let total = 2 + len in
   let buf = Bytes.create total in
   Wire.Codec.encode array_msg_codec original buf 0;
-  let decoded = Wire.Codec.decode array_msg_codec buf 0 in
+  let decoded =
+    match Wire.Codec.decode array_msg_codec buf 0 with
+    | Ok v -> v
+    | Error e -> fail (Fmt.str "depsize array decode: %a" Wire.pp_parse_error e)
+  in
   if decoded.ba_length <> len then fail "depsize array length mismatch";
   if decoded.ba_data <> payload_str then fail "depsize array data mismatch"
 
@@ -1212,7 +1225,12 @@ let test_depsize_array_empty () =
   let original = { ba_length = 0; ba_data = "" } in
   let buf = Bytes.create 2 in
   Wire.Codec.encode array_msg_codec original buf 0;
-  let decoded = Wire.Codec.decode array_msg_codec buf 0 in
+  let decoded =
+    match Wire.Codec.decode array_msg_codec buf 0 with
+    | Ok v -> v
+    | Error e ->
+        fail (Fmt.str "depsize array empty decode: %a" Wire.pp_parse_error e)
+  in
   if decoded.ba_length <> 0 then fail "depsize array empty length mismatch";
   if decoded.ba_data <> "" then fail "depsize array empty data mismatch"
 
@@ -1249,7 +1267,12 @@ let test_depsize_tagged_roundtrip payload_str tag =
   let total = 2 + len + 1 in
   let buf = Bytes.create total in
   Wire.Codec.encode tagged_msg_codec original buf 0;
-  let decoded = Wire.Codec.decode tagged_msg_codec buf 0 in
+  let decoded =
+    match Wire.Codec.decode tagged_msg_codec buf 0 with
+    | Ok v -> v
+    | Error e ->
+        fail (Fmt.str "depsize tagged decode: %a" Wire.pp_parse_error e)
+  in
   if decoded.tm_length <> len then fail "depsize tagged length mismatch";
   let dec_payload =
     Bytes.sub_string
@@ -1266,7 +1289,12 @@ let test_depsize_tagged_empty tag =
   let original = { tm_length = 0; tm_payload = payload; tm_tag = tag } in
   let buf = Bytes.create 3 in
   Wire.Codec.encode tagged_msg_codec original buf 0;
-  let decoded = Wire.Codec.decode tagged_msg_codec buf 0 in
+  let decoded =
+    match Wire.Codec.decode tagged_msg_codec buf 0 with
+    | Ok v -> v
+    | Error e ->
+        fail (Fmt.str "depsize tagged empty decode: %a" Wire.pp_parse_error e)
+  in
   if decoded.tm_length <> 0 then fail "depsize tagged empty length mismatch";
   if Slice.length decoded.tm_payload <> 0 then
     fail "depsize tagged empty payload mismatch";

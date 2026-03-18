@@ -26,7 +26,7 @@ let decode_from_bytes codec =
   fun b ->
     if Bytes.length b < ws then
       Error (Wire.Unexpected_eof { expected = ws; got = Bytes.length b })
-    else Ok (Wire.Codec.decode codec b 0)
+    else Wire.Codec.decode codec b 0
 
 (* ---- One-space protocol (defined with wire) ---- *)
 

@@ -5,6 +5,10 @@ open Wire.C
 
 let contains ~sub s = Re.execp (Re.compile (Re.str sub)) s
 
+let decode_ok = function
+  | Ok v -> v
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
+
 (* Helper: encode record to string using Codec API *)
 let encode_record_to_string codec v =
   let ws = Codec.wire_size codec in
@@ -17,7 +21,7 @@ let decode_record_from_string codec s =
   let ws = Codec.wire_size codec in
   if String.length s < ws then
     Error (Unexpected_eof { expected = ws; got = String.length s })
-  else Ok (Codec.decode codec (Bytes.of_string s) 0)
+  else Codec.decode codec (Bytes.of_string s) 0
 
 (* ── Record codec tests ── *)
 
@@ -98,26 +102,30 @@ let meta_codec =
 
 let test_codec_metadata_decode_ok () =
   let buf = Bytes.of_string "\x08" in
-  let v = Codec.decode meta_codec buf 0 in
+  let v = decode_ok (Codec.decode meta_codec buf 0) in
   Alcotest.(check int) "x" 8 v.x
 
 let test_codec_metadata_decode_constraint_fail () =
   let buf = Bytes.of_string "\x0B" in
   match Codec.decode meta_codec buf 0 with
-  | _ -> Alcotest.fail "expected Parse_error"
-  | exception Parse_error (Constraint_failed "field constraint") -> ()
-  | exception Parse_error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Error (Constraint_failed "field constraint") -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Ok _ -> Alcotest.fail "expected decode failure"
 
 let test_codec_metadata_decode_action_fail () =
   let buf = Bytes.of_string "\x09" in
   match Codec.decode meta_codec buf 0 with
-  | _ -> Alcotest.fail "expected Parse_error"
-  | exception Parse_error (Constraint_failed "field action") -> ()
-  | exception Parse_error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Error (Constraint_failed "field action") -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Ok _ -> Alcotest.fail "expected decode failure"
 
 let projection_codec =
   Codec.view "ProjectionCodec"
-    ~params:[ Wire.param "limit" uint8; Wire.mutable_param "outx" uint8 ]
+    ~params:
+      [
+        Param.decl (Param.input "limit" uint8);
+        Param.decl (Param.output "outx" uint8);
+      ]
     ~where:Expr.(Wire.field_ref "x" <= Wire.field_ref "limit")
     (fun x -> { x })
     Codec.
@@ -133,29 +141,27 @@ let projection_codec =
 let test_codec_metadata_decode_with_params () =
   let limit = Param.input "limit" uint8 in
   let outx = Param.output "outx" uint8 in
-  let outx_ref = ref 0 in
   let buf = Bytes.of_string "\x08" in
-  let v =
-    Codec.decode
-      ~params:[ Param.value limit 10; Param.slot outx outx_ref ]
-      projection_codec buf 0
+  let params =
+    Param.empty |> fun env ->
+    Param.bind env limit 10 |> fun env -> Param.init env outx 0
   in
+  let v = decode_ok (Codec.decode ~params projection_codec buf 0) in
   Alcotest.(check int) "x" 8 v.x;
-  Alcotest.(check int) "outx" 8 !outx_ref
+  Alcotest.(check int) "outx" 8 (Param.get params outx)
 
 let test_codec_metadata_decode_where_fail () =
   let limit = Param.input "limit" uint8 in
   let outx = Param.output "outx" uint8 in
-  let outx_ref = ref 0 in
   let buf = Bytes.of_string "\x08" in
-  match
-    Codec.decode
-      ~params:[ Param.value limit 7; Param.slot outx outx_ref ]
-      projection_codec buf 0
-  with
-  | _ -> Alcotest.fail "expected Parse_error"
-  | exception Parse_error (Constraint_failed "where clause") -> ()
-  | exception Parse_error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  let params =
+    Param.empty |> fun env ->
+    Param.bind env limit 7 |> fun env -> Param.init env outx 0
+  in
+  match Codec.decode ~params projection_codec buf 0 with
+  | Error (Constraint_failed "where clause") -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Ok _ -> Alcotest.fail "expected decode failure"
 
 let test_codec_metadata_to_struct () =
   let s = C.struct_of_codec projection_codec in
@@ -448,7 +454,7 @@ let test_view_set_bitfield () =
   Alcotest.(check int)
     "get a after set" 3
     ((Staged.unstage (Codec.get codec f_a)) buf 0);
-  let r = Codec.decode codec buf 0 in
+  let r = decode_ok (Codec.decode codec buf 0) in
   Alcotest.(check int) "b preserved" 20 r.bf_b;
   Alcotest.(check int) "c preserved" 0x1234 r.bf_c;
   Alcotest.(check int) "d preserved" 0xAB r.bf_d;
@@ -456,7 +462,7 @@ let test_view_set_bitfield () =
   Alcotest.(check int)
     "get d after set" 0x42
     ((Staged.unstage (Codec.get codec f_d)) buf 0);
-  let r = Codec.decode codec buf 0 in
+  let r = decode_ok (Codec.decode codec buf 0) in
   Alcotest.(check int) "a still 3" 3 r.bf_a;
   Alcotest.(check int) "b still 20" 20 r.bf_b;
   Alcotest.(check int) "c still 0x1234" 0x1234 r.bf_c
@@ -489,9 +495,9 @@ let test_view_bounds_check () =
   in
   let buf = Bytes.create 2 in
   match Codec.decode codec buf 0 with
-  | _ -> Alcotest.fail "expected Parse_error for short buffer"
-  | exception Parse_error (Unexpected_eof _) -> ()
-  | exception e -> Alcotest.failf "wrong exception: %s" (Printexc.to_string e)
+  | Error (Unexpected_eof _) -> ()
+  | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
+  | Ok _ -> Alcotest.fail "expected decode failure"
 
 let test_view_with_offset () =
   let codec, f_a =
@@ -670,7 +676,7 @@ let test_view_byte_slice_decode () =
   Bytes.set_uint8 buf 1 0xAA;
   Bytes.set_uint8 buf 2 0xBB;
   Bytes.set_uint8 buf 3 0xCC;
-  let tag, payload = Codec.decode codec buf 0 in
+  let tag, payload = decode_ok (Codec.decode codec buf 0) in
   Alcotest.(check int) "tag" 0xFF tag;
   Alcotest.(check int) "payload first" 1 (Bs.first payload);
   Alcotest.(check int) "payload length" 3 (Bs.length payload);
@@ -857,7 +863,7 @@ let test_dep_bslice_decode_empty () =
   (* length=0, no payload bytes *)
   let buf = Bytes.create 2 in
   Bytes.set_uint16_be buf 0 0;
-  let r = Codec.decode dep_slice_codec buf 0 in
+  let r = decode_ok (Codec.decode dep_slice_codec buf 0) in
   Alcotest.(check int) "length" 0 r.ds_length;
   Alcotest.(check int) "payload length" 0 (Bs.length r.ds_payload)
 
@@ -869,7 +875,7 @@ let test_dep_bslice_decode_4 () =
   Bytes.set_uint8 buf 3 0xBB;
   Bytes.set_uint8 buf 4 0xCC;
   Bytes.set_uint8 buf 5 0xDD;
-  let r = Codec.decode dep_slice_codec buf 0 in
+  let r = decode_ok (Codec.decode dep_slice_codec buf 0) in
   Alcotest.(check int) "length" 4 r.ds_length;
   Alcotest.(check int) "payload length" 4 (Bs.length r.ds_payload);
   Alcotest.(check int) "payload first" 2 (Bs.first r.ds_payload);
@@ -887,7 +893,7 @@ let test_dep_bslice_decode_100 () =
   for i = 0 to 99 do
     Bytes.set_uint8 buf (2 + i) (i land 0xFF)
   done;
-  let r = Codec.decode dep_slice_codec buf 0 in
+  let r = decode_ok (Codec.decode dep_slice_codec buf 0) in
   Alcotest.(check int) "length" 100 r.ds_length;
   Alcotest.(check int) "payload length" 100 (Bs.length r.ds_payload);
   Alcotest.(check int)
@@ -908,7 +914,7 @@ let test_dep_bslice_roundtrip () =
   Alcotest.(check int)
     "wire_size_at" 6
     (Codec.wire_size_at dep_slice_codec buf 0);
-  let decoded = Codec.decode dep_slice_codec buf 0 in
+  let decoded = decode_ok (Codec.decode dep_slice_codec buf 0) in
   Alcotest.(check int) "roundtrip length" 4 decoded.ds_length;
   Alcotest.(check int) "roundtrip payload len" 4 (Bs.length decoded.ds_payload);
   Alcotest.(check int)
@@ -976,7 +982,7 @@ let test_dep_byte_array_decode () =
   let buf = Bytes.create 7 in
   Bytes.set_uint16_be buf 0 5;
   Bytes.blit_string "hello" 0 buf 2 5;
-  let r = Codec.decode dep_array_codec buf 0 in
+  let r = decode_ok (Codec.decode dep_array_codec buf 0) in
   Alcotest.(check int) "length" 5 r.da_length;
   Alcotest.(check string) "payload is string copy" "hello" r.da_payload
 
@@ -984,7 +990,7 @@ let test_dep_byte_array_roundtrip () =
   let original = { da_length = 3; da_payload = "abc" } in
   let buf = Bytes.create 5 in
   Codec.encode dep_array_codec original buf 0;
-  let decoded = Codec.decode dep_array_codec buf 0 in
+  let decoded = decode_ok (Codec.decode dep_array_codec buf 0) in
   Alcotest.(check int) "roundtrip length" 3 decoded.da_length;
   Alcotest.(check string) "roundtrip payload" "abc" decoded.da_payload
 
@@ -1046,7 +1052,7 @@ let test_dep_trailer_decode () =
   Bytes.set_uint8 buf 3 0xBB;
   Bytes.set_uint8 buf 4 0xCC;
   Bytes.set_uint16_be buf 5 0xDEAD;
-  let r = Codec.decode trailer_codec buf 0 in
+  let r = decode_ok (Codec.decode trailer_codec buf 0) in
   Alcotest.(check int) "length" 3 r.tr_length;
   Alcotest.(check int) "payload length" 3 (Bs.length r.tr_payload);
   Alcotest.(check int) "payload first" 2 (Bs.first r.tr_payload);
@@ -1066,7 +1072,7 @@ let test_dep_trailer_roundtrip () =
   in
   let buf = Bytes.create 6 in
   Codec.encode trailer_codec original buf 0;
-  let decoded = Codec.decode trailer_codec buf 0 in
+  let decoded = decode_ok (Codec.decode trailer_codec buf 0) in
   Alcotest.(check int) "rt length" 2 decoded.tr_length;
   Alcotest.(check int) "rt payload len" 2 (Bs.length decoded.tr_payload);
   Alcotest.(check int) "rt checksum" 0x1234 decoded.tr_checksum
@@ -1149,7 +1155,7 @@ let test_dep_codec_ref () =
   for i = 0 to 4 do
     Bytes.set_uint8 buf (1 + i) (0x10 + i)
   done;
-  let len, data = Codec.decode codec buf 0 in
+  let len, data = decode_ok (Codec.decode codec buf 0) in
   Alcotest.(check int) "ref len" 5 len;
   Alcotest.(check int) "ref data length" 5 (Bs.length data);
   Alcotest.(check int)

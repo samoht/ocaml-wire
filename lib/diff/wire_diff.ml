@@ -9,7 +9,7 @@ type 'r schema = {
   c_read : string -> string option;
   c_write : string -> string option;
   equal : 'r -> 'r -> bool;
-  codec_decode : bytes -> int -> 'r;
+  codec_decode : bytes -> int -> ('r, Wire.parse_error) result;
   codec_encode : 'r -> bytes -> int -> unit;
   wire_size : int;
 }
@@ -53,10 +53,12 @@ let read schema buf =
     else Some (decode_from_string schema buf)
   in
   match (c_result, ocaml_result) with
-  | Some c_bytes, Some v ->
+  | Some c_bytes, Some (Ok v) ->
       let ocaml_bytes = encode_to_string schema v in
       if c_bytes = ocaml_bytes then Match
       else Value_mismatch "roundtrip bytes differ"
+  | None, Some (Error _) -> Both_failed
+  | Some _, Some (Error _) -> Only_c_ok "OCaml decode failed"
   | None, None -> Both_failed
   | Some _, None -> Only_c_ok "OCaml decode returned empty"
   | None, Some _ -> Only_ocaml_ok "C roundtrip failed"
@@ -73,10 +75,12 @@ let full_roundtrip schema value =
   let ocaml_bytes = encode_to_string schema value in
   match c_roundtrip schema ocaml_bytes with
   | None -> Only_c_ok "C rejected OCaml-encoded bytes"
-  | Some c_bytes ->
-      let final = decode_from_string schema c_bytes in
-      if schema.equal value final then Match
-      else Value_mismatch "values differ after full roundtrip"
+  | Some c_bytes -> (
+      match decode_from_string schema c_bytes with
+      | Ok final ->
+          if schema.equal value final then Match
+          else Value_mismatch "values differ after full roundtrip"
+      | Error _ -> Only_c_ok "OCaml rejected C-encoded bytes")
 
 type packed_test = {
   name : string;
@@ -105,11 +109,13 @@ let pack (type r) (schema : r schema) ~wire_size =
     test_write =
       (fun buf ->
         match decode_value buf with
-        | Some v -> write schema v
+        | Some (Ok v) -> write schema v
+        | Some (Error _) -> Both_failed
         | None -> Both_failed);
     test_roundtrip =
       (fun buf ->
         match decode_value buf with
-        | Some v -> full_roundtrip schema v
+        | Some (Ok v) -> full_roundtrip schema v
+        | Some (Error _) -> Both_failed
         | None -> Both_failed);
   }

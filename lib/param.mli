@@ -1,11 +1,15 @@
-type 'a t
-type binding
+type input
+type output
+type ('a, 'k) t
+type env
 
-val input : string -> 'a Types.typ -> 'a t
-val output : string -> 'a Types.typ -> 'a t
-val spec : 'a t -> Types.param
-val value : 'a t -> 'a -> binding
-val slot : 'a t -> 'a ref -> binding
-val name : binding -> string
-val load : binding -> int
-val store : binding -> int -> unit
+val input : string -> 'a Types.typ -> ('a, input) t
+val output : string -> 'a Types.typ -> ('a, output) t
+val decl : ('a, 'k) t -> Types.param
+val empty : env
+val is_empty : env -> bool
+val bind : env -> ('a, input) t -> 'a -> env
+val init : env -> ('a, output) t -> 'a -> env
+val get : env -> ('a, 'k) t -> 'a
+val to_ctx : env -> (string * int) list
+val store_name : env -> string -> int -> unit

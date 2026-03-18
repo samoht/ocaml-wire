@@ -222,10 +222,9 @@ let test_parse_struct_action_abort () =
 let test_parse_param_struct_with_params () =
   let max_len = Param.input "max_len" uint16be in
   let out_len = Param.output "out_len" uint16be in
-  let out_len_ref = ref 0 in
   let s =
     param_struct "BoundedPayload"
-      [ Param.spec max_len; Param.spec out_len ]
+      [ Param.decl max_len; Param.decl out_len ]
       ~where:Expr.(field_ref "Length" <= field_ref "max_len")
       [
         field "Length"
@@ -235,21 +234,20 @@ let test_parse_param_struct_with_params () =
         field "Data" (byte_array ~size:(field_ref "Length"));
       ]
   in
-  match
-    decode_string
-      ~params:[ Param.value max_len 3; Param.slot out_len out_len_ref ]
-      (struct_typ s) "\x00\x03abc"
-  with
-  | Ok () -> Alcotest.(check int) "out_len" 3 !out_len_ref
+  let params =
+    Param.empty |> fun env ->
+    Param.bind env max_len 3 |> fun env -> Param.init env out_len 0
+  in
+  match decode_string ~params (struct_typ s) "\x00\x03abc" with
+  | Ok () -> Alcotest.(check int) "out_len" 3 (Param.get params out_len)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_param_struct_where_fail () =
   let max_len = Param.input "max_len" uint16be in
   let out_len = Param.output "out_len" uint16be in
-  let out_len_ref = ref 0 in
   let s =
     param_struct "BoundedPayload"
-      [ Param.spec max_len; Param.spec out_len ]
+      [ Param.decl max_len; Param.decl out_len ]
       ~where:Expr.(field_ref "Length" <= field_ref "max_len")
       [
         field "Length"
@@ -259,11 +257,11 @@ let test_parse_param_struct_where_fail () =
         field "Data" (byte_array ~size:(field_ref "Length"));
       ]
   in
-  match
-    decode_string
-      ~params:[ Param.value max_len 2; Param.slot out_len out_len_ref ]
-      (struct_typ s) "\x00\x03abc"
-  with
+  let params =
+    Param.empty |> fun env ->
+    Param.bind env max_len 2 |> fun env -> Param.init env out_len 0
+  in
+  match decode_string ~params (struct_typ s) "\x00\x03abc" with
   | Ok () -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e

@@ -97,16 +97,11 @@ type ctx = int Ctx.t
 
 let ctx_of_params params =
   List.fold_left
-    (fun ctx b -> Ctx.add (Param.name b) (Param.load b) ctx)
-    Ctx.empty params
+    (fun ctx (name, v) -> Ctx.add name v ctx)
+    Ctx.empty (Param.to_ctx params)
 
 let commit_params ctx params =
-  List.iter
-    (fun b ->
-      match Ctx.find_opt (Param.name b) ctx with
-      | Some v -> Param.store b v
-      | None -> ())
-    params
+  Ctx.iter (fun name v -> Param.store_name params name v) ctx
 
 let rec int_of_typ_value : type a. a typ -> a -> int =
  fun typ v ->
@@ -924,10 +919,10 @@ let wire_size_at t buf off =
 let is_fixed t =
   match t.t_wire_size with Fixed _ -> true | Variable _ -> false
 
-let decode ?(params : Param.binding list = []) t buf off =
+let decode ?(params = Param.empty) t buf off =
   let v = t.t_decode buf off in
   let ctx = t.t_validate (ctx_of_params params) buf off in
-  if params <> [] then commit_params ctx params;
+  commit_params ctx params;
   v
 
 let encode t v buf off = t.t_encode v buf off

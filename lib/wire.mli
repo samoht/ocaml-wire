@@ -1,7 +1,14 @@
 (** Typed descriptions of binary wire formats.
 
-    A value of type ['a typ] says how values of type ['a] are represented on the
-    wire. That description can then be used in three complementary ways:
+    [Wire] is an authoring language for binary formats.
+
+    The point is not merely to emit EverParse 3D files. The point is to write
+    the format once, at the level of typed binary descriptions, and then reuse
+    that same description in several ways.
+
+    A value of type ['a typ] says how values of type ['a] are laid out on the
+    wire. From that one description, this library derives three complementary
+    uses:
 
     - {!decode}, {!decode_string}, {!decode_bytes}, {!encode},
       {!encode_to_bytes}, and {!encode_to_string} interpret the description
@@ -10,12 +17,35 @@
       accessors over existing buffers;
     - {!C} projects descriptions to EverParse 3D declarations.
 
-    [Wire] is thus about binary values and their layout. The 3D declaration
-    language has its own vocabulary in {!C}. *)
+    Writing the source description in OCaml rather than in a directory of
+    handwritten [.3d] files has a practical benefit: the format lives in a real
+    programming language, with abstraction, reuse, tests, fuzzing, and ordinary
+    composition tools close at hand. The generated 3D is then a projection of
+    that description, not a second source of truth to keep in sync.
 
-module Staged = Staged
-module UInt32 = UInt32
-module UInt63 = UInt63
+    [Wire] is thus about binary values and their layout. {!C} gives names to the
+    3D declaration vocabulary when a 3D artefact is wanted. *)
+
+module Staged : sig
+  type +'a t
+
+  val stage : 'a -> 'a t
+  val unstage : 'a t -> 'a
+end
+
+module UInt32 : sig
+  type t = int
+
+  val of_int : int -> t
+  val to_int : t -> int
+end
+
+module UInt63 : sig
+  type t = int
+
+  val of_int : int -> t
+  val to_int : t -> int
+end
 
 (** {1 Expressions}
 
@@ -33,17 +63,58 @@ type 'a typ
 type param
 
 module Param : sig
-  type 'a t
-  type binding
+  (** Typed handles for formal parameters and their runtime environment.
 
-  val input : string -> 'a typ -> 'a t
-  val output : string -> 'a typ -> 'a t
-  val spec : 'a t -> param
-  val value : 'a t -> 'a -> binding
-  val slot : 'a t -> 'a ref -> binding
-  val name : binding -> string
-  val load : binding -> int
-  val store : binding -> int -> unit
+      A parameter has two lives:
+
+      - as a declaration attached to a parameterised description or codec;
+      - as a runtime binding carried in an environment supplied to {!decode},
+        {!decode_string}, {!decode_bytes}, or {!Codec.decode}.
+
+      {!input} and {!output} build typed handles. {!decl} turns such a handle
+      into a formal declaration. {!bind} assembles a runtime environment from
+      these handles, and {!get} reads back the current value of a bound
+      parameter after decoding. *)
+
+  type input = Param.input
+  (** Phantom kind for immutable input parameters. *)
+
+  type output = Param.output
+  (** Phantom kind for mutable output parameters. *)
+
+  type ('a, 'k) t = ('a, 'k) Param.t
+  (** Typed handle for one formal parameter. *)
+
+  type env = Param.env
+  (** Runtime environment for the parameters of one decode. *)
+
+  val input : string -> 'a typ -> ('a, input) t
+  (** Declares a named immutable input parameter. *)
+
+  val output : string -> 'a typ -> ('a, output) t
+  (** Declares a named mutable output parameter. In 3D this becomes a mutable
+      pointer parameter; in OCaml decoding it can be bound to a slot. *)
+
+  val decl : ('a, 'k) t -> param
+  (** Formal declaration corresponding to the typed handle. Use this when
+      attaching parameters to codecs or 3D declarations. *)
+
+  val empty : env
+  (** Empty runtime parameter environment. *)
+
+  val bind : env -> ('a, input) t -> 'a -> env
+  (** Binds an input parameter handle to a runtime value. *)
+
+  val init : env -> ('a, output) t -> 'a -> env
+  (** Initialises an output parameter handle to an initial value.
+
+      Actions may update the output during decoding; use {!get} afterwards to
+      read back the final value. *)
+
+  val get : env -> ('a, 'k) t -> 'a
+  (** Reads back the current value of a bound parameter.
+
+      This is how callers observe output parameters after decode. *)
 end
 
 module Action : sig
@@ -160,8 +231,8 @@ val to_bool : int typ -> bool typ
 (** Boolean view over an integer wire value. Zero is [false], non-zero is
     [true]. *)
 
-val cases : 'a list -> int typ -> 'a typ
-(** Finite positional mapping over an integer representation.
+val indexed : 'a list -> int typ -> 'a typ
+(** Finite index-based mapping over an integer representation.
 
     The decoded integer is used as a zero-based index into the list. Decoding or
     encoding raises [Invalid_argument] if the value falls outside the list or
@@ -227,15 +298,6 @@ val default : 'a typ -> ('tag, 'a) case
 val casetype : string -> 'tag typ -> ('tag, 'a) case list -> 'a typ
 (** Tag-dispatched choice between several descriptions. *)
 
-val param : string -> 'a typ -> param
-(** Immutable parameter of a parameterised description. *)
-
-val mutable_param : string -> 'a typ -> param
-(** Mutable out-parameter of a parameterised description. *)
-
-val pp_3d_typ : Format.formatter -> 'a typ -> unit
-(** Pretty-printer for wire descriptions in 3D syntax. *)
-
 val wire_size : 'a typ -> int option
 (** Fixed wire size of a description, if known statically. *)
 
@@ -256,12 +318,6 @@ type parse_error =
 val pp_parse_error : Format.formatter -> parse_error -> unit
 (** Pretty-printer for decode errors. *)
 
-exception Parse_error of parse_error
-(** Exception form of {!parse_error}.
-
-    The direct decoding functions in {!Wire} return results; lower-level and
-    codec-oriented operations use the exception form on hot paths. *)
-
 (** {1 Direct Decoding and Encoding}
 
     These functions interpret a ['a typ] directly and exchange ordinary OCaml
@@ -276,23 +332,27 @@ exception Parse_error of parse_error
     allocating an OCaml record for each read. *)
 
 val decode :
-  ?params:Param.binding list ->
+  ?params:Param.env ->
   'a typ ->
   Bytesrw.Bytes.Reader.t ->
   ('a, parse_error) result
 (** Decodes one value from the current reader position.
 
+    [params] provides runtime bindings for any formal parameters referenced by
+    the description. Input bindings seed the decode environment; output bindings
+    are updated by actions during decoding.
+
     Decoding is prefix-based: success does not imply that the reader is
     exhausted afterwards. *)
 
 val decode_string :
-  ?params:Param.binding list -> 'a typ -> string -> ('a, parse_error) result
+  ?params:Param.env -> 'a typ -> string -> ('a, parse_error) result
 (** Decodes one value from the start of the string.
 
     Trailing bytes, if any, are left uninterpreted. *)
 
 val decode_bytes :
-  ?params:Param.binding list -> 'a typ -> bytes -> ('a, parse_error) result
+  ?params:Param.env -> 'a typ -> bytes -> ('a, parse_error) result
 (** Decodes one value from the start of the byte sequence.
 
     Trailing bytes, if any, are left uninterpreted. *)
@@ -354,7 +414,10 @@ module Codec : sig
     'a typ ->
     ('r -> 'a) ->
     ('a, 'r) field
-  (** Declares one field of a record codec. *)
+  (** Declares one field of a record codec.
+
+      Field constraints and actions share the same semantics as in direct
+      decoding. *)
 
   val view :
     string ->
@@ -363,10 +426,15 @@ module Codec : sig
     'f ->
     ('f, 'r) fields ->
     'r t
-  (** Builds a record codec from a constructor and its fields.
+  (** Builds a sealed record codec from a constructor and its fields.
 
       The constructor is applied in field order at decode time; the field
       projections are used at encode time.
+
+      [params] declares the formal parameters of the record description. Runtime
+      values for these parameters are supplied later via the optional [~params]
+      argument of {!decode}. [where] is a record-level constraint checked after
+      all fields and actions have run.
 
       Example:
       {[
@@ -396,11 +464,12 @@ module Codec : sig
   val is_fixed : 'r t -> bool
   (** [true] iff the codec has a statically known size. *)
 
-  val decode : ?params:Param.binding list -> 'r t -> bytes -> int -> 'r
+  val decode :
+    ?params:Param.env -> 'r t -> bytes -> int -> ('r, parse_error) result
   (** Decodes one record value from a buffer at the given base offset.
 
-      This function is exception-based and raises {!Parse_error} on malformed
-      input. *)
+      The optional runtime [params] play the same role as for {!Wire.decode}:
+      inputs seed the environment and outputs receive action assignments. *)
 
   val encode : 'r t -> 'r -> bytes -> int -> unit
   (** Encodes one record value into a buffer at the given base offset.

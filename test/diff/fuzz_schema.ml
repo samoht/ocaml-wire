@@ -23,7 +23,7 @@ let decode_record_from_string codec s =
   let ws = Codec.wire_size codec in
   if String.length s < ws then
     Error (Unexpected_eof { expected = ws; got = String.length s })
-  else Ok (Codec.decode codec (Bytes.of_string s) 0)
+  else Codec.decode codec (Bytes.of_string s) 0
 
 (** Test SimpleHeader roundtrip *)
 let test_simple_header_roundtrip version length flags =
