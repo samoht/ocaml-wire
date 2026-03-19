@@ -159,61 +159,71 @@ let test_parse_all_zeros buf =
   let _ = Wire.decode_string Wire.all_zeros buf in
   ()
 
+type test_struct = { ts_a : int; ts_b : int; ts_c : int }
+
+let test_struct_codec =
+  Wire.Codec.view "Test"
+    (fun a b c -> { ts_a = a; ts_b = b; ts_c = c })
+    Wire.Codec.
+      [
+        Wire.Codec.field "a" Wire.uint8 (fun r -> r.ts_a);
+        Wire.Codec.field "b" Wire.uint16 (fun r -> r.ts_b);
+        Wire.Codec.field "c" Wire.uint32 (fun r -> r.ts_c);
+      ]
+
 let test_parse_struct buf =
   let buf = truncate buf in
-  let s =
-    Wire.C.struct_ "Test"
-      [
-        Wire.C.field "a" Wire.uint8;
-        Wire.C.field "b" Wire.uint16;
-        Wire.C.field "c" Wire.uint32;
-      ]
-  in
-  let t = Wire.C.struct_typ s in
-  let _ = Wire.decode_string t buf in
+  let _ = Wire.Codec.decode test_struct_codec (Bytes.of_string buf) 0 in
   ()
+
+type constrained_struct = { cs_x : int }
+
+let f_cs_x = Wire.Codec.field "x" Wire.uint8 (fun r -> r.cs_x)
+
+let constrained_codec =
+  Wire.Codec.view "Constrained"
+    ~where:Wire.Expr.(Wire.Codec.field_ref f_cs_x <= Wire.int 100)
+    (fun x -> { cs_x = x })
+    Wire.Codec.[ f_cs_x ]
 
 let test_parse_struct_constrained buf =
   let buf = truncate buf in
-  let s =
-    Wire.C.struct_ "Constrained"
-      [
-        Wire.C.field "x"
-          ~constraint_:Wire.Expr.(Wire.field_ref "x" <= Wire.int 100)
-          Wire.uint8;
-      ]
-  in
-  let t = Wire.C.struct_typ s in
-  let _ = Wire.decode_string t buf in
+  let _ = Wire.Codec.decode constrained_codec (Bytes.of_string buf) 0 in
   ()
+
+type be_struct = { be_a : int; be_b : int; be_c : int64 }
+
+let be_codec =
+  Wire.Codec.view "BE"
+    (fun a b c -> { be_a = a; be_b = b; be_c = c })
+    Wire.Codec.
+      [
+        Wire.Codec.field "a" Wire.uint16be (fun r -> r.be_a);
+        Wire.Codec.field "b" Wire.uint32be (fun r -> r.be_b);
+        Wire.Codec.field "c" Wire.uint64be (fun r -> r.be_c);
+      ]
 
 let test_parse_struct_be buf =
   let buf = truncate buf in
-  let s =
-    Wire.C.struct_ "BE"
-      [
-        Wire.C.field "a" Wire.uint16be;
-        Wire.C.field "b" Wire.uint32be;
-        Wire.C.field "c" Wire.uint64be;
-      ]
-  in
-  let t = Wire.C.struct_typ s in
-  let _ = Wire.decode_string t buf in
+  let _ = Wire.Codec.decode be_codec (Bytes.of_string buf) 0 in
   ()
+
+type bf_struct = { bf_a : int; bf_b : int; bf_c : int; bf_d : int }
+
+let bf_codec =
+  Wire.Codec.view "BF"
+    (fun a b c d -> { bf_a = a; bf_b = b; bf_c = c; bf_d = d })
+    Wire.Codec.
+      [
+        Wire.Codec.field "a" (Wire.bits ~width:3 Wire.U8) (fun r -> r.bf_a);
+        Wire.Codec.field "b" (Wire.bits ~width:5 Wire.U8) (fun r -> r.bf_b);
+        Wire.Codec.field "c" (Wire.bits ~width:10 Wire.U16) (fun r -> r.bf_c);
+        Wire.Codec.field "d" (Wire.bits ~width:6 Wire.U16) (fun r -> r.bf_d);
+      ]
 
 let test_parse_struct_bitfields buf =
   let buf = truncate buf in
-  let s =
-    Wire.C.struct_ "BF"
-      [
-        Wire.C.field "a" (Wire.bits ~width:3 Wire.U8);
-        Wire.C.field "b" (Wire.bits ~width:5 Wire.U8);
-        Wire.C.field "c" (Wire.bits ~width:10 Wire.U16);
-        Wire.C.field "d" (Wire.bits ~width:6 Wire.U16);
-      ]
-  in
-  let t = Wire.C.struct_typ s in
-  let _ = Wire.decode_string t buf in
+  let _ = Wire.Codec.decode bf_codec (Bytes.of_string buf) 0 in
   ()
 
 let test_parse_anon_field buf =
