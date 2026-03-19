@@ -3,6 +3,7 @@
     Simulates a SpaceWire CCSDS Packet Transfer Protocol router using Wire's
     staged Codec.get — all field access is generated from the Wire DSL. *)
 
+open Bench_lib
 module C = Wire.Codec
 
 let apid_of_index i =
@@ -62,13 +63,13 @@ let[@inline] dispatch handler_id =
   handler_counts.(handler_id) <- handler_counts.(handler_id) + 1
 
 let () =
-  let n = 10_000_000 in
-  let buf, total_bytes, payload_bytes = generate_stream n in
-  Fmt.pr "APID demux (%d packets, %d MB stream, %d MB payload)\n\n" n
+  let n_pkts = 10_000_000 in
+  let buf, total_bytes, payload_bytes = generate_stream n_pkts in
+  let hdr = Wire.Codec.wire_size Space.packet_codec in
+  Fmt.pr "APID demux (%d packets, %d MB stream, %d MB payload)\n\n" n_pkts
     (total_bytes / 1_000_000)
     (payload_bytes / 1_000_000);
 
-  let hdr = Wire.Codec.wire_size Space.packet_codec in
   let get_apid =
     Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_apid)
   in
@@ -79,24 +80,32 @@ let () =
     Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_data_len)
   in
 
-  Gc.compact ();
-  Array.fill handler_counts 0 4 0;
-  let t0 = Unix.gettimeofday () in
+  (* OCaml tier: route one packet at a time, cycling through the stream *)
   let off = ref 0 in
-  for _ = 1 to n do
+  let ocaml_fn () =
+    let o = !off in
+    if o + hdr > total_bytes then off := 0;
     let o = !off in
     let apid = get_apid buf o in
     let _seq = get_seq buf o in
     let dlen = get_dlen buf o in
     dispatch routing_table.(apid);
     off := o + hdr + dlen + 1
-  done;
-  let dt = Unix.gettimeofday () -. t0 in
-  let ns_per = dt *. 1e9 /. float n in
-  let mpps = float n /. dt /. 1e6 in
-  let mbps = float payload_bytes /. dt /. 1e6 in
+  in
 
-  Fmt.pr "  %-24s %5.1f ns/pkt  %5.1f Mpkt/s  %6.0f MB/s\n"
-    "Wire (staged Codec.get)" ns_per mpps mbps;
+  let single_pkt =
+    Bytes.sub buf 0 (hdr + payload_size_of_apid (get_apid buf 0) + 1)
+  in
+  let t =
+    ( v "Wire (staged Codec.get)" ~size:hdr ocaml_fn |> fun t ->
+      match C_tier.spacepacket_loop with Some f -> with_c f buf t | None -> t )
+    |> fun t ->
+    match C_tier.spacepacket_check with
+    | Some f -> with_ffi f single_pkt t
+    | None -> t
+  in
+
+  run_table ~title:"APID routing" ~n:n_pkts ~unit:"pkt" [ t ];
+
   Fmt.pr "\n  routed: hk=%d sci=%d diag=%d idle=%d\n" handler_counts.(0)
     handler_counts.(1) handler_counts.(2) handler_counts.(3)

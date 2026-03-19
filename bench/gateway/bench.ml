@@ -3,8 +3,8 @@
     Simulates a downlink TM frame processor using Wire's staged Codec.get — all
     field access is generated from the Wire DSL. *)
 
+open Bench_lib
 module C = Wire.Codec
-module Slice = Bytesrw.Bytes.Slice
 
 let cadu_size = 1115
 let tm_hdr = Wire.Codec.wire_size Space.tm_frame_codec
@@ -77,28 +77,31 @@ let () =
     Wire.Staged.unstage (C.get Space.packet_codec Space.f_sp_seq_count)
   in
 
-  Gc.compact ();
-  let t0 = Unix.gettimeofday () in
-  let pkts = ref 0 in
-  for frame = 0 to n - 1 do
-    let base = frame * cadu_size in
-    let vcid = get_vcid buf base in
-    let fhp = get_fhp buf base in
-    ignore (Sys.opaque_identity vcid);
-    let data_start = base + tm_hdr in
-    let off = ref (data_start + fhp) in
-    while !off + pkt_size <= data_start + data_field_size do
-      let _apid = get_apid buf !off in
-      let _seq = get_seq buf !off in
-      off := !off + pkt_size;
-      incr pkts
-    done
-  done;
-  let dt = Unix.gettimeofday () -. t0 in
+  (* OCaml tier: process one frame, cycling through the buffer *)
+  let ocaml_fn =
+    cycling ~data:buf ~n_items:n ~size:cadu_size (fun buf base ->
+        let vcid = get_vcid buf base in
+        let fhp = get_fhp buf base in
+        ignore (Sys.opaque_identity vcid);
+        let data_start = base + tm_hdr in
+        let off = ref (data_start + fhp) in
+        while !off + pkt_size <= data_start + data_field_size do
+          let _apid = get_apid buf !off in
+          let _seq = get_seq buf !off in
+          off := !off + pkt_size
+        done)
+  in
 
-  Fmt.pr "  %-24s %5.0f ns/frm  %4.1f Mfrm/s  %5.1f Mpkt/s\n"
-    "Wire (staged Codec.get)"
-    (dt *. 1e9 /. float n)
-    (float n /. dt /. 1e6)
-    (float !pkts /. dt /. 1e6);
-  Fmt.pr "\n  %d packets reassembled\n" !pkts
+  let single_frame = Bytes.sub buf 0 cadu_size in
+  let t =
+    ( v "Wire (staged Codec.get)" ~size:cadu_size ocaml_fn |> fun t ->
+      match C_tier.tmframe_loop with
+      | Some f -> with_c f single_frame t
+      | None -> t )
+    |> fun t ->
+    match C_tier.tmframe_check with
+    | Some f -> with_ffi f single_frame t
+    | None -> t
+  in
+
+  run_table ~title:"TM frame reassembly" ~n ~unit:"frm" [ t ]

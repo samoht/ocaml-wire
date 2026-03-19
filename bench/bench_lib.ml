@@ -1,11 +1,12 @@
 (** Shared benchmark framework.
 
-    Every benchmark compares three tiers from the same Wire DSL definition:
+    Every benchmark compares up to three tiers from the same Wire DSL
+    definition:
     - EverParse C: generated verified C validator in a tight C loop
     - OCaml->C FFI: calling the EverParse C validator from OCaml
     - Pure OCaml: Wire.Codec.get/set (zero-copy field access)
 
-    Reporting is standardized: ns/op, alloc (words), ratio vs C, GB/s. *)
+    Reporting is standardized: ns/op, alloc (words), ratio vs C, throughput. *)
 
 (* ── Timing primitives ── *)
 
@@ -27,37 +28,24 @@ let alloc_words n f =
 
 (* ── Benchmark specification ── *)
 
-type read_spec = {
+type t = {
   label : string;
-  size : int;  (** Wire size per item *)
-  c_loop : bytes -> int -> int -> int;  (** C loop: buf off count -> ns *)
-  c_buf : bytes;  (** Buffer for C loop *)
-  ffi_check : bytes -> bool;  (** FFI validator *)
-  ffi_buf : bytes;  (** Single-item buffer for FFI *)
-  ocaml_read : unit -> unit;  (** One OCaml get operation *)
+  size : int;
+  ocaml : unit -> unit;
+  c : ((bytes -> int -> int -> int) * bytes) option;
+  ffi : ((bytes -> bool) * bytes) option;
 }
-(** A read benchmark spec: codec, data, and all three tiers. *)
 
-type write_spec = { w_label : string; ocaml_write : unit -> unit }
-(** A write benchmark spec. *)
+let v label ~size ocaml = { label; size; ocaml; c = None; ffi = None }
+let with_c c_loop c_buf t = { t with c = Some (c_loop, c_buf) }
+let with_ffi ffi_check ffi_buf t = { t with ffi = Some (ffi_check, ffi_buf) }
 
-(** Create a read_spec from a contiguous buffer of packed items. The OCaml read
-    cycles through items in the buffer. *)
-let of_contiguous ~label ~size ~data ~n_items ~c_loop ~ffi_check ~read_fn =
+let cycling ~data ~n_items ~size read_fn =
   let i = ref 0 in
-  {
-    label;
-    size;
-    c_loop;
-    c_buf = data;
-    ffi_check;
-    ffi_buf = Bytes.sub data 0 size;
-    ocaml_read =
-      (fun () ->
-        let off = !i mod n_items * size in
-        read_fn data off;
-        incr i);
-  }
+  fun () ->
+    let off = !i mod n_items * size in
+    read_fn data off;
+    incr i
 
 (** Pack a bytes array into a contiguous buffer. *)
 let pack arr ~size =
@@ -68,36 +56,83 @@ let pack arr ~size =
 
 (* ── Result ── *)
 
-type result = { c_ns : float; ffi_ns : float; ocaml_ns : float; alloc : float }
+type result = {
+  c_ns : float option;
+  ffi_ns : float option;
+  ocaml_ns : float;
+  alloc : float;
+}
 
-let run_one ~n (s : read_spec) =
-  let c_total = n * 10 in
-  let c_ns = float (s.c_loop s.c_buf 0 c_total) /. float c_total in
+let check t =
+  (* Verify OCaml tier doesn't crash *)
+  t.ocaml ();
+  (* Verify FFI tier accepts the data *)
+  (match t.ffi with
+  | Some (ffi_check, ffi_buf) ->
+      if not (ffi_check ffi_buf) then
+        Fmt.failwith "%s: FFI validation failed on test data" t.label
+  | None -> ());
+  (* Verify C tier accepts the data *)
+  match t.c with
+  | Some (c_loop, c_buf) -> ignore (c_loop c_buf 0 1)
+  | None -> ()
+
+let run_one ~n t =
+  check t;
+  let c_ns =
+    match t.c with
+    | None -> None
+    | Some (c_loop, c_buf) ->
+        let c_total = n * 10 in
+        Some (float (c_loop c_buf 0 c_total) /. float c_total)
+  in
   let ffi_ns =
-    time_ns n (fun () ->
-        for _ = 1 to n do
-          ignore (s.ffi_check s.ffi_buf)
-        done)
+    match t.ffi with
+    | None -> None
+    | Some (ffi_check, ffi_buf) ->
+        Some
+          (time_ns n (fun () ->
+               for _ = 1 to n do
+                 ignore (ffi_check ffi_buf)
+               done))
   in
   let ocaml_ns =
     time_ns n (fun () ->
         for _ = 1 to n do
-          s.ocaml_read ()
+          t.ocaml ()
         done)
   in
-  let alloc = alloc_words n s.ocaml_read in
+  let alloc = alloc_words n t.ocaml in
   { c_ns; ffi_ns; ocaml_ns; alloc }
 
 (* ── Table formatting ── *)
 
+let ns_fmt_opt = function
+  | None -> "-"
+  | Some t -> if t < 0.1 then "-" else Fmt.str "%.1f" t
+
 let ns_fmt t = if t < 0.1 then "-" else Fmt.str "%.1f" t
 let alloc_fmt w = if w < 0.5 then "0w" else Fmt.str "%.0fw" w
 
-let ratio_fmt num denom =
-  if denom > 0.1 && num > 0.1 then Fmt.str "%.1fx" (num /. denom) else "-"
+let ratio_fmt ocaml_ns = function
+  | None -> "-"
+  | Some c ->
+      if c > 0.1 && ocaml_ns > 0.1 then Fmt.str "%.1fx" (ocaml_ns /. c) else "-"
 
-let gbps_fmt ns size =
-  if ns > 0.1 then Fmt.str "%.1f" (float size /. ns) else "-"
+let throughput_fmt ocaml_ns =
+  if ocaml_ns > 0.1 then Fmt.str "%.1f" (1e3 /. ocaml_ns) else "-"
+
+let cols unit_ =
+  [
+    ("Label", 42);
+    ("Size", 5);
+    ("EverParse C", 11);
+    ("OCaml->C FFI", 12);
+    ("OCaml", 9);
+    ("alloc", 5);
+    ("vs C", 5);
+    (Fmt.str "M%s/s" unit_, 8);
+  ]
 
 let print_header title cols =
   Fmt.pr "\n%s\n%s\n\n" title (String.make (String.length title) '=');
@@ -114,53 +149,22 @@ let print_row widths cells =
   List.iter2 (fun (_, w) cell -> Fmt.pr "  %-*s" w cell) widths cells;
   Fmt.pr "\n"
 
-let read_cols =
-  [
-    ("Field", 42);
-    ("Size", 5);
-    ("EverParse C", 11);
-    ("OCaml->C FFI", 12);
-    ("OCaml get", 9);
-    ("alloc", 5);
-    ("vs C", 5);
-    ("GB/s", 5);
-  ]
-
-(** Run and print a list of read benchmarks. *)
-let run_reads ~n specs =
-  let w = print_header "Read: field access (ns/op)" read_cols in
+let run_table ~title ~n ?(unit = "op") specs =
+  let w = print_header title (cols unit) in
   List.iter
-    (fun s ->
-      let r = run_one ~n s in
+    (fun t ->
+      let r = run_one ~n t in
       print_row w
         [
-          s.label;
-          Fmt.str "%dB" s.size;
-          ns_fmt r.c_ns;
-          ns_fmt r.ffi_ns;
+          t.label;
+          (if t.size > 0 then Fmt.str "%dB" t.size else "-");
+          ns_fmt_opt r.c_ns;
+          ns_fmt_opt r.ffi_ns;
           ns_fmt r.ocaml_ns;
           alloc_fmt r.alloc;
           ratio_fmt r.ocaml_ns r.c_ns;
-          gbps_fmt r.ocaml_ns s.size;
+          throughput_fmt r.ocaml_ns;
         ])
-    specs
-
-(** Run and print a list of write benchmarks. *)
-let run_writes ~n specs =
-  let w =
-    print_header "Write: in-place field mutation (ns/op)"
-      [ ("Field", 42); ("OCaml set", 9); ("alloc", 5) ]
-  in
-  List.iter
-    (fun s ->
-      let ns =
-        time_ns n (fun () ->
-            for _ = 1 to n do
-              s.ocaml_write ()
-            done)
-      in
-      let alloc = alloc_words n s.ocaml_write in
-      print_row w [ s.w_label; ns_fmt ns; alloc_fmt alloc ])
     specs
 
 let section label = Fmt.pr "\n  -- %s --\n" label

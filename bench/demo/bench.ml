@@ -15,8 +15,9 @@ let n_data = 1024
 
 (* ── Contiguous test data ── *)
 
-let pack = Bench_lib.pack
-let minimal_buf, _ = pack (Demo.minimal_data n_data) ~size:Demo.minimal_size
+let minimal_buf, n_items =
+  pack (Demo.minimal_data n_data) ~size:Demo.minimal_size
+
 let bf8_buf, _ = pack (Demo.bf8_data n_data) ~size:Demo.bf8_size
 let bf16_buf, _ = pack (Demo.bf16_data n_data) ~size:Demo.bf16_size
 
@@ -105,8 +106,10 @@ let set_cases = Staged.unstage (Codec.set Demo.cases_demo_codec Demo.f_cd_type)
 
 (* ── Benchmark helpers ── *)
 
-let contig ~label ~size ~data ?(n_items = n_data) ~c_loop ~ffi_check read_fn =
-  of_contiguous ~label ~size ~data ~n_items ~c_loop ~ffi_check ~read_fn
+let rd ~label ~size ~data ?(n_items = n_items) ~c_loop ~ffi_check read_fn =
+  v label ~size (cycling ~data ~n_items ~size (fun buf off -> read_fn buf off))
+  |> with_c c_loop data
+  |> with_ffi ffi_check (Bytes.sub data 0 size)
 
 (* ── Main ── *)
 
@@ -120,54 +123,54 @@ let () =
   Fmt.pr "EverParse C vs OCaml->C FFI vs pure OCaml. Same Wire DSL.\n";
 
   (* ── Read benchmarks ── *)
-  run_reads ~n
+  run_table ~title:"Read: field access (ns/op)" ~n
     [
       (* Integer types *)
-      contig ~label:"Minimal.value (uint8)" ~size:Demo.minimal_size
+      rd ~label:"Minimal.value (uint8)" ~size:Demo.minimal_size
         ~data:minimal_buf ~c_loop:C_stubs.minimal_loop
         ~ffi_check:C_stubs.minimal_check (fun buf off ->
           ignore (get_minimal buf off));
-      contig ~label:"AllInts.u64be (uint64be, boxed)" ~size:Demo.all_ints_size
+      rd ~label:"AllInts.u64be (uint64be, boxed)" ~size:Demo.all_ints_size
         ~data:ints_buf ~c_loop:C_stubs.allints_loop
         ~ffi_check:C_stubs.allints_check (fun buf off ->
           ignore (read_u64be buf off));
-      contig ~label:"LargeMixed.timestamp (uint64be, 26B)"
+      rd ~label:"LargeMixed.timestamp (uint64be, 26B)"
         ~size:Demo.large_mixed_size ~data:mixed_buf
         ~c_loop:C_stubs.largemixed_loop ~ffi_check:C_stubs.largemixed_check
         (fun buf off -> ignore (read_mixed buf off));
       (* Bitfields *)
-      contig ~label:"Bitfield8.value (bf5 in bf_uint8)" ~size:Demo.bf8_size
+      rd ~label:"Bitfield8.value (bf5 in bf_uint8)" ~size:Demo.bf8_size
         ~data:bf8_buf ~c_loop:C_stubs.bitfield8_loop
         ~ffi_check:C_stubs.bitfield8_check (fun buf off ->
           ignore (read_bf8 buf off));
-      contig ~label:"Bitfield16.id (bf11 in bf_uint16be)" ~size:Demo.bf16_size
+      rd ~label:"Bitfield16.id (bf11 in bf_uint16be)" ~size:Demo.bf16_size
         ~data:bf16_buf ~c_loop:C_stubs.bitfield16_loop
         ~ffi_check:C_stubs.bitfield16_check (fun buf off ->
           ignore (read_bf16 buf off));
-      contig ~label:"Bitfield32.pri (bf8 in bf_uint32be)" ~size:Demo.bf32_size
+      rd ~label:"Bitfield32.pri (bf8 in bf_uint32be)" ~size:Demo.bf32_size
         ~data:bf32_buf ~c_loop:C_stubs.bitfield32_loop
         ~ffi_check:C_stubs.bitfield32_check (fun buf off ->
           ignore (read_bf32 buf off));
       (* Bool (map) *)
-      contig ~label:"BoolFields.active (bool bf1 in bf_uint8)"
+      rd ~label:"BoolFields.active (bool bf1 in bf_uint8)"
         ~size:Demo.bool_fields_size ~data:bool_buf
         ~c_loop:C_stubs.boolfields_loop ~ffi_check:C_stubs.boolfields_check
         (fun buf off -> ignore (read_bool buf off));
       (* Real protocols *)
-      contig ~label:"CLCW.report (bf8 in bf32be)" ~size:Space.clcw_size
+      rd ~label:"CLCW.report (bf8 in bf32be)" ~size:Space.clcw_size
         ~data:clcw_buf ~c_loop:C_stubs.clcw_loop ~ffi_check:C_stubs.clcw_check
         (fun buf off -> ignore (read_clcw buf off));
-      contig ~label:"IPv4.src (uint32be, unboxed)" ~size:Net.ipv4_size
+      rd ~label:"IPv4.src (uint32be, unboxed)" ~size:Net.ipv4_size
         ~data:ipv4_only_buf ~n_items:1
         ~c_loop:(fun buf _off n -> C_stubs.ipv4_loop buf 0 n)
         ~ffi_check:C_stubs.ipv4_check
         (fun _buf _off -> ignore (read_ip_src tcp_buf ip_off));
-      contig ~label:"TCP.dst_port (uint16be)" ~size:Net.tcp_size
-        ~data:tcp_only_buf ~n_items:1
+      rd ~label:"TCP.dst_port (uint16be)" ~size:Net.tcp_size ~data:tcp_only_buf
+        ~n_items:1
         ~c_loop:(fun buf _off n -> C_stubs.tcp_loop buf 0 n)
         ~ffi_check:C_stubs.tcp_check
         (fun _buf _off -> ignore (read_tcp_port tcp_buf tcp_off));
-      contig ~label:"TCP.syn (bool bf1 in bf16be)" ~size:Net.tcp_size
+      rd ~label:"TCP.syn (bool bf1 in bf16be)" ~size:Net.tcp_size
         ~data:tcp_only_buf ~n_items:1
         ~c_loop:(fun buf _off n -> C_stubs.tcp_loop buf 0 n)
         ~ffi_check:C_stubs.tcp_check
@@ -176,81 +179,56 @@ let () =
 
   section "Type combinators";
 
-  run_reads ~n
+  run_table ~title:"Read: type combinators (ns/op)" ~n
     [
       (* map: user decode function on every Codec.get *)
-      contig ~label:"Mapped.priority (map fn, 2B)" ~size:Demo.mapped_size
+      rd ~label:"Mapped.priority (map fn, 2B)" ~size:Demo.mapped_size
         ~data:mapped_buf ~c_loop:C_stubs.mapped_loop
         ~ffi_check:C_stubs.mapped_check (fun buf off ->
           ignore (read_mapped buf off));
       (* cases: variant dispatch via array lookup *)
-      contig ~label:"CasesDemo.type (cases variant, 1B)"
-        ~size:Demo.cases_demo_size ~data:cases_buf
-        ~c_loop:C_stubs.casesdemo_loop ~ffi_check:C_stubs.casesdemo_check
-        (fun buf off -> ignore (read_cases buf off));
+      rd ~label:"CasesDemo.type (cases variant, 1B)" ~size:Demo.cases_demo_size
+        ~data:cases_buf ~c_loop:C_stubs.casesdemo_loop
+        ~ffi_check:C_stubs.casesdemo_check (fun buf off ->
+          ignore (read_cases buf off));
       (* enum + map: C validates enum, OCaml decodes variant *)
-      contig ~label:"EnumDemo.status (enum+map variant, 2B)"
+      rd ~label:"EnumDemo.status (enum+map variant, 2B)"
         ~size:Demo.enum_demo_size ~data:enum_buf ~c_loop:C_stubs.enumdemo_loop
         ~ffi_check:C_stubs.enumdemo_check (fun buf off ->
           ignore (read_enum buf off));
       (* where: C validates constraint, OCaml skips it *)
-      contig ~label:"Constrained.data (where, 2B)" ~size:Demo.constrained_size
+      rd ~label:"Constrained.data (where, 2B)" ~size:Demo.constrained_size
         ~data:constrained_buf ~c_loop:C_stubs.constrained_loop
         ~ffi_check:C_stubs.constrained_check (fun buf off ->
           ignore (read_constrained buf off));
     ];
 
   (* ── Write benchmarks ── *)
-  run_writes ~n
+  run_table ~title:"Write: in-place field mutation (ns/op)" ~n
     [
-      {
-        w_label = "Minimal.value (uint8)";
-        ocaml_write = (fun () -> set_minimal minimal_buf 0 42);
-      };
-      {
-        w_label = "Bitfield8.value (bf5, read-mod-write)";
-        ocaml_write = (fun () -> set_bf8 bf8_buf 0 19);
-      };
-      {
-        w_label = "BoolFields.active (bool bf1, rmw)";
-        ocaml_write = (fun () -> set_bool bool_buf 0 true);
-      };
-      {
-        w_label = "CLCW.report (bf8, read-mod-write)";
-        ocaml_write = (fun () -> set_clcw clcw_buf 0 42);
-      };
-      {
-        w_label = "TCP.dst_port (uint16be)";
-        ocaml_write = (fun () -> set_tcp_port tcp_buf tcp_off 8080);
-      };
-      {
-        w_label = "TCP.syn (bool bf1, read-mod-write)";
-        ocaml_write = (fun () -> set_tcp_syn tcp_buf tcp_off true);
-      };
-      {
-        w_label = "Mapped.priority (map fn encode)";
-        ocaml_write = (fun () -> set_mapped mapped_buf 0 Demo.High);
-      };
-      {
-        w_label = "CasesDemo.type (cases variant encode)";
-        ocaml_write = (fun () -> set_cases cases_buf 0 Demo.Telemetry);
-      };
-      {
-        w_label = "Eth->TCP.dst_port (3 layers)";
-        ocaml_write =
-          (fun () ->
-            let ip = Slice.first (read_eth_payload tcp_buf 0) in
-            let tcp = Slice.first (read_ip_payload tcp_buf ip) in
-            set_tcp_port tcp_buf tcp 8080);
-      };
-      {
-        w_label = "Eth->TCP.syn (3 layers)";
-        ocaml_write =
-          (fun () ->
-            let ip = Slice.first (read_eth_payload tcp_buf 0) in
-            let tcp = Slice.first (read_ip_payload tcp_buf ip) in
-            set_tcp_syn tcp_buf tcp true);
-      };
+      v "Minimal.value (uint8)" ~size:0 (fun () -> set_minimal minimal_buf 0 42);
+      v "Bitfield8.value (bf5, read-mod-write)" ~size:0 (fun () ->
+          set_bf8 bf8_buf 0 19);
+      v "BoolFields.active (bool bf1, rmw)" ~size:0 (fun () ->
+          set_bool bool_buf 0 true);
+      v "CLCW.report (bf8, read-mod-write)" ~size:0 (fun () ->
+          set_clcw clcw_buf 0 42);
+      v "TCP.dst_port (uint16be)" ~size:0 (fun () ->
+          set_tcp_port tcp_buf tcp_off 8080);
+      v "TCP.syn (bool bf1, read-mod-write)" ~size:0 (fun () ->
+          set_tcp_syn tcp_buf tcp_off true);
+      v "Mapped.priority (map fn encode)" ~size:0 (fun () ->
+          set_mapped mapped_buf 0 Demo.High);
+      v "CasesDemo.type (cases variant encode)" ~size:0 (fun () ->
+          set_cases cases_buf 0 Demo.Telemetry);
+      v "Eth->TCP.dst_port (3 layers)" ~size:0 (fun () ->
+          let ip = Slice.first (read_eth_payload tcp_buf 0) in
+          let tcp = Slice.first (read_ip_payload tcp_buf ip) in
+          set_tcp_port tcp_buf tcp 8080);
+      v "Eth->TCP.syn (3 layers)" ~size:0 (fun () ->
+          let ip = Slice.first (read_eth_payload tcp_buf 0) in
+          let tcp = Slice.first (read_ip_payload tcp_buf ip) in
+          set_tcp_syn tcp_buf tcp true);
     ];
 
   (* ── FFI overhead ── *)

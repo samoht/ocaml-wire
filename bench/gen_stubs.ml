@@ -28,8 +28,10 @@ let entries =
     ("CasesDemo", Demo.cases_demo_struct, Demo.cases_demo_size, []);
     ("EnumDemo", Demo.enum_demo_struct, Demo.enum_demo_size, []);
     ("Constrained", Demo.constrained_struct, Demo.constrained_size, []);
-    (* Space: real protocol *)
+    (* Space: real protocols *)
     ("CLCW", Space.clcw_struct, Space.clcw_size, []);
+    ("SpacePacket", Space.packet_struct, Space.packet_size, []);
+    ("TMFrame", Space.tm_frame_struct, Space.tm_frame_size, []);
     (* Net: TCP/IP headers *)
     ("Ethernet", Net.ethernet_struct, Net.ethernet_size, []);
     ("IPv4", Net.ipv4_struct, Net.ipv4_size, []);

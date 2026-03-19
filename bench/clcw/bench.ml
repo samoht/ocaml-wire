@@ -3,10 +3,10 @@
     Simulates a COP-1 receiver polling CLCW words using Wire's staged Codec.get
     — all field access is generated from the Wire DSL. *)
 
+open Bench_lib
 module C = Wire.Codec
 
 let n_words = 10_000_000
-let n_rounds = 10
 let word_size = Wire.Codec.wire_size Space.clcw_codec
 
 let generate_stream n =
@@ -26,7 +26,6 @@ let () =
   Fmt.pr "CLCW polling loop (%d words, %dB each, contiguous buffer)\n\n" n_words
     word_size;
 
-  let total_ops = n_words * n_rounds in
   let get_lockout =
     Wire.Staged.unstage (C.get Space.clcw_codec Space.cw_lockout)
   in
@@ -37,30 +36,33 @@ let () =
   let get_report =
     Wire.Staged.unstage (C.get Space.clcw_codec Space.cw_report)
   in
-  Gc.compact ();
-  let t0 = Unix.gettimeofday () in
+
   let anomalies = ref 0 in
   let expected_seq = ref 0 in
-  for _ = 1 to n_rounds do
-    anomalies := 0;
-    expected_seq := 0;
-    for i = 0 to n_words - 1 do
-      let off = i * word_size in
-      let lockout = get_lockout buf off in
-      let wait = get_wait buf off in
-      let retransmit = get_retransmit buf off in
-      let report = get_report buf off in
-      if
-        lockout <> 0 || wait <> 0 || retransmit <> 0
-        || report <> !expected_seq land 0xFF
-      then incr anomalies;
-      expected_seq := report
-    done
-  done;
-  let dt = Unix.gettimeofday () -. t0 in
-  let ns_per = dt *. 1e9 /. float total_ops in
 
-  Fmt.pr "  %-24s %6.1f ns/word  %5.1f Mcheck/s  (%d anomalies)\n"
-    "Wire (staged Codec.get)" ns_per
-    (float total_ops /. dt /. 1e6)
-    !anomalies
+  (* OCaml tier: poll one CLCW word, cycling through the buffer *)
+  let ocaml_fn =
+    cycling ~data:buf ~n_items:n_words ~size:word_size (fun buf off ->
+        let lockout = get_lockout buf off in
+        let wait = get_wait buf off in
+        let retransmit = get_retransmit buf off in
+        let report = get_report buf off in
+        if
+          lockout <> 0 || wait <> 0 || retransmit <> 0
+          || report <> !expected_seq land 0xFF
+        then incr anomalies;
+        expected_seq := report)
+  in
+
+  let single_word = Bytes.sub buf 0 word_size in
+  let t =
+    ( v "Wire (staged Codec.get)" ~size:word_size ocaml_fn |> fun t ->
+      match C_tier.clcw_loop with Some f -> with_c f buf t | None -> t )
+    |> fun t ->
+    match C_tier.clcw_check with
+    | Some f -> with_ffi f single_word t
+    | None -> t
+  in
+
+  run_table ~title:"CLCW polling" ~n:(n_words * 10) ~unit:"word" [ t ];
+  Fmt.pr "\n  %d anomalies\n" !anomalies
