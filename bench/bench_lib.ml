@@ -94,7 +94,7 @@ let ns_fmt t = if t < 0.1 then "-" else Fmt.str "%.1f" t
 let alloc_fmt w = if w < 0.5 then "0w" else Fmt.str "%.0fw" w
 
 let ratio_fmt num denom =
-  if denom > 0.1 && num > 0.1 then Fmt.str "%.1fx" (denom /. num) else "-"
+  if denom > 0.1 && num > 0.1 then Fmt.str "%.1fx" (num /. denom) else "-"
 
 let gbps_fmt ns size =
   if ns > 0.1 then Fmt.str "%.1f" (float size /. ns) else "-"
