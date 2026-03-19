@@ -14,7 +14,7 @@ let mock_c_read buf =
 let mock_c_write buf = if String.length buf < 3 then None else Some buf
 
 let mk_schema () =
-  Wire_diff.schema ~name:"Simple" ~codec:simple_codec ~c_read:mock_c_read
+  Wire_diff.harness ~name:"Simple" ~codec:simple_codec ~c_read:mock_c_read
     ~c_write:mock_c_write ~equal:(fun (a1, a2) (b1, b2) -> a1 = b1 && a2 = b2)
 
 let test_read_match () =

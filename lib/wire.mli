@@ -1,30 +1,28 @@
 (** Typed descriptions of binary wire formats.
 
-    [Wire] is an authoring language for binary formats.
+    [Wire] is the source language of the library: describe the binary layout
+    once, then reuse that same description in several ways.
 
-    The point is not merely to emit EverParse 3D files. The point is to write
-    the format once, at the level of typed binary descriptions, and then reuse
-    that same description in several ways.
+    The intended mental model is:
 
-    A value of type ['a typ] says how values of type ['a] are laid out on the
-    wire. From that one description, this library derives three complementary
-    uses:
+    - ['a typ] describes how values of type ['a] are laid out on the wire;
+    - {!Field} gives names to reusable pieces of that description;
+    - {!Codec} turns record-shaped descriptions into an operational OCaml view
+      with decode, encode, wire-size, and field accessors;
+    - {!C} turns the same description into a named EverParse-facing schema.
+
+    This is the point of the library: one binary description, several views. The
+    generated 3D is a projection of the OCaml description, not a second source
+    of truth to keep in sync.
+
+    Concretely, the same description can be used in three main ways:
 
     - {!decode}, {!decode_string}, {!decode_bytes}, {!encode},
-      {!encode_to_bytes}, and {!encode_to_string} interpret the description
-      directly and exchange OCaml values with byte streams or buffers;
-    - {!Codec} specialises record-shaped descriptions into typed zero-copy field
-      accessors over existing buffers;
-    - {!C} projects descriptions to EverParse 3D declarations.
-
-    Writing the source description in OCaml rather than in a directory of
-    handwritten [.3d] files has a practical benefit: the format lives in a real
-    programming language, with abstraction, reuse, tests, fuzzing, and ordinary
-    composition tools close at hand. The generated 3D is then a projection of
-    that description, not a second source of truth to keep in sync.
-
-    [Wire] is thus about binary values and their layout. {!C} gives names to the
-    3D declaration vocabulary when a 3D artefact is wanted.
+      {!encode_to_bytes}, and {!encode_to_string} interpret it directly as OCaml
+      values;
+    - {!Codec} seals record-shaped descriptions into efficient field-oriented
+      codecs;
+    - {!C} packages descriptions for EverParse export.
 
     See also the official EverParse manual:
     {{:https://project-everest.github.io/everparse/3d.html}3d: Dependent Data
@@ -285,7 +283,16 @@ module Expr : sig
       EverParse needs an explicit [(UINT64)] cast annotation. *)
 end
 
-(** {1 Fields} *)
+(** {1 Fields}
+
+    A field is a named piece of a wire description.
+
+    Use {!Field.v} to define reusable named fields once. The same field
+    description can then be:
+
+    - bound into a {!Codec} with {!Codec.bind};
+    - referenced from dependent expressions with {!Field.ref};
+    - packed for {!C.struct_} declarations via {!C.field}. *)
 
 module Field : sig
   type 'a t
@@ -504,7 +511,7 @@ val encode_to_string : 'a typ -> 'a -> string
 
 (** {1 Zero-Copy Codecs}
 
-    A codec is the record-oriented companion to a wire description.
+    A codec is the record-oriented operational view over a wire description.
 
     Where {!decode} and {!encode} turn whole values into bytes and back, a codec
     seals a record description together with its typed fields and can then:
@@ -517,8 +524,8 @@ val encode_to_string : 'a typ -> 'a -> string
     repeatedly in existing buffers.
 
     The underlying wire description remains the same; what changes is the mode
-    of use. Direct decoding gives you values. A codec gives you a sealed,
-    record-specific operational interface. *)
+    of use. Direct decoding gives whole values. A codec is the single OCaml
+    authority for record-level decode, encode, wire-size, and field access. *)
 
 module Codec : sig
   type ('a, 'r) field = ('a, 'r) Codec.field
@@ -609,13 +616,14 @@ end
 
 (** {1 3D Projection}
 
-    {!C} is the 3D-facing companion to {!Wire}. It reuses the same description
-    language, but introduces names for declarations, modules, and schema
-    generation.
+    {!C} is the EverParse-facing export view over the same descriptions.
+
+    It does not define a second binary-description language. Instead, it gives
+    names to declarations, modules, and schemas so that descriptions already
+    written in {!Wire}, {!Field}, and {!Codec} can be exported as 3D artefacts.
 
     This is the part of the library to use when the goal is not to decode bytes
-    in OCaml, but to describe or emit EverParse 3D artefacts from the same wire
-    definitions.
+    in OCaml, but to package the same description for EverParse.
 
     For the target language itself, see the
     {{:https://project-everest.github.io/everparse/3d.html}EverParse manual} and
