@@ -1,7 +1,0 @@
-entrypoint
-typedef struct _Minimal
-{
-   UINT8 Value;
-} Minimal;
-
-
