@@ -51,14 +51,14 @@ type bounded_record = { x : int }
 let test_input_param_constraint () =
   let limit = Param.input "limit" uint8 in
   let _limit_expr = Param.init limit 10 in
-  let f_x = field "x" uint8 in
+  let f_x = Field.v "x" uint8 in
   let c =
     Codec.view "Bounded"
       (fun x -> { x })
       Codec.
         [
           Codec.field "x"
-            ~constraint_:Expr.(C.field_ref f_x <= Param.expr limit)
+            ~constraint_:Expr.(Field.ref f_x <= Param.expr limit)
             uint8
             (fun r -> r.x);
         ]
@@ -79,14 +79,14 @@ let test_input_param_constraint () =
 
 let test_output_param_action () =
   let out = Param.output "out" uint8 in
-  let f_x = field "x" uint8 in
+  let f_x = Field.v "x" uint8 in
   let c =
     Codec.view "Writer"
       (fun x -> { x })
       Codec.
         [
           Codec.field "x"
-            ~action:(Action.on_success [ Action.assign out (C.field_ref f_x) ])
+            ~action:(Action.on_success [ Action.assign out (Field.ref f_x) ])
             uint8
             (fun r -> r.x);
         ]
@@ -98,7 +98,7 @@ let test_output_param_action () =
 
 let test_output_param_computed () =
   let out = Param.output "out" uint16be in
-  let f_x = field "x" uint8 in
+  let f_x = Field.v "x" uint8 in
   let c =
     Codec.view "Computed"
       (fun x -> { x })
@@ -107,7 +107,7 @@ let test_output_param_computed () =
           Codec.field "x"
             ~action:
               (Action.on_success
-                 [ Action.assign out Expr.(C.field_ref f_x * int 2) ])
+                 [ Action.assign out Expr.(Field.ref f_x * int 2) ])
             uint8
             (fun r -> r.x);
         ]
@@ -124,10 +124,10 @@ type bounded_value = { bv_value : int }
 let test_where_clause_pass () =
   let max_val = Param.input "max_val" uint16be in
   let _max_val_expr = Param.init max_val 100 in
-  let f_value = field "value" uint16be in
+  let f_value = Field.v "value" uint16be in
   let c =
     Codec.view "Bounded"
-      ~where:Expr.(C.field_ref f_value <= Param.expr max_val)
+      ~where:Expr.(Field.ref f_value <= Param.expr max_val)
       (fun value -> { bv_value = value })
       Codec.[ Codec.field "value" uint16be (fun r -> r.bv_value) ]
   in
@@ -140,10 +140,10 @@ let test_where_clause_pass () =
 let test_where_clause_fail () =
   let max_val = Param.input "max_val" uint16be in
   let _max_val_expr = Param.init max_val 10 in
-  let f_value = field "value" uint16be in
+  let f_value = Field.v "value" uint16be in
   let c =
     Codec.view "Bounded"
-      ~where:Expr.(C.field_ref f_value <= Param.expr max_val)
+      ~where:Expr.(Field.ref f_value <= Param.expr max_val)
       (fun value -> { bv_value = value })
       Codec.[ Codec.field "value" uint16be (fun r -> r.bv_value) ]
   in
@@ -162,8 +162,8 @@ let test_mixed_params () =
   let max_val = Param.input "max_val" uint8 in
   let _max_val_expr = Param.init max_val 50 in
   let out_sum = Param.output "out_sum" uint8 in
-  let f_a = field "a" uint8 in
-  let f_b = field "b" uint8 in
+  let f_a = Field.v "a" uint8 in
+  let f_b = Field.v "b" uint8 in
   let c =
     Codec.view "Mixed"
       ~where:Expr.(Param.expr out_sum <= Param.expr max_val)
@@ -172,7 +172,7 @@ let test_mixed_params () =
         [
           Codec.field "a"
             ~action:
-              (Action.on_success [ Action.assign out_sum (C.field_ref f_a) ])
+              (Action.on_success [ Action.assign out_sum (Field.ref f_a) ])
             uint8
             (fun r -> r.a);
           Codec.field "b"
@@ -180,7 +180,7 @@ let test_mixed_params () =
               (Action.on_success
                  [
                    Action.assign out_sum
-                     Expr.(Param.expr out_sum + C.field_ref f_b);
+                     Expr.(Param.expr out_sum + Field.ref f_b);
                  ])
             uint8
             (fun r -> r.b);
@@ -207,14 +207,14 @@ let param_codec =
   let limit = Param.input "limit" uint8 in
   let _limit_expr = Param.init limit 10 in
   let outx = Param.output "outx" uint8 in
-  let f_x = field "x" uint8 in
+  let f_x = Field.v "x" uint8 in
   Codec.view "ParamCodec"
-    ~where:Expr.(C.field_ref f_x <= Param.expr limit)
+    ~where:Expr.(Field.ref f_x <= Param.expr limit)
     (fun x -> { x })
     Codec.
       [
         Codec.field "x"
-          ~action:(Action.on_success [ Action.assign outx (C.field_ref f_x) ])
+          ~action:(Action.on_success [ Action.assign outx (Field.ref f_x) ])
           uint8
           (fun r -> r.x);
       ]
@@ -232,15 +232,15 @@ let test_codec_param_where_fail () =
   let limit = Param.input "limit" uint8 in
   let _limit_expr = Param.init limit 3 in
   let outx = Param.output "outx" uint8 in
-  let f_x = field "x" uint8 in
+  let f_x = Field.v "x" uint8 in
   let c =
     Codec.view "ParamCodecFail"
-      ~where:Expr.(C.field_ref f_x <= Param.expr limit)
+      ~where:Expr.(Field.ref f_x <= Param.expr limit)
       (fun x -> { x })
       Codec.
         [
           Codec.field "x"
-            ~action:(Action.on_success [ Action.assign outx (C.field_ref f_x) ])
+            ~action:(Action.on_success [ Action.assign outx (Field.ref f_x) ])
             uint8
             (fun r -> r.x);
         ]
@@ -256,15 +256,15 @@ let test_codec_param_where_fail () =
 let test_3d_rendering () =
   let limit = Param.input "limit" uint16be in
   let out = Param.output "out" uint32be in
-  let f_x = field "x" uint16be in
-  let f_limit = field "limit" uint16be in
+  let f_x = Field.v "x" uint16be in
+  let f_limit = Field.v "limit" uint16be in
   let s =
     param_struct "Rendered"
       [ Param.v limit; Param.v out ]
-      ~where:Expr.(field_ref f_x <= field_ref f_limit)
+      ~where:Expr.(Field.ref f_x <= Field.ref f_limit)
       [
         field "x"
-          ~action:(Action.on_success [ Action.assign out (field_ref f_x) ])
+          ~action:(Action.on_success [ Action.assign out (Field.ref f_x) ])
           uint16be;
       ]
   in

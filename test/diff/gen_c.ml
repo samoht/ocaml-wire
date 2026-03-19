@@ -104,8 +104,8 @@ let random_struct seed =
         let constraint_ =
           Option.map
             (fun k ->
-              let f = Wire.C.field rf.name Wire.uint8 in
-              Wire.Expr.(Wire.C.field_ref f <= Wire.int k))
+              let f = Wire.Field.v rf.name Wire.uint8 in
+              Wire.Expr.(Wire.Field.ref f <= Wire.int k))
             rf.constraint_val
         in
         rf.ft.make_field rf.name constraint_)
@@ -308,7 +308,7 @@ let generate_test_runner outdir schemas =
 
 let action_schema () =
   let outx = Wire.Param.output "outx" Wire.uint8 in
-  let f_x = Wire.C.field "x" Wire.uint8 in
+  let f_x = Wire.Field.v "x" Wire.uint8 in
   let s =
     Wire.C.param_struct "ActionDemo"
       [ Wire.C.mutable_param "outx" Wire.uint32 ]
@@ -317,7 +317,7 @@ let action_schema () =
           ~action:
             (Wire.Action.on_success
                [
-                 Wire.Action.assign outx (Wire.C.field_ref f_x);
+                 Wire.Action.assign outx (Wire.Field.ref f_x);
                  Wire.Action.return_bool Wire.Expr.true_;
                ])
           Wire.uint8;
