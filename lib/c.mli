@@ -9,8 +9,8 @@
     Most users reach for {!struct_of_codec} first: define a typed codec in
     {!Wire}, then project it to a 3D struct or schema here. *)
 
-type schema
-(** An opaque schema ready for 3D file generation. *)
+type schema = { name : string; module_ : Types.module_; wire_size : int }
+(** A named 3D schema with its module and wire size. *)
 
 type struct_ = Types.struct_
 type field = Types.field

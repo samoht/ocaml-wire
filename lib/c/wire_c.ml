@@ -236,7 +236,11 @@ let to_ml_stub (s : Wire.C.struct_) =
 
 (* ==================== Schema & EverParse Pipeline ==================== *)
 
-type schema = { name : string; module_ : Wire.C.module_; wire_size : int }
+type schema = Wire.C.schema = {
+  name : string;
+  module_ : Wire.C.module_;
+  wire_size : int;
+}
 
 let schema_of_struct s =
   let name = Wire.C.struct_name s in
@@ -246,9 +250,10 @@ let schema_of_struct s =
     | Some n -> n
     | None -> Fmt.failwith "schema %s has variable-length fields" name
   in
-  { name; module_ = m; wire_size }
+  Wire.C.of_module ~name ~module_:m ~wire_size
 
-let schema ~name ~module_ ~wire_size = { name; module_; wire_size }
+let schema ~name ~module_ ~wire_size =
+  Wire.C.of_module ~name ~module_ ~wire_size
 
 let generate_3d_files ~outdir schemas =
   List.iter

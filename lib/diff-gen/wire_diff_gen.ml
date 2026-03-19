@@ -4,11 +4,15 @@
     stubs, OCaml externals, and a test runner for comparing OCaml codecs against
     EverParse-generated C parsers. *)
 
-type schema = { name : string; module_ : Wire.C.module_; wire_size : int }
+type schema = Wire.C.schema = {
+  name : string;
+  module_ : Wire.C.module_;
+  wire_size : int;
+}
 
 let schema ~name ~struct_ ~module_ =
   match Wire_c.size struct_ with
-  | Some wire_size -> Some { name; module_; wire_size }
+  | Some wire_size -> Some (Wire.C.of_module ~name ~module_ ~wire_size)
   | None -> None
 
 (** {1 EverParse Invocation} *)

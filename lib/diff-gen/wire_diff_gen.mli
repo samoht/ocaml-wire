@@ -17,8 +17,8 @@
       let () = Diff_gen.generate ~schema_dir:"schemas" ~outdir:"." schemas
     ]} *)
 
-type schema
-(** A schema bundles a Wire struct, module, and computed wire size. *)
+type schema = Wire.C.schema
+(** Same as {!Wire.C.schema}. *)
 
 val schema :
   name:string ->

@@ -19,8 +19,8 @@
       (include dune.inc)
     v} *)
 
-type schema
-(** A schema bundles a name, Wire module, and wire size. *)
+type schema = Wire.C.schema
+(** Same as {!Wire.C.schema}. *)
 
 val schema_of_struct : Wire.C.struct_ -> schema
 (** [schema_of_struct s] creates a schema from a fixed-size struct. The name,

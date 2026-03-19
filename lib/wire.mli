@@ -620,9 +620,6 @@ end
      reference}. *)
 
 module C : sig
-  type schema
-  (** A named 3D schema together with its output module and wire size. *)
-
   type struct_
   (** 3D struct declaration. *)
 
@@ -637,6 +634,9 @@ module C : sig
 
   type module_
   (** A 3D module. *)
+
+  type schema = { name : string; module_ : module_; wire_size : int }
+  (** A named 3D schema with its module and wire size. *)
 
   val struct_of_codec : 'r Codec.t -> struct_
   (** Projects a record codec to a 3D struct. *)
