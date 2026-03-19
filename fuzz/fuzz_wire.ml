@@ -228,16 +228,17 @@ let test_parse_struct_bitfields buf =
 
 let test_parse_anon_field buf =
   let buf = truncate buf in
-  let s =
-    Wire.C.struct_ "Anon"
-      [
-        Wire.C.field "x" Wire.uint8;
-        Wire.C.anon_field Wire.uint8;
-        Wire.C.field "y" Wire.uint16;
-      ]
+  let c =
+    Wire.Codec.view "Anon"
+      (fun x _pad y -> (x, _pad, y))
+      Wire.Codec.
+        [
+          Wire.Codec.field "x" Wire.uint8 (fun (x, _, _) -> x);
+          Wire.Codec.field "_pad" Wire.uint8 (fun (_, p, _) -> p);
+          Wire.Codec.field "y" Wire.uint16 (fun (_, _, y) -> y);
+        ]
   in
-  let t = Wire.C.struct_typ s in
-  let _ = Wire.decode_string t buf in
+  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
   ()
 
 let test_parse_casetype buf =

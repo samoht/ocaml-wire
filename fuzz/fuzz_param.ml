@@ -17,64 +17,76 @@ let test_parse_lookup buf =
 (* Parse crash safety: struct with action on random input *)
 let test_parse_struct_action buf =
   let buf = truncate buf in
-  let f_x = Wire.C.field "x" Wire.uint8 in
-  let f_tmp = Wire.C.field "tmp" Wire.uint8 in
-  let s =
-    Wire.C.struct_ "ActionFuzz"
-      [
-        Wire.C.field "x"
-          ~action:
-            (Wire.Action.on_success
-               [
-                 Wire.Action.var "tmp"
-                   Wire.Expr.(Wire.C.field_ref f_x * Wire.int 2);
-                 Wire.Action.return_bool
-                   Wire.Expr.(Wire.C.field_ref f_tmp <= Wire.int 510);
-               ])
-          Wire.uint8;
-        Wire.C.field "y" Wire.uint8;
-      ]
+  let f_x = Wire.Field.v "x" Wire.uint8 in
+  let f_tmp = Wire.Field.v "tmp" Wire.uint8 in
+  let c =
+    Wire.Codec.view "ActionFuzz"
+      (fun x y -> (x, y))
+      Wire.Codec.
+        [
+          Wire.Codec.bind
+            (Wire.Field.v "x"
+               ~action:
+                 (Wire.Action.on_success
+                    [
+                      Wire.Action.var "tmp"
+                        Wire.Expr.(Wire.Field.ref f_x * Wire.int 2);
+                      Wire.Action.return_bool
+                        Wire.Expr.(Wire.Field.ref f_tmp <= Wire.int 510);
+                    ])
+               Wire.uint8)
+            fst;
+          Wire.Codec.field "y" Wire.uint8 snd;
+        ]
   in
-  let _ = Wire.decode_string (Wire.C.struct_typ s) buf in
+  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
   ()
 
 (* Parse crash safety: struct with action abort on random input *)
 let test_parse_struct_action_abort buf =
   let buf = truncate buf in
-  let f_x = Wire.C.field "x" Wire.uint8 in
-  let s =
-    Wire.C.struct_ "AbortFuzz"
-      [
-        Wire.C.field "x"
-          ~action:
-            (Wire.Action.on_success
-               [
-                 Wire.Action.if_
-                   Wire.Expr.(Wire.C.field_ref f_x = Wire.int 0)
-                   [ Wire.Action.abort ] None;
-               ])
-          Wire.uint8;
-      ]
+  let f_x = Wire.Field.v "x" Wire.uint8 in
+  let c =
+    Wire.Codec.view "AbortFuzz"
+      (fun x -> x)
+      Wire.Codec.
+        [
+          Wire.Codec.bind
+            (Wire.Field.v "x"
+               ~action:
+                 (Wire.Action.on_success
+                    [
+                      Wire.Action.if_
+                        Wire.Expr.(Wire.Field.ref f_x = Wire.int 0)
+                        [ Wire.Action.abort ] None;
+                    ])
+               Wire.uint8)
+            (fun x -> x);
+        ]
   in
-  let _ = Wire.decode_string (Wire.C.struct_typ s) buf in
+  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
   ()
 
 (* Parse crash safety: struct with sizeof/sizeof_this/field_pos constraints *)
 let test_parse_struct_sizeof buf =
   let buf = truncate buf in
-  let s =
-    Wire.C.struct_ "SizeofFuzz"
-      [
-        Wire.C.field "a" Wire.uint8;
-        Wire.C.field "b"
-          ~constraint_:Wire.Expr.(Wire.sizeof_this = Wire.int 1)
-          Wire.uint8;
-        Wire.C.field "c"
-          ~constraint_:Wire.Expr.(Wire.field_pos = Wire.int 2)
-          Wire.uint8;
-      ]
+  let c =
+    Wire.Codec.view "SizeofFuzz"
+      (fun a b c -> (a, b, c))
+      Wire.Codec.
+        [
+          Wire.Codec.field "a" Wire.uint8 (fun (a, _, _) -> a);
+          Wire.Codec.field "b"
+            ~constraint_:Wire.Expr.(Wire.sizeof_this = Wire.int 1)
+            Wire.uint8
+            (fun (_, b, _) -> b);
+          Wire.Codec.field "c"
+            ~constraint_:Wire.Expr.(Wire.field_pos = Wire.int 2)
+            Wire.uint8
+            (fun (_, _, c) -> c);
+        ]
   in
-  let _ = Wire.decode_string (Wire.C.struct_typ s) buf in
+  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
   ()
 
 (* Parse crash safety: param struct with random input *)
@@ -83,18 +95,19 @@ let test_parse_param_struct buf =
   let limit = Wire.Param.input "limit" Wire.uint8 in
   let _limit_expr = Wire.Param.init limit 128 in
   let out = Wire.Param.output "out" Wire.uint8 in
-  let f_x = Wire.C.field "x" Wire.uint8 in
+  let f_x = Wire.Field.v "x" Wire.uint8 in
   let c =
     Wire.Codec.view "ParamFuzz"
-      ~where:Wire.Expr.(Wire.C.field_ref f_x <= Wire.Param.expr limit)
+      ~where:Wire.Expr.(Wire.Field.ref f_x <= Wire.Param.expr limit)
       (fun x -> x)
       Wire.Codec.
         [
-          Wire.Codec.field "x"
-            ~action:
-              (Wire.Action.on_success
-                 [ Wire.Action.assign out (Wire.C.field_ref f_x) ])
-            Wire.uint8
+          Wire.Codec.bind
+            (Wire.Field.v "x"
+               ~action:
+                 (Wire.Action.on_success
+                    [ Wire.Action.assign out (Wire.Field.ref f_x) ])
+               Wire.uint8)
             (fun x -> x);
         ]
   in
@@ -123,11 +136,12 @@ let test_param_ref_constraint buf =
   let buf = truncate buf in
   let limit = Wire.Param.input "limit" Wire.uint8 in
   let _ = Wire.Param.init limit 50 in
-  let f_v = Wire.C.field "v" Wire.uint8 in
+  let f_v = Wire.Field.v "v" Wire.uint8 in
   let f =
-    Wire.Codec.field "v"
-      ~constraint_:Wire.Expr.(Wire.C.field_ref f_v <= Wire.Param.expr limit)
-      Wire.uint8
+    Wire.Codec.bind
+      (Wire.Field.v "v"
+         ~constraint_:Wire.Expr.(Wire.Field.ref f_v <= Wire.Param.expr limit)
+         Wire.uint8)
       (fun v -> v)
   in
   let c = Wire.Codec.view "ParamRefConst" (fun v -> v) Wire.Codec.[ f ] in
@@ -138,13 +152,14 @@ let test_param_ref_constraint buf =
 let test_typed_assign buf =
   let buf = truncate buf in
   let out = Wire.Param.output "out" Wire.uint8 in
-  let f_v = Wire.C.field "v" Wire.uint8 in
+  let f_v = Wire.Field.v "v" Wire.uint8 in
   let f =
-    Wire.Codec.field "v"
-      ~action:
-        (Wire.Action.on_success
-           [ Wire.Action.assign out (Wire.C.field_ref f_v) ])
-      Wire.uint8
+    Wire.Codec.bind
+      (Wire.Field.v "v"
+         ~action:
+           (Wire.Action.on_success
+              [ Wire.Action.assign out (Wire.Field.ref f_v) ])
+         Wire.uint8)
       (fun v -> v)
   in
   let c = Wire.Codec.view "TypedAssign" (fun v -> v) Wire.Codec.[ f ] in
