@@ -6,25 +6,14 @@
 
 type 'r schema = {
   name : string;
+  codec : 'r Wire.Codec.t;
   c_read : string -> string option;
   c_write : string -> string option;
   equal : 'r -> 'r -> bool;
-  codec_decode : bytes -> int -> ('r, Wire.parse_error) result;
-  codec_encode : 'r -> bytes -> int -> unit;
-  wire_size : int;
 }
 
 let schema ~name ~codec ~c_read ~c_write ~equal =
-  let wire_size = Wire.Codec.wire_size codec in
-  {
-    name;
-    c_read;
-    c_write;
-    equal;
-    codec_decode = Wire.Codec.decode codec;
-    codec_encode = Wire.Codec.encode codec;
-    wire_size;
-  }
+  { name; codec; c_read; c_write; equal }
 
 type result =
   | Match
@@ -38,16 +27,19 @@ let c_roundtrip schema buf =
   | None -> None
   | Some fields -> schema.c_write fields
 
+let wire_size schema = Wire.Codec.wire_size schema.codec
+
 let encode_to_string schema v =
-  let buf = Bytes.create schema.wire_size in
-  schema.codec_encode v buf 0;
+  let buf = Bytes.create (wire_size schema) in
+  Wire.Codec.encode schema.codec v buf 0;
   Bytes.unsafe_to_string buf
 
-let decode_from_string schema s = schema.codec_decode (Bytes.of_string s) 0
+let decode_from_string schema s =
+  Wire.Codec.decode schema.codec (Bytes.of_string s) 0
 
 let read schema buf =
   let c_result = c_roundtrip schema buf in
-  let buf_too_short = String.length buf < schema.wire_size in
+  let buf_too_short = String.length buf < wire_size schema in
   let ocaml_result =
     if String.length buf = 0 || buf_too_short then None
     else Some (decode_from_string schema buf)
@@ -91,7 +83,7 @@ type packed_test = {
 }
 
 let pack (type r) (schema : r schema) =
-  let ws = schema.wire_size in
+  let ws = wire_size schema in
   let decode_value buf =
     let padded =
       if String.length buf >= ws then String.sub buf 0 ws
