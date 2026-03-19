@@ -90,12 +90,13 @@ type packed_test = {
   test_roundtrip : string -> result;
 }
 
-let pack (type r) (schema : r schema) ~wire_size =
+let pack (type r) (schema : r schema) =
+  let ws = schema.wire_size in
   let decode_value buf =
     let padded =
-      if String.length buf >= wire_size then String.sub buf 0 wire_size
+      if String.length buf >= ws then String.sub buf 0 ws
       else
-        let b = Bytes.make wire_size '\000' in
+        let b = Bytes.make ws '\000' in
         Bytes.blit_string buf 0 b 0 (String.length buf);
         Bytes.to_string b
     in
@@ -104,7 +105,7 @@ let pack (type r) (schema : r schema) ~wire_size =
   in
   {
     name = schema.name;
-    wire_size;
+    wire_size = ws;
     test_read = (fun buf -> read schema buf);
     test_write =
       (fun buf ->

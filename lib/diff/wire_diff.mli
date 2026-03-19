@@ -41,7 +41,7 @@ type packed_test = {
 (** A type-erased test that can be used in generic test loops without knowing
     the record type. *)
 
-val pack : 'r schema -> wire_size:int -> packed_test
-(** [pack schema ~wire_size] creates a type-erased test from a schema.
-    [test_write] and [test_roundtrip] decode random bytes via the OCaml codec to
-    get a valid value, then run the corresponding diff function. *)
+val pack : 'r schema -> packed_test
+(** [pack schema] creates a type-erased test from a schema. [test_write] and
+    [test_roundtrip] decode random bytes via the OCaml codec to get a valid
+    value, then run the corresponding diff function. *)

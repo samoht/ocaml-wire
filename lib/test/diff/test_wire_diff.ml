@@ -45,7 +45,7 @@ let test_full_roundtrip () =
 
 let test_pack () =
   let s = mk_schema () in
-  let pt = Wire_diff.pack s ~wire_size:3 in
+  let pt = Wire_diff.pack s in
   Alcotest.(check string) "pack name" "Simple" pt.Wire_diff.name;
   Alcotest.(check int) "pack wire_size" 3 pt.Wire_diff.wire_size;
   (* test_read on a valid 3-byte buffer should match *)

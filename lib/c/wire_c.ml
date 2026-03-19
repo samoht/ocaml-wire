@@ -224,6 +224,7 @@ let to_ml_stub_name (s : Wire.C.struct_) =
       external check : bytes -> bool = "caml_wire_foo_check"
     ]} *)
 let to_ml_stub (s : Wire.C.struct_) =
+  (* Single-struct variant: generates [external check : bytes -> bool] *)
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
   let lower = String.lowercase_ascii (Wire.C.struct_name s) in
