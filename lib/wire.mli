@@ -60,11 +60,11 @@ type param
 (** Untyped formal parameter declaration. Create via {!Param.v}. *)
 
 module Param : sig
-  (** Typed parameter handles for integer-valued parameters.
+  (** Typed parameter handles.
 
-      Only integer-like wire types (uint8, uint16, uint32, etc.) are supported
-      as parameters. This matches EverParse 3D, where parameters are always
-      integers.
+      Parameters must have integer-representable wire types: unsigned integers
+      (uint8 through uint64), bitfields, bools, and enums. This matches
+      EverParse 3D parameter types. Values are stored internally as [int].
 
       Input parameters are set once before decoding with {!init}, which returns
       the corresponding expression node. Output parameters are mutable cells

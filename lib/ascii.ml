@@ -74,14 +74,48 @@ let expr_to_string (type a) (e : a Types.expr) =
   pp_expr buf e;
   Buffer.contents buf
 
+(* Annotate a fixed-field label with constraint and enum info. *)
+let annotate_fixed name typ constraint_ bits =
+  let base =
+    if bits <= 8 then name
+    else
+      (* For wider fields, add enum/variant info if available *)
+      let rec enum_info : type a. a Types.typ -> string option = function
+        | Enum { cases; _ } ->
+            let entries = List.map (fun (s, v) -> Fmt.str "%s=%d" s v) cases in
+            Some (String.concat "," entries)
+        | Map { inner; _ } -> enum_info inner
+        | Where { inner; _ } -> enum_info inner
+        | _ -> None
+      in
+      match enum_info typ with
+      | Some info
+        when String.length info + String.length name + 3
+             <= (bits * bit_chars) - 1 ->
+          Fmt.str "%s {%s}" name info
+      | _ -> name
+  in
+  match constraint_ with
+  | Some cond ->
+      let ann = Fmt.str "%s [%s]" base (expr_to_string cond) in
+      if String.length ann <= (bits * bit_chars) - 1 then ann else base
+  | None -> base
+
 (* Extract segment info from a Types.field. *)
 let field_segment (Types.Field { field_name; field_typ; constraint_; _ }) =
   let name = Option.value field_name ~default:"" in
   match field_typ with
-  | Bits { width; _ } -> Fixed { name; bits = width }
+  | Bits { width; _ } ->
+      Fixed
+        { name = annotate_fixed name field_typ constraint_ width; bits = width }
   | _ -> (
       match Types.field_wire_size field_typ with
-      | Some n -> Fixed { name; bits = n * 8 }
+      | Some n ->
+          Fixed
+            {
+              name = annotate_fixed name field_typ constraint_ (n * 8);
+              bits = n * 8;
+            }
       | None ->
           let annotation =
             match field_typ with
@@ -138,15 +172,17 @@ let ruler () =
   done;
   (Buffer.contents tens, Buffer.contents ones)
 
-(* Horizontal separator spanning the full row width. *)
-let full_sep () =
-  let buf = Buffer.create ((row_bits * bit_chars) + 2) in
+(* Horizontal separator spanning [n] bits. *)
+let sep n =
+  let buf = Buffer.create ((n * bit_chars) + 2) in
   Buffer.add_string buf " +";
-  for _ = 1 to row_bits do
+  for _ = 1 to n do
     Buffer.add_char buf '-';
     Buffer.add_char buf '+'
   done;
   Buffer.contents buf
+
+let _full_sep () = sep row_bits
 
 (* Render a row of fixed-width fields as "|...|...|". *)
 let render_fixed_row fields =
@@ -221,17 +257,26 @@ let render_struct (s : Types.struct_) =
     Buffer.add_char buf '\n';
     Buffer.add_string buf ones;
     Buffer.add_char buf '\n';
+    let last_bits = ref row_bits in
     List.iter
       (fun row ->
-        Buffer.add_string buf (full_sep ());
+        let row_bits_used =
+          match row with
+          | Fixed_row fields ->
+              List.fold_left (fun acc (_, b) -> acc + b) 0 fields
+          | Variable_row _ -> row_bits
+        in
+        (* Separator matches the wider of previous row and current row *)
+        Buffer.add_string buf (sep (max !last_bits row_bits_used));
         Buffer.add_char buf '\n';
         (match row with
         | Fixed_row fields -> Buffer.add_string buf (render_fixed_row fields)
         | Variable_row label ->
             Buffer.add_string buf (render_variable_row label));
-        Buffer.add_char buf '\n')
+        Buffer.add_char buf '\n';
+        last_bits := row_bits_used)
       rows;
-    Buffer.add_string buf (full_sep ());
+    Buffer.add_string buf (sep !last_bits);
     Buffer.add_char buf '\n';
     Buffer.contents buf
 
