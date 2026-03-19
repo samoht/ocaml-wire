@@ -4,25 +4,29 @@
     {b Tool} with [Wire_c]. {b Test} with [Wire_diff].
 
     {[
+      type header = { version : int; length : int }
+
       (* 1. Describe fields *)
       let f_version = Field.v "Version" (bits ~width:4 U8)
       let f_length = Field.v "Length" uint16be
 
-      (* 2. Build a codec *)
+      (* 2. Build a codec — bind fields to record projections *)
+      let cf_version = Codec.bind f_version (fun h -> h.version)
+      let cf_length = Codec.bind f_length (fun h -> h.length)
+
       let codec =
         Codec.view "Header"
           (fun version length -> { version; length })
-          Codec.
-            [
-              Codec.bind f_version (fun h -> h.version);
-              Codec.bind f_length (fun h -> h.length);
-            ]
+          Codec.[ cf_version; cf_length ]
 
       (* 3. Use it *)
-      let v = Codec.decode codec buf 0 (* decode *)
-      let () = Codec.encode codec v buf 0 (* encode *)
-      let rd = Staged.unstage (Codec.get codec f_version)
-      let n = rd buf 0 (* zero-copy read *)
+      let buf = Bytes.create (Codec.wire_size codec)
+      let () = Codec.encode codec { version = 1; length = 42 } buf 0
+      let (Ok v) = Codec.decode codec buf 0 (* returns result *)
+
+      (* Zero-copy field access *)
+      let get_version = Staged.unstage (Codec.get codec cf_version)
+      let n = get_version buf 0
 
       (* 4. Export to EverParse 3D *)
       let s = C.struct_of_codec codec
