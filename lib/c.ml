@@ -20,7 +20,7 @@ let generate ~outdir schemas =
 (* 3D Declarations *)
 
 type struct_ = Types.struct_
-type field = Types.field
+type field = Field.packed
 type decl = Types.decl
 type decl_case = Types.decl_case
 type module_ = Types.module_
@@ -40,21 +40,26 @@ let to_3d_file = Types.to_3d_file
 (* Struct construction *)
 
 let struct_of_codec = Codec.to_struct
-let field = Types.field
-let anon_field = Types.anon_field
 
-let field_ref (Types.Field f) =
-  match f.field_name with
-  | Some name -> Types.Ref name
-  | None -> invalid_arg "C.field_ref: anonymous field has no name"
+let field name ?constraint_ ?action typ =
+  Field.Pack (Field.v name ?constraint_ ?action typ)
 
-let struct_ = Types.struct_
+let anon_field typ = Field.Pack (Field.v "_" typ)
+let field_ref (Field.Pack f) = Field.ref f
+
+let unpack_fields fields =
+  List.map (fun (Field.Pack f) -> Field.to_decl f) fields
+
+let struct_ name fields = Types.struct_ name (unpack_fields fields)
 let struct_name = Types.struct_name
 let struct_params (s : Types.struct_) = s.params
 let struct_typ = Types.struct_typ
 let param = Types.param
 let mutable_param = Types.mutable_param
-let param_struct = Types.param_struct
+
+let param_struct name params ?where fields =
+  Types.param_struct name params ?where (unpack_fields fields)
+
 let apply = Types.apply
 let type_ref = Types.type_ref
 let qualified_ref = Types.qualified_ref

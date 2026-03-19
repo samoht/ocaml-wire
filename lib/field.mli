@@ -30,5 +30,9 @@ val constraint_ : 'a t -> bool Types.expr option
 val action : 'a t -> Types.action option
 (** Field action, if any. *)
 
+type packed =
+  | Pack : 'a t -> packed
+      (** Existentially packed field for heterogeneous lists. *)
+
 val to_decl : 'a t -> Types.field
 (** Convert to a {!Types.field} declaration (for struct construction). *)

@@ -291,6 +291,10 @@ module Field : sig
   type 'a t
   (** A named wire field with a type. *)
 
+  type packed =
+    | Pack : 'a t -> packed
+        (** Existentially packed field for heterogeneous lists. *)
+
   val v : string -> ?constraint_:bool expr -> ?action:Action.t -> 'a typ -> 'a t
   (** [v name typ] creates a named field. *)
 
@@ -623,8 +627,8 @@ module C : sig
   type struct_
   (** 3D struct declaration. *)
 
-  type field
-  (** Field of a 3D struct. *)
+  type field = Field.packed
+  (** A packed field. Use {!Field.v} to create, {!Field.Pack} to wrap. *)
 
   type decl
   (** Top-level 3D declaration. *)

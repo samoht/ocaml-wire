@@ -12,5 +12,7 @@ let typ f = f.typ
 let constraint_ f = f.constraint_
 let action f = f.action
 
+type packed = Pack : 'a t -> packed
+
 let to_decl f =
   Types.field f.name ?constraint_:f.constraint_ ?action:f.action f.typ
