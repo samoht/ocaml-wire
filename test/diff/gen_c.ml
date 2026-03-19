@@ -148,10 +148,29 @@ let generate_c_stubs ~schema_dir outdir schemas =
       pr "  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {\n";
       pr "  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;\n";
       pr "}\n";
+      let params = Wire.C.struct_params rs.struct_ in
+      let input_params =
+        List.filter (fun p -> not (Wire.param_is_mutable p)) params
+      in
+      let output_params =
+        List.filter (fun p -> Wire.param_is_mutable p) params
+      in
       pr "BOOLEAN %sCheck%s(uint8_t *base, uint32_t len) {\n" name name;
-      pr
-        "  uint64_t result = %sValidate%s(NULL, %s_ErrorHandler, base, len, 0);\n"
-        name name name;
+      (* Declare locals for mutable params *)
+      List.iter
+        (fun p ->
+          pr "  %s %s_val = 0;\n" (Wire.param_c_type p) (Wire.param_name p))
+        output_params;
+      (* Call validator with params *)
+      let param_args =
+        List.map (fun p -> Wire.param_name p ^ "_val") input_params
+        @ List.map (fun p -> "&" ^ Wire.param_name p ^ "_val") output_params
+      in
+      let all_args =
+        param_args @ [ "NULL"; name ^ "_ErrorHandler"; "base"; "len"; "0" ]
+      in
+      pr "  uint64_t result = %sValidate%s(%s);\n" name name
+        (String.concat ", " all_args);
       pr "  return EverParseIsSuccess(result);\n";
       pr "}\n\n")
     schemas;
@@ -283,6 +302,45 @@ let generate_test_runner outdir schemas =
   pr "  if !mismatches > 0 then exit 1\n";
   close_out oc
 
+(* ---- Parameterized schema for action testing ---- *)
+
+let action_schema () =
+  let outx = Wire.Param.output "outx" Wire.uint8 in
+  let s =
+    Wire.C.param_struct "ActionDemo"
+      [ Wire.C.mutable_param "outx" Wire.uint32 ]
+      [
+        Wire.C.field "x"
+          ~action:
+            (Wire.Action.on_success
+               [
+                 Wire.Action.assign outx (Wire.field_ref "x");
+                 Wire.Action.return_bool Wire.Expr.true_;
+               ])
+          Wire.uint8;
+        Wire.C.field "y" Wire.uint8;
+      ]
+  in
+  {
+    struct_ = s;
+    fields =
+      [
+        {
+          name = "x";
+          ft = field_types.(0);
+          constraint_val = None;
+          big_endian = false;
+        };
+        {
+          name = "y";
+          ft = field_types.(0);
+          constraint_val = None;
+          big_endian = false;
+        };
+      ];
+    total_wire_size = 2;
+  }
+
 (* ---- Main ---- *)
 
 let () =
@@ -292,7 +350,9 @@ let () =
   let num_random =
     if Array.length Sys.argv > 2 then int_of_string Sys.argv.(2) else 20
   in
-  let schemas = List.init num_random (fun i -> random_struct i) in
+  let schemas =
+    List.init num_random (fun i -> random_struct i) @ [ action_schema () ]
+  in
   let wire_c_schemas =
     List.map
       (fun rs ->
