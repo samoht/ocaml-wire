@@ -45,6 +45,32 @@ let test_full_roundtrip () =
   let result = Wire_diff.full_roundtrip s v in
   Alcotest.(check bool) "full_roundtrip result" true (result = Wire_diff.Match)
 
+let test_full_roundtrip_c_rejects () =
+  (* C rejects OCaml-encoded bytes → Only_ocaml_ok *)
+  let c_write_reject _ = None in
+  let s =
+    Wire_diff.harness ~name:"CReject" ~codec:simple_codec ~c_read:mock_c_read
+      ~c_write:c_write_reject ~equal:(fun (a1, a2) (b1, b2) ->
+        a1 = b1 && a2 = b2)
+  in
+  let result = Wire_diff.full_roundtrip s (3, 512) in
+  Alcotest.(check bool)
+    "c rejects → Only_ocaml_ok" true
+    (result = Wire_diff.Only_ocaml_ok "C rejected OCaml-encoded bytes")
+
+let test_write_c_rejects () =
+  (* Same scenario in write: C rejects → Only_ocaml_ok *)
+  let c_write_reject _ = None in
+  let s =
+    Wire_diff.harness ~name:"CRejectW" ~codec:simple_codec ~c_read:mock_c_read
+      ~c_write:c_write_reject ~equal:(fun (a1, a2) (b1, b2) ->
+        a1 = b1 && a2 = b2)
+  in
+  let result = Wire_diff.write s (3, 512) in
+  Alcotest.(check bool)
+    "write c rejects → Only_ocaml_ok" true
+    (result = Wire_diff.Only_ocaml_ok "C rejected OCaml-encoded bytes")
+
 let test_pack () =
   let s = mk_schema () in
   let pt = Wire_diff.pack s in
@@ -62,5 +88,8 @@ let suite =
       Alcotest.test_case "read both failed" `Quick test_read_both_failed;
       Alcotest.test_case "write" `Quick test_write;
       Alcotest.test_case "full_roundtrip" `Quick test_full_roundtrip;
+      Alcotest.test_case "full_roundtrip: c rejects" `Quick
+        test_full_roundtrip_c_rejects;
+      Alcotest.test_case "write: c rejects" `Quick test_write_c_rejects;
       Alcotest.test_case "pack" `Quick test_pack;
     ] )

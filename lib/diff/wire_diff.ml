@@ -63,7 +63,7 @@ let write h value =
 let full_roundtrip h value =
   let ocaml_bytes = encode_to_string h value in
   match c_roundtrip h ocaml_bytes with
-  | None -> Only_c_ok "C rejected OCaml-encoded bytes"
+  | None -> Only_ocaml_ok "C rejected OCaml-encoded bytes"
   | Some c_bytes -> (
       match decode_from_string h c_bytes with
       | Ok final ->
