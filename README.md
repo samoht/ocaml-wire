@@ -29,11 +29,11 @@ let flags   = Field.v "Flags"   (bits ~width:4 U8)
 let length  = Field.v "Length"  uint16be
 
 let codec =
-  Codec.v "Packet" (fun version flags length -> { version; flags; length })
-  |+ version (fun p -> p.version)
-  |+ flags   (fun p -> p.flags)
-  |+ length  (fun p -> p.length)
-  |> Codec.seal
+  let open Codec in
+  v "Packet" (fun version flags length -> { version; flags; length })
+    [ version $ (fun p -> p.version);
+      flags   $ (fun p -> p.flags);
+      length  $ (fun p -> p.length) ]
 ```
 
 ```
@@ -49,8 +49,8 @@ let codec =
 The same field handles work for `get`/`set`, dependent sizes, and `Field.ref`:
 
 ```ocaml
-(* Bind into codec fields for get/set *)
-let cf_version = Codec.bind version (fun p -> p.version)
+(* Bind fields for get/set *)
+let cf_version = Codec.(version $ (fun p -> p.version))
 
 (* Staged for performance — force once, reuse *)
 let get_version = Staged.unstage (Codec.get codec cf_version)
@@ -124,12 +124,12 @@ let () = print_string (Ascii.of_codec codec)
 ### IPv4 header
 
 ```ocaml
-let f_version  = Codec.field "Version"  (bits ~width:4 U32)  (fun p -> p.ip_version)
-let f_ihl      = Codec.field "IHL"      (bits ~width:4 U32)  (fun p -> p.ip_ihl)
-let f_dscp     = Codec.field "DSCP"     (bits ~width:6 U32)  (fun p -> p.ip_dscp)
-let f_ecn      = Codec.field "ECN"      (bits ~width:2 U32)  (fun p -> p.ip_ecn)
-let f_tot_len  = Codec.field "TotalLen" (bits ~width:16 U32) (fun p -> p.ip_total_length)
-(* ... *)
+let f_version  = Field.v "Version"  (bits ~width:4 U32)
+let f_ihl      = Field.v "IHL"      (bits ~width:4 U32)
+let f_dscp     = Field.v "DSCP"     (bits ~width:6 U32)
+let f_ecn      = Field.v "ECN"      (bits ~width:2 U32)
+let f_tot_len  = Field.v "TotalLen" (bits ~width:16 U32)
+(* ... bound with $ inside Codec.v *)
 ```
 
 ```
@@ -151,8 +151,8 @@ let f_tot_len  = Codec.field "TotalLen" (bits ~width:16 U32) (fun p -> p.ip_tota
 ### TCP flags (bool bitfields)
 
 ```ocaml
-let f_syn = Codec.field "SYN" (bool (bits ~width:1 U16be)) (fun t -> t.tcp_syn)
-let f_ack = Codec.field "ACK" (bool (bits ~width:1 U16be)) (fun t -> t.tcp_ack)
+let f_syn = Field.v "SYN" (bool (bits ~width:1 U16be))
+let f_ack = Field.v "ACK" (bool (bits ~width:1 U16be))
 ```
 
 ### Parameters and actions
@@ -168,13 +168,12 @@ let f_data =
 
 let bounded ~max_len:v =
   let ml = Param.init max_len v in
-  Codec.view "Bounded"
+  let open Codec in
+  v "Bounded"
     ~where:Expr.(Field.ref f_len <= ml)
     (fun len data -> { len; data })
-    Codec.[
-      Codec.bind f_len (fun r -> r.len);
-      Codec.bind f_data (fun r -> r.data);
-    ]
+    [ f_len  $ (fun r -> r.len);
+      f_data $ (fun r -> r.data) ]
 
 let c = bounded ~max_len:1024
 let _ = Codec.decode c buf 0
@@ -185,7 +184,7 @@ let len = Param.get out_len
 
 ```
       +-----------------------------+
-      | Field.v + Codec.view/bind   |
+      | Field.v + Codec.v / ($)     |
       | describe record formats     |
       +--------------+--------------+
                      |

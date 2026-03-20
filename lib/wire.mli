@@ -82,12 +82,11 @@ module Param : sig
 
         let bounded ~max_len:ml =
           let ml_expr = Param.init max_len ml in
-          Codec.v "Bounded"
+          let open Codec in
+          v "Bounded"
             ~where:Expr.(Field.ref f_length <= ml_expr)
             (fun len data -> { len; data })
-          |+ f_length (fun r -> r.len)
-          |+ f_data (fun r -> r.data)
-          |> Codec.seal
+            [ (f_length $ fun r -> r.len); (f_data $ fun r -> r.data) ]
 
         let codec = bounded ~max_len:1024
         let _ = Codec.decode codec buf 0
@@ -285,7 +284,7 @@ end
     Use {!Field.v} to define reusable named fields once. The same field
     description can then be:
 
-    - bound into a {!Codec} with {!Codec.bind};
+    - bound into a {!Codec} with {!Codec.($)};
     - referenced from dependent expressions with {!Field.ref};
     - reused by advanced export code through {!C.Raw}. *)
 
@@ -511,8 +510,8 @@ val encode_to_string : 'a typ -> 'a -> string
 (** {1 Codecs}
 
     This is the main API for record-shaped formats. Create fields with
-    {!Field.v}, assemble them with {!Codec.v} / {!Codec.|+} / {!Codec.seal},
-    then decode, encode, and access individual fields at zero cost.
+    {!Field.v}, bind them with {!Codec.($)}, and assemble with {!Codec.v}. Then
+    decode, encode, and access individual fields at zero cost.
 
     The codec is the single OCaml authority for a format's decode, encode,
     wire-size, and field access. {!C.schema} projects it to EverParse 3D. *)
