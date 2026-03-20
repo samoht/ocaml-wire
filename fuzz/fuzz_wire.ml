@@ -230,7 +230,7 @@ let test_parse_anon_field buf =
   let buf = truncate buf in
   let c =
     Wire.Codec.v "Anon"
-      (fun x _pad y -> (x, _pad, y))
+      (fun x pad y -> (x, pad, y))
       Wire.Codec.
         [
           (Wire.Field.v "x" Wire.uint8 $ fun (x, _, _) -> x);
