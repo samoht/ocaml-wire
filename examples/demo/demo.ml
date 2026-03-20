@@ -9,7 +9,7 @@
     - Various struct sizes: 1B to 26B *)
 
 open Wire
-open Wire.C
+open Wire.C.Raw
 
 (* ── 1. Minimal: single uint8 = 1 byte ── *)
 

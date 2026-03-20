@@ -1,7 +1,7 @@
 (* Tests for Ascii module: RFC-style bit layout diagrams. *)
 
 open Wire
-open Wire.C
+open Wire.C.Raw
 
 let contains ~sub s = Re.execp (Re.compile (Re.str sub)) s
 

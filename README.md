@@ -7,10 +7,11 @@ Binary wire format DSL with EverParse 3D output.
 Wire is a GADT-based OCaml DSL for describing binary wire formats.
 Define your format once, then:
 
+- **Name reusable fields** with `Field.v` and assemble records with `Codec`
 - **Read and write fields in-place** via `Codec.get` / `Codec.set` — zero-copy,
   zero-allocation for immediate types (int, bool)
 - **Decode and encode records** via `Codec.decode` / `Codec.encode`
-- **Emit EverParse `.3d` files** for verified C parser generation
+- **Export EverParse `.3d` schemas** via `C.schema` / `C.generate`
 - **Render RFC-style ASCII diagrams** via `Ascii.of_codec`
 - **Generate C/OCaml FFI stubs** for differential testing between OCaml and C
 
@@ -21,14 +22,17 @@ open Wire
 
 type packet = { version : int; flags : int; length : int }
 
-let f_version = Codec.field "Version" (bits ~width:4 U8) (fun p -> p.version)
-let f_flags   = Codec.field "Flags"   (bits ~width:4 U8) (fun p -> p.flags)
-let f_length  = Codec.field "Length"   uint16be           (fun p -> p.length)
+let f_version = Field.v "Version" (bits ~width:4 U8)
+let f_flags   = Field.v "Flags"   (bits ~width:4 U8)
+let f_length  = Field.v "Length"   uint16be
+let cf_version = Codec.bind f_version (fun p -> p.version)
+let cf_flags   = Codec.bind f_flags   (fun p -> p.flags)
+let cf_length  = Codec.bind f_length  (fun p -> p.length)
 
 let codec =
   Codec.view "Packet"
     (fun version flags length -> { version; flags; length })
-    Codec.[f_version; f_flags; f_length]
+    Codec.[ cf_version; cf_flags; cf_length ]
 ```
 
 ```
@@ -45,15 +49,18 @@ Read and write individual fields directly in a buffer:
 
 ```ocaml
 (* Staged for performance — force once, reuse *)
-let get_version = Staged.unstage (Codec.get codec f_version)
-let set_length  = Staged.unstage (Codec.set codec f_length)
+let get_version = Staged.unstage (Codec.get codec cf_version)
+let set_length  = Staged.unstage (Codec.set codec cf_length)
 
 let v = get_version buf 0
 let () = set_length buf 0 1024
 
 (* Full record decode/encode *)
-let pkt = Codec.decode codec buf 0
-let () = Codec.encode codec pkt buf 0
+let () = Codec.encode codec { version = 1; flags = 2; length = 1024 } buf 0
+let pkt =
+  match Codec.decode codec buf 0 with
+  | Ok pkt -> pkt
+  | Error _ -> failwith "decode failed"
 ```
 
 ### EverParse 3D output
@@ -61,10 +68,12 @@ let () = Codec.encode codec pkt buf 0
 The same codec produces `.3d` files for verified C parser generation:
 
 ```ocaml
-let s = C.struct_of_codec codec
-let m = C.module_ [ C.typedef ~entrypoint:true s ]
-let () = print_string (C.to_3d m)
+let schema = C.schema codec
+let () = C.generate ~outdir:"schemas" [ schema ]
 ```
+
+For unusual EverParse constructs that have no codec equivalent yet, use the
+explicit escape hatch `C.Raw`.
 
 ### ASCII diagrams
 
@@ -85,7 +94,7 @@ let () = print_string (Ascii.of_codec codec)
 - **Parameters** — `Param.input` / `Param.output` with typed handles
 - **Tagged unions** — `casetype` with tag-based dispatch
 - **Arrays** — `array ~len`, `byte_array ~size`, `nested ~size`
-- **Dependent sizes** — `byte_slice ~size:(Codec.field_ref f_len)`
+- **Dependent sizes** — `byte_slice ~size:(Field.ref f_len)`
 - **3D code generation** — emit `.3d` files compatible with EverParse
 - **ASCII diagrams** — RFC 791-style 32-bit-wide bit layout diagrams
 - **Labeled map** — `map ~decode ~encode` for custom value conversions
@@ -131,46 +140,56 @@ let f_ack = Codec.field "ACK" (bool (bits ~width:1 U16be)) (fun t -> t.tcp_ack)
 ```ocaml
 let max_len = Param.input "max_len" uint16be
 let out_len = Param.output "out_len" uint16be
+let f_len = Field.v "Length" uint16be
+let f_data =
+  Field.v "Data"
+    ~action:(Action.on_success [ Action.assign out_len (Field.ref f_len) ])
+    (byte_array ~size:(Field.ref f_len))
 
 let bounded ~max_len:v =
   let ml = Param.init max_len v in
   Codec.view "Bounded"
-    ~where:Expr.(Codec.field_ref f_len <= ml)
+    ~where:Expr.(Field.ref f_len <= ml)
     (fun len data -> { len; data })
     Codec.[
-      Codec.field "Length"
-        ~action:(Action.on_success [ Action.assign out_len (Codec.field_ref f_len) ])
-        uint16be (fun r -> r.len);
-      Codec.field "Data" (byte_array ~size:(Codec.field_ref f_len)) (fun r -> r.data);
+      Codec.bind f_len (fun r -> r.len);
+      Codec.bind f_data (fun r -> r.data);
     ]
 
 let c = bounded ~max_len:1024
-let v = Codec.decode c buf 0
+let _ = Codec.decode c buf 0
 let len = Param.get out_len
 ```
 
 ## Architecture
 
 ```
-                        +------------------+
-                        |  Wire OCaml DSL  |
-                        +--------+---------+
-                                 |
-              +------------------+------------------+
-              |                  |                  |
-              v                  v                  v
-     +----------------+ +-------------+ +------------------+
-     | Codec.get/set  | |  C.to_3d    | |  Ascii.of_codec  |
-     | Codec.decode   | |  C.to_3d_   | |  Ascii.of_struct |
-     | Codec.encode   | |  file       | |                  |
-     +----------------+ +------+------+ +------------------+
-      Zero-copy R/W            |         RFC-style diagrams
-                               v
-                      +-----------------+
-                      |   EverParse 3D  |
-                      |   (external)    |
-                      +-----------------+
-                       Verified C parsers
+      +-----------------------------+
+      | Field.v + Codec.view/bind   |
+      | describe record formats     |
+      +--------------+--------------+
+                     |
+         +-----------+-----------+
+         |                       |
+         v                       v
+  +---------------+       +---------------+
+  | Codec         |       | Ascii         |
+  | decode/encode |       | of_codec      |
+  | get/set       |       |               |
+  +-------+-------+       +---------------+
+          |
+          v
+  +---------------+
+  | C.schema      |
+  | C.generate    |
+  +-------+-------+
+          |
+          v
+  +---------------+
+  | Wire_c        |
+  | EverParse     |
+  | tooling       |
+  +---------------+
 ```
 
 ## Development

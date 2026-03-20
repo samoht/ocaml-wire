@@ -1,7 +1,7 @@
 (* Tests for codec.ml: Codec.get/set/view *)
 
 open Wire
-open Wire.C
+open Wire.C.Raw
 
 let contains ~sub s = Re.execp (Re.compile (Re.str sub)) s
 
@@ -845,7 +845,8 @@ let test_c_stubs_with_params () =
   let s =
     param_struct "Bounded"
       [
-        Wire.C.param "max_len" uint16be; Wire.C.mutable_param "out_len" uint16be;
+        Wire.C.Raw.param "max_len" uint16be;
+        Wire.C.Raw.mutable_param "out_len" uint16be;
       ]
       [ field "Length" uint16be ]
   in

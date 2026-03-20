@@ -13,6 +13,9 @@
    4. Use to_c_stubs to generate OCaml FFI bindings to call EverParse C *)
 
 let ml_type_of = Wire.Private.ml_type_of
+let param_name = Wire.Private.param_name
+let param_is_mutable = Wire.Private.param_is_mutable
+let param_c_type = Wire.Private.param_c_type
 
 (** Compute the EverParse-normalized identifier for a struct name.
 
@@ -49,17 +52,17 @@ let c_stub_error_handler ppf lower =
 
 (** Generate C check stub: [bytes -> bool]. Calls EverParse-generated
     [FooCheckFoo] validation function. *)
-let c_stub_check ppf (s : Wire.C.struct_) =
-  let name = Wire.C.struct_name s in
-  let params = Wire.C.struct_params s in
+let c_stub_check ppf (s : Wire.C.Raw.struct_) =
+  let name = Wire.C.Raw.struct_name s in
+  let params = Wire.C.Raw.struct_params s in
   let ep = everparse_name name in
   let lower = String.lowercase_ascii name in
   c_stub_error_handler ppf lower;
   let input_params =
-    List.filter (fun (p : Wire.param) -> not (Wire.param_is_mutable p)) params
+    List.filter (fun (p : Wire.param) -> not (param_is_mutable p)) params
   in
   let output_params =
-    List.filter (fun (p : Wire.param) -> Wire.param_is_mutable p) params
+    List.filter (fun (p : Wire.param) -> param_is_mutable p) params
   in
   if params = [] then begin
     (* Simple stub: bytes -> bool *)
@@ -76,12 +79,8 @@ let c_stub_check ppf (s : Wire.C.struct_) =
     let n_args = 1 + List.length input_params + List.length output_params in
     let arg_names =
       "v_buf"
-      :: List.map
-           (fun (p : Wire.param) -> "v_" ^ Wire.param_name p)
-           input_params
-      @ List.map
-          (fun (p : Wire.param) -> "v_" ^ Wire.param_name p)
-          output_params
+      :: List.map (fun (p : Wire.param) -> "v_" ^ param_name p) input_params
+      @ List.map (fun (p : Wire.param) -> "v_" ^ param_name p) output_params
     in
     (* OCaml function signature *)
     if n_args <= 5 then begin
@@ -103,19 +102,19 @@ let c_stub_check ppf (s : Wire.C.struct_) =
     (* Declare locals for input params *)
     List.iter
       (fun p ->
-        let n = Wire.param_name p in
-        Fmt.pf ppf "  %s %s_val = Int_val(v_%s);@\n" (Wire.param_c_type p) n n)
+        let n = param_name p in
+        Fmt.pf ppf "  %s %s_val = Int_val(v_%s);@\n" (param_c_type p) n n)
       input_params;
     (* Declare locals for output params *)
     List.iter
       (fun p ->
-        let n = Wire.param_name p in
-        Fmt.pf ppf "  %s %s_val = 0;@\n" (Wire.param_c_type p) n)
+        let n = param_name p in
+        Fmt.pf ppf "  %s %s_val = 0;@\n" (param_c_type p) n)
       output_params;
     (* Call validator: input params as values, output params as pointers *)
     let param_args =
-      List.map (fun p -> Wire.param_name p ^ "_val") input_params
-      @ List.map (fun p -> "&" ^ Wire.param_name p ^ "_val") output_params
+      List.map (fun p -> param_name p ^ "_val") input_params
+      @ List.map (fun p -> "&" ^ param_name p ^ "_val") output_params
     in
     let all_args =
       param_args @ [ "NULL"; lower ^ "_err"; "data"; "len"; "0" ]
@@ -125,7 +124,7 @@ let c_stub_check ppf (s : Wire.C.struct_) =
     (* Write output params back to OCaml *)
     List.iter
       (fun p ->
-        let n = Wire.param_name p in
+        let n = param_name p in
         Fmt.pf ppf "  Store_field(v_%s, 0, Val_int(%s_val));@\n" n n)
       output_params;
     Fmt.pf ppf "  return Val_bool(EverParseIsSuccess(r));@\n";
@@ -140,7 +139,7 @@ let c_stub_check ppf (s : Wire.C.struct_) =
     The generated code expects EverParse headers and sources to be available via
     [-I] include path. EverParse identifier normalization is handled
     automatically (e.g., [CLCW] becomes [ClcwCheckClcw]). *)
-let to_c_stubs (structs : Wire.C.struct_ list) =
+let to_c_stubs (structs : Wire.C.Raw.struct_ list) =
   let buf = Buffer.create 4096 in
   let ppf = Format.formatter_of_buffer buf in
   Fmt.pf ppf
@@ -150,14 +149,14 @@ let to_c_stubs (structs : Wire.C.struct_ list) =
   Fmt.pf ppf "#include <stdint.h>@\n@\n";
   Fmt.pf ppf "/* EverParse headers and sources */@\n";
   List.iteri
-    (fun i (s : Wire.C.struct_) ->
-      let name = Wire.C.struct_name s in
+    (fun i (s : Wire.C.Raw.struct_) ->
+      let name = Wire.C.Raw.struct_name s in
       if i = 0 then Fmt.pf ppf "#include \"EverParse.h\"@\n";
       Fmt.pf ppf "#include \"%s.h\"@\n" name;
       Fmt.pf ppf "#include \"%s.c\"@\n" name)
     structs;
   Fmt.pf ppf "@\n/* Validation stubs */@\n";
-  List.iter (fun (s : Wire.C.struct_) -> c_stub_check ppf s) structs;
+  List.iter (fun (s : Wire.C.Raw.struct_) -> c_stub_check ppf s) structs;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
@@ -166,21 +165,19 @@ let to_c_stubs (structs : Wire.C.struct_ list) =
     {[
       external foo_check : bytes -> bool = "caml_wire_foo_check"
     ]} *)
-let to_ml_stubs (structs : Wire.C.struct_ list) =
+let to_ml_stubs (structs : Wire.C.Raw.struct_ list) =
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
   Fmt.pf ppf "(* Generated by wire (do not edit) *)@\n@\n";
   List.iter
-    (fun (s : Wire.C.struct_) ->
-      let lower = String.lowercase_ascii (Wire.C.struct_name s) in
-      let params = Wire.C.struct_params s in
+    (fun (s : Wire.C.Raw.struct_) ->
+      let lower = String.lowercase_ascii (Wire.C.Raw.struct_name s) in
+      let params = Wire.C.Raw.struct_params s in
       let input_params =
-        List.filter
-          (fun (p : Wire.param) -> not (Wire.param_is_mutable p))
-          params
+        List.filter (fun (p : Wire.param) -> not (param_is_mutable p)) params
       in
       let output_params =
-        List.filter (fun (p : Wire.param) -> Wire.param_is_mutable p) params
+        List.filter (fun (p : Wire.param) -> param_is_mutable p) params
       in
       if params = [] then begin
         Fmt.pf ppf "external %s_check : bytes -> bool@\n" lower;
@@ -206,8 +203,8 @@ let to_ml_stubs (structs : Wire.C.struct_ list) =
 
 (** Module name for a generated per-struct OCaml stub file. Converts CamelCase
     to snake_case, e.g., [SimpleHeader] maps to ["simple_header"]. *)
-let to_ml_stub_name (s : Wire.C.struct_) =
-  let name = Wire.C.struct_name s in
+let to_ml_stub_name (s : Wire.C.Raw.struct_) =
+  let name = Wire.C.Raw.struct_name s in
   let buf = Buffer.create (String.length name + 4) in
   String.iteri
     (fun i c ->
@@ -223,11 +220,11 @@ let to_ml_stub_name (s : Wire.C.struct_) =
       (* Generated by wire *)
       external check : bytes -> bool = "caml_wire_foo_check"
     ]} *)
-let to_ml_stub (s : Wire.C.struct_) =
+let to_ml_stub (s : Wire.C.Raw.struct_) =
   (* Single-struct variant: generates [external check : bytes -> bool] *)
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
-  let lower = String.lowercase_ascii (Wire.C.struct_name s) in
+  let lower = String.lowercase_ascii (Wire.C.Raw.struct_name s) in
   Fmt.pf ppf "(* Generated by wire (do not edit) *)@\n@\n";
   Fmt.pf ppf "external check : bytes -> bool@\n";
   Fmt.pf ppf "  = \"caml_wire_%s_check\"@\n" lower;
@@ -236,23 +233,23 @@ let to_ml_stub (s : Wire.C.struct_) =
 
 (* ==================== Schema & EverParse Pipeline ==================== *)
 
-type schema = Wire.C.schema = {
+type schema = Wire.C.t = {
   name : string;
-  module_ : Wire.C.module_;
+  module_ : Wire.C.Raw.module_;
   wire_size : int;
 }
 
 let schema_of_struct s =
-  let name = Wire.C.struct_name s in
-  let m = Wire.C.module_ [ Wire.C.typedef ~entrypoint:true s ] in
+  let name = Wire.C.Raw.struct_name s in
+  let m = Wire.C.Raw.module_ [ Wire.C.Raw.typedef ~entrypoint:true s ] in
   let wire_size =
-    match Wire.C.size s with
+    match Wire.C.Raw.struct_size s with
     | Some n -> n
     | None -> Fmt.failwith "schema %s has variable-length fields" name
   in
-  Wire.C.of_module ~name ~module_:m ~wire_size
+  Wire.C.Raw.of_module ~name ~module_:m ~wire_size
 
-let schema = Wire.C.of_module
+let schema = Wire.C.Raw.of_module
 let generate_3d = Wire.C.generate
 
 let copy_file ~src ~dst =

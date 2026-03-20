@@ -77,7 +77,7 @@ type random_field = {
 }
 
 type random_schema = {
-  struct_ : Wire.C.struct_;
+  struct_ : Wire.C.Raw.struct_;
   fields : random_field list;
   total_wire_size : int;
 }
@@ -114,13 +114,20 @@ let random_struct seed =
   let total_wire_size =
     List.fold_left (fun acc rf -> acc + rf.ft.wire_size) 0 fields
   in
-  { struct_ = Wire.C.struct_ struct_name wire_fields; fields; total_wire_size }
+  {
+    struct_ = Wire.C.Raw.struct_ struct_name wire_fields;
+    fields;
+    total_wire_size;
+  }
 
 (* ---- Code generation for differential testing ---- *)
 
 let generate_c_stubs ~schema_dir outdir schemas =
   let oc = open_out (Filename.concat outdir "stubs.c") in
   let pr fmt = Printf.fprintf oc fmt in
+  let param_name = Wire.Private.param_name in
+  let param_is_mutable = Wire.Private.param_is_mutable in
+  let param_c_type = Wire.Private.param_c_type in
   pr "#include <caml/mlvalues.h>\n";
   pr "#include <caml/memory.h>\n";
   pr "#include <caml/alloc.h>\n";
@@ -128,14 +135,14 @@ let generate_c_stubs ~schema_dir outdir schemas =
   (* Include all wrapper headers - they declare the check functions *)
   List.iter
     (fun rs ->
-      let name = Wire.C.struct_name rs.struct_ in
+      let name = Wire.C.Raw.struct_name rs.struct_ in
       pr "#include \"%s/%sWrapper.h\"\n" schema_dir name)
     schemas;
   pr "\n";
   (* Include wrapper implementations with unique error handlers *)
   List.iteri
     (fun i rs ->
-      let name = Wire.C.struct_name rs.struct_ in
+      let name = Wire.C.Raw.struct_name rs.struct_ in
       (* Include EverParse.h and parser *)
       if i = 0 then pr "#include \"%s/EverParse.h\"\n" schema_dir;
       pr "#include \"%s/%s.h\"\n" schema_dir name;
@@ -150,23 +157,20 @@ let generate_c_stubs ~schema_dir outdir schemas =
       pr "  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {\n";
       pr "  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;\n";
       pr "}\n";
-      let params = Wire.C.struct_params rs.struct_ in
+      let params = Wire.C.Raw.struct_params rs.struct_ in
       let input_params =
-        List.filter (fun p -> not (Wire.param_is_mutable p)) params
+        List.filter (fun p -> not (param_is_mutable p)) params
       in
-      let output_params =
-        List.filter (fun p -> Wire.param_is_mutable p) params
-      in
+      let output_params = List.filter (fun p -> param_is_mutable p) params in
       pr "BOOLEAN %sCheck%s(uint8_t *base, uint32_t len) {\n" name name;
       (* Declare locals for mutable params *)
       List.iter
-        (fun p ->
-          pr "  %s %s_val = 0;\n" (Wire.param_c_type p) (Wire.param_name p))
+        (fun p -> pr "  %s %s_val = 0;\n" (param_c_type p) (param_name p))
         output_params;
       (* Call validator with params *)
       let param_args =
-        List.map (fun p -> Wire.param_name p ^ "_val") input_params
-        @ List.map (fun p -> "&" ^ Wire.param_name p ^ "_val") output_params
+        List.map (fun p -> param_name p ^ "_val") input_params
+        @ List.map (fun p -> "&" ^ param_name p ^ "_val") output_params
       in
       let all_args =
         param_args @ [ "NULL"; name ^ "_ErrorHandler"; "base"; "len"; "0" ]
@@ -179,7 +183,7 @@ let generate_c_stubs ~schema_dir outdir schemas =
   (* Generate OCaml stubs *)
   List.iter
     (fun rs ->
-      let name = Wire.C.struct_name rs.struct_ in
+      let name = Wire.C.Raw.struct_name rs.struct_ in
       pr "CAMLprim value caml_%s_check(value v_bytes) {\n"
         (String.lowercase_ascii name);
       pr "  CAMLparam1(v_bytes);\n";
@@ -196,7 +200,7 @@ let generate_ml_stubs outdir schemas =
   let pr fmt = Printf.fprintf oc fmt in
   List.iter
     (fun rs ->
-      let name = Wire.C.struct_name rs.struct_ in
+      let name = Wire.C.Raw.struct_name rs.struct_ in
       let lower = String.lowercase_ascii name in
       pr "external %s_check : bytes -> bool = \"caml_%s_check\"\n" lower lower)
     schemas;
@@ -235,7 +239,7 @@ let fields_with_offsets fields =
 
 let emit_wire_checker oc rs =
   let pr fmt = Printf.fprintf oc fmt in
-  let name = Wire.C.struct_name rs.struct_ in
+  let name = Wire.C.Raw.struct_name rs.struct_ in
   let lower = String.lowercase_ascii name in
   pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
   pr "let %s_wire_check (buf : bytes) : bool =\n" lower;
@@ -267,7 +271,7 @@ let generate_test_runner outdir schemas =
   pr "let schemas = [\n";
   List.iter
     (fun rs ->
-      let name = Wire.C.struct_name rs.struct_ in
+      let name = Wire.C.Raw.struct_name rs.struct_ in
       let lower = String.lowercase_ascii name in
       pr
         "  { name = %S; wire_size = %d; wire_check = %s_wire_check; c_check = \
@@ -310,10 +314,10 @@ let action_schema () =
   let outx = Wire.Param.output "outx" Wire.uint8 in
   let f_x = Wire.Field.v "x" Wire.uint8 in
   let s =
-    Wire.C.param_struct "ActionDemo"
-      [ Wire.C.mutable_param "outx" Wire.uint32 ]
+    Wire.C.Raw.param_struct "ActionDemo"
+      [ Wire.C.Raw.mutable_param "outx" Wire.uint32 ]
       [
-        Wire.C.field "x"
+        Wire.C.Raw.field "x"
           ~action:
             (Wire.Action.on_success
                [
@@ -321,7 +325,7 @@ let action_schema () =
                  Wire.Action.return_bool Wire.Expr.true_;
                ])
           Wire.uint8;
-        Wire.C.field "y" Wire.uint8;
+        Wire.C.Raw.field "y" Wire.uint8;
       ]
   in
   {
@@ -360,7 +364,7 @@ let () =
     List.map
       (fun rs ->
         Wire_c.schema
-          ~name:(Wire.C.struct_name rs.struct_)
+          ~name:(Wire.C.Raw.struct_name rs.struct_)
           ~module_:(Wire.module_ [ Wire.typedef ~entrypoint:true rs.struct_ ])
           ~wire_size:rs.total_wire_size)
       schemas

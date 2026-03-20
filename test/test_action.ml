@@ -10,7 +10,7 @@
    - If: conditional execution *)
 
 open Wire
-open Wire.C
+open Wire.C.Raw
 
 (* ── Assign ── *)
 

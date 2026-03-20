@@ -327,7 +327,7 @@ let udp_frame_data n =
 type 'a schema = {
   name : string;
   codec : 'a Codec.t;
-  struct_ : Wire.C.struct_;
+  struct_ : Wire.C.Raw.struct_;
   size : int;
   decode : bytes -> int -> ('a, Wire.parse_error) result;
 }

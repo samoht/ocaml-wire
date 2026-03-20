@@ -4,7 +4,7 @@
     results as the EverParse-generated C parser. *)
 
 open Wire
-open Wire.C
+open Wire.C.Raw
 
 (* Simple header schema: version (u8) + length (u16) + flags (u8) *)
 type simple_header = { version : int; length : int; flags : int }

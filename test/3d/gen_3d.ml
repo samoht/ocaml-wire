@@ -1,7 +1,7 @@
 (* Generate .3d files for EverParse integration tests *)
 
 open Wire
-open Wire.C
+open Wire.C.Raw
 
 let bitfields () =
   let f_y = field "y" (bits ~width:10 U32) in

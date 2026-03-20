@@ -29,9 +29,8 @@
       let n = get_version buf 0
 
       (* 4. Export to EverParse 3D *)
-      let s = C.struct_of_codec codec
-      let m = C.module_ [ C.typedef ~entrypoint:true s ]
-      let _ = C.to_3d m
+      let schema = C.schema codec
+      let () = C.generate ~outdir:"schemas" [ schema ]
     ]}
 
     The generated 3D is a projection of the OCaml description, not a second
@@ -64,15 +63,6 @@ type 'a typ
 type param
 (** Untyped formal parameter declaration. Create via {!Param.v}. *)
 
-val param_name : param -> string
-(** Name of a formal parameter. *)
-
-val param_is_mutable : param -> bool
-(** [true] for output (mutable) parameters. *)
-
-val param_c_type : param -> string
-(** C type name of a parameter (e.g., ["uint16_t"]). *)
-
 module Param : sig
   (** Typed parameter handles.
 
@@ -87,23 +77,28 @@ module Param : sig
       {[
         let max_len = Param.input "max_len" uint16be
         let out_len = Param.output "out_len" uint16be
+        let f_length = Field.v "Length" uint16be
 
-        let bounded ~max_len:ml ~out_len =
-          let ml_expr = Param.init ml max_len in
+        let f_data =
+          Field.v "Data"
+            ~action:
+              (Action.on_success [ Action.assign out_len (Field.ref f_length) ])
+            (byte_slice ~size:(Field.ref f_length))
+
+        let bounded ~max_len:ml =
+          let ml_expr = Param.init max_len ml in
           Codec.view "Bounded"
-            ~where:Expr.(Codec.field_ref f_len <= ml_expr)
+            ~where:Expr.(Field.ref f_length <= ml_expr)
             (fun len data -> { len; data })
-            Codec.[
-              Codec.field "Length"
-                ~action:(Action.on_success [ Action.assign out_len ... ])
-                uint16be (fun r -> r.len);
-              f_data;
-            ]
+            Codec.
+              [
+                Codec.bind f_length (fun r -> r.len);
+                Codec.bind f_data (fun r -> r.data);
+              ]
 
-        let out = Param.output "out_len" uint16be
-        let c = bounded ~max_len:1024 ~out_len:out
-        let _ = Codec.decode c buf 0
-        let len = Param.get out
+        let codec = bounded ~max_len:1024
+        let _ = Codec.decode codec buf 0
+        let len = Param.get out_len
       ]}
 
       Output parameters are mutable — do not share an output handle across
@@ -207,7 +202,7 @@ module Expr : sig
   (** Arithmetic, bitwise, and comparison operators on expressions.
 
       Open this module locally to build constraint and size expressions:
-      [Expr.(C.field_ref "x" + int 1)]. *)
+      [Expr.(Field.ref f + int 1)]. *)
 
   val ( + ) : int expr -> int expr -> int expr
   (** Addition. *)
@@ -299,7 +294,7 @@ end
 
     - bound into a {!Codec} with {!Codec.bind};
     - referenced from dependent expressions with {!Field.ref};
-    - packed for {!C.struct_} declarations via {!C.field}. *)
+    - reused by advanced export code through {!C.Raw}. *)
 
 module Field : sig
   type 'a t
@@ -527,16 +522,16 @@ val encode_to_string : 'a typ -> 'a -> string
     access individual fields at zero cost.
 
     The codec is the single OCaml authority for a format's decode, encode,
-    wire-size, and field access. {!C.struct_of_codec} projects it to 3D. *)
+    wire-size, and field access. {!C.schema} projects it to EverParse 3D. *)
 
 module Codec : sig
-  type ('a, 'r) field = ('a, 'r) Codec.field
+  type ('a, 'r) field
   (** Description of one typed field in a record codec. *)
 
-  type 'r t = 'r Codec.t
+  type 'r t
   (** Sealed codec for record values of type ['r]. *)
 
-  type ('f, 'r) fields = ('f, 'r) Codec.fields =
+  type ('f, 'r) fields =
     | [] : ('r, 'r) fields
     | ( :: ) : ('a, 'r) field * ('f, 'r) fields -> ('a -> 'f, 'r) fields
         (** Heterogeneous field list in record order. *)
@@ -568,13 +563,16 @@ module Codec : sig
       {[
         type header = { version : int; length : int }
 
+        let f_version = Field.v "version" uint8
+        let f_length = Field.v "length" uint16
+
         let header_codec =
           Codec.view "Header"
             (fun version length -> { version; length })
             Codec.
               [
-                Codec.field "version" uint8 (fun h -> h.version);
-                Codec.field "length" uint16 (fun h -> h.length);
+                Codec.bind f_version (fun h -> h.version);
+                Codec.bind f_length (fun h -> h.length);
               ]
       ]} *)
 
@@ -618,20 +616,19 @@ end
 
 (** {1 Export}
 
-    {!C} exports codec descriptions as EverParse 3D schemas.
+    {!C} is the export layer. The normal workflow is:
 
-    The normal workflow is: build a codec with {!Field} and {!Codec}, then call
-    {!C.struct_of_codec} to project it. The remaining constructors ({!C.field},
-    {!C.struct_}, {!C.param_struct}, etc.) are an advanced escape hatch for 3D
-    constructs that have no codec equivalent yet (e.g. [type_ref], [apply],
-    [casetype_decl]). *)
+    - build a record-shaped description with {!Field} and {!Codec};
+    - project it with {!C.schema};
+    - emit one [.3d] file per schema with {!C.generate};
+    - run external tooling with [Wire_c].
+
+    For unusual EverParse constructs that have no codec equivalent yet, see the
+    explicit escape hatch {!C.Raw}. *)
 
 module C : sig
   type struct_
   (** 3D struct declaration. *)
-
-  type field = Field.packed
-  (** A packed field. Use {!Field.v} to create, {!Field.Pack} to wrap. *)
 
   type decl
   (** Top-level 3D declaration. *)
@@ -642,164 +639,120 @@ module C : sig
   type module_
   (** A 3D module. *)
 
-  type schema = { name : string; module_ : module_; wire_size : int }
+  type t = { name : string; module_ : module_; wire_size : int }
   (** A named 3D schema with its module and wire size. *)
 
   val struct_of_codec : 'r Codec.t -> struct_
   (** Projects a record codec to a 3D struct. *)
 
-  val schema : 'r Codec.t -> schema
+  val schema : 'r Codec.t -> t
   (** Builds a one-struct schema from a codec. *)
 
-  val generate : outdir:string -> schema list -> unit
+  val generate : outdir:string -> t list -> unit
   (** Writes one [.3d] file per schema into [outdir]. *)
 
-  val typedef :
-    ?entrypoint:bool -> ?export:bool -> ?doc:string -> struct_ -> decl
-  (** Top-level typedef declaration.
+  module Raw : sig
+    (** Escape hatch for manual 3D authoring.
 
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#structs}struct
-       definitions}. *)
+        These constructors exist for EverParse features that currently have no
+        codec-level equivalent. Most users should stay on the {!Field}/{!Codec}
+        path and use {!struct_of_codec} or {!schema}. *)
 
-  val define : string -> int -> decl
-  (** Top-level integer definition.
+    type nonrec struct_ = struct_
+    type field = Field.packed
+    type nonrec decl = decl
+    type nonrec decl_case = decl_case
+    type nonrec module_ = module_
+    type nonrec t = t
 
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#constants-and-enumerations}constants}.
-  *)
+    val typedef :
+      ?entrypoint:bool -> ?export:bool -> ?doc:string -> struct_ -> decl
+    (** Top-level typedef declaration. *)
 
-  val extern_fn : string -> param list -> 'a typ -> decl
-  (** External function declaration used by 3D actions.
+    val define : string -> int -> decl
+    (** Top-level integer definition. *)
 
-      See the 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#actions}actions}
-      section. *)
+    val extern_fn : string -> param list -> 'a typ -> decl
+    (** External function declaration used by 3D actions. *)
 
-  val extern_probe : ?init:bool -> string -> decl
-  (** External probe declaration. *)
+    val extern_probe : ?init:bool -> string -> decl
+    (** External probe declaration. *)
 
-  val enum_decl : string -> (string * int) list -> 'a typ -> decl
-  (** Top-level enum declaration.
+    val enum_decl : string -> (string * int) list -> 'a typ -> decl
+    (** Top-level enum declaration. *)
 
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#constants-and-enumerations}enumerations}.
-  *)
+    val decl_case : int -> 'a typ -> decl_case
+    (** One tagged case in a top-level casetype declaration. *)
 
-  val decl_case : int -> 'a typ -> decl_case
-  (** One tagged case in a top-level casetype declaration. *)
+    val decl_default : 'a typ -> decl_case
+    (** Default case in a top-level casetype declaration. *)
 
-  val decl_default : 'a typ -> decl_case
-  (** Default case in a top-level casetype declaration. *)
+    val casetype_decl : string -> param list -> 'a typ -> decl_case list -> decl
+    (** Top-level casetype declaration. *)
 
-  val casetype_decl : string -> param list -> 'a typ -> decl_case list -> decl
-  (** Top-level casetype declaration.
+    val module_ : ?doc:string -> decl list -> module_
+    (** Builds a 3D module from declarations. *)
 
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#tagged-unions-or-casetype}casetype}.
-  *)
+    val to_3d : module_ -> string
+    (** Renders a 3D module to text. *)
 
-  val module_ : ?doc:string -> decl list -> module_
-  (** Builds a 3D module from declarations.
+    val to_3d_file : string -> module_ -> unit
+    (** Writes a rendered 3D module to a file. *)
 
-      See the 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#modular-structure-and-files}modular
-       structure} section. *)
+    val field :
+      string -> ?constraint_:bool expr -> ?action:Action.t -> 'a typ -> field
+    (** Named field. Returns a packed {!Field.t}. *)
 
-  val to_3d : module_ -> string
-  (** Renders a 3D module to text. *)
+    val anon_field : 'a typ -> field
+    (** Anonymous field in a 3D struct. *)
 
-  val to_3d_file : string -> module_ -> unit
-  (** Writes a rendered 3D module to a file. *)
+    val field_ref : field -> int expr
+    (** [field_ref f] returns the expression referencing field [f] by name. The
+        field must have been created with {!field} (not {!anon_field}). *)
 
-  (** {2 Advanced: manual 3D construction}
+    val struct_ : string -> field list -> struct_
+    (** Non-parameterised 3D struct. *)
 
-      The functions below are an escape hatch for 3D constructs that cannot be
-      expressed through {!Codec} (e.g. [type_ref], [apply], [casetype_decl]).
-      Prefer {!struct_of_codec} for all codec-derived formats. *)
+    val struct_name : struct_ -> string
+    (** Name of a struct declaration. *)
 
-  val field :
-    string -> ?constraint_:bool expr -> ?action:Action.t -> 'a typ -> field
-  (** Named field. Returns a packed {!Field.t}. *)
+    val struct_params : struct_ -> param list
+    (** Formal parameters of a struct (empty for non-parameterised structs). *)
 
-  val anon_field : 'a typ -> field
-  (** Anonymous field in a 3D struct. *)
+    val struct_typ : struct_ -> unit typ
+    (** View a 3D struct as a wire description. *)
 
-  val field_ref : field -> int expr
-  (** [field_ref f] returns the expression referencing field [f] by name. The
-      field must have been created with {!field} (not {!anon_field}). *)
+    val param : string -> 'a typ -> param
+    (** Immutable parameter declaration. *)
 
-  val struct_ : string -> field list -> struct_
-  (** Non-parameterised 3D struct.
+    val mutable_param : string -> 'a typ -> param
+    (** Mutable parameter declaration. *)
 
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#structs}structs}.
-  *)
+    val param_struct :
+      string -> param list -> ?where:bool expr -> field list -> struct_
+    (** Parameterised 3D struct. *)
 
-  val struct_name : struct_ -> string
-  (** Name of a struct declaration. *)
+    val apply : 'a typ -> int expr list -> 'a typ
+    (** Apply a parameterised description to integer arguments. *)
 
-  val struct_params : struct_ -> param list
-  (** Formal parameters of a struct (empty for non-parameterised structs). *)
+    val type_ref : string -> 'a typ
+    (** Unqualified type reference. *)
 
-  val struct_typ : struct_ -> unit typ
-  (** View a 3D struct as a wire description. *)
+    val qualified_ref : string -> string -> 'a typ
+    (** Qualified type reference. *)
 
-  val param : string -> 'a typ -> param
-  (** Immutable parameter declaration.
+    val pp_typ : Format.formatter -> 'a typ -> unit
+    (** Pretty-printer for 3D-facing type syntax. *)
 
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#parameterized-data-types}parameterized
-       data types}. *)
+    val pp_module : Format.formatter -> module_ -> unit
+    (** Pretty-printer for 3D modules. *)
 
-  val mutable_param : string -> 'a typ -> param
-  (** Mutable parameter declaration.
+    val struct_size : struct_ -> int option
+    (** Fixed wire size of a struct, if known statically. *)
 
-      Corresponds to mutable pointer parameters in 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#actions}actions}.
-  *)
-
-  val param_struct :
-    string -> param list -> ?where:bool expr -> field list -> struct_
-  (** Parameterised 3D struct.
-
-      Corresponds to 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#parameterized-data-types}parameterized
-       data types}. The optional [where] clause corresponds to the same
-      section's precondition form. *)
-
-  val apply : 'a typ -> int expr list -> 'a typ
-  (** Apply a parameterised description to integer arguments.
-
-      Corresponds to instantiation of 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#parameterized-data-types}parameterized
-       data types}. *)
-
-  val type_ref : string -> 'a typ
-  (** Unqualified type reference.
-
-      See the 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#modular-structure-and-files}modular
-       structure} section. *)
-
-  val qualified_ref : string -> string -> 'a typ
-  (** Qualified type reference.
-
-      See the 3D
-      {{:https://project-everest.github.io/everparse/3d-lang.html#modular-structure-and-files}modular
-       structure} section. *)
-
-  val pp_typ : Format.formatter -> 'a typ -> unit
-  (** Pretty-printer for 3D-facing type syntax. *)
-
-  val pp_module : Format.formatter -> module_ -> unit
-  (** Pretty-printer for 3D modules. *)
-
-  val size : struct_ -> int option
-  (** Fixed wire size of a struct, if known statically. *)
-
-  val of_module : name:string -> module_:module_ -> wire_size:int -> schema
-  (** Wraps an existing 3D module as a schema. *)
+    val of_module : name:string -> module_:module_ -> wire_size:int -> t
+    (** Wraps an existing 3D module as a schema. *)
+  end
 end
 
 (** {1 ASCII Bit Diagrams}
@@ -832,6 +785,15 @@ module Private : sig
   module UInt63 = UInt63
   module Types = Types
   module Eval = Eval
+
+  val param_name : param -> string
+  (** Name of a formal parameter. *)
+
+  val param_is_mutable : param -> bool
+  (** [true] for output (mutable) parameters. *)
+
+  val param_c_type : param -> string
+  (** C type name of a parameter (e.g., ["uint16_t"]). *)
 
   val ml_type_of : 'a typ -> string
   (** OCaml type name for FFI stub generation. *)

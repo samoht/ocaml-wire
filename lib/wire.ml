@@ -724,6 +724,9 @@ module Private = struct
   module Types = Types
   module Eval = Eval
 
+  let param_name = param_name
+  let param_is_mutable = param_is_mutable
+  let param_c_type = param_c_type
   let ml_type_of = Types.ml_type_of
   let c_type_of = Types.c_type_of
 end
