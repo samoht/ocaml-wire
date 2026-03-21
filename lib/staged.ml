@@ -1,4 +1,4 @@
-type +'a t = 'a
+type +'a t = Staged of 'a [@@unboxed]
 
-let stage x = x
-let unstage x = x
+let stage x = Staged x
+let unstage (Staged x) = x
