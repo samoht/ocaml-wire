@@ -43,7 +43,6 @@ let () =
   let anomalies = ref 0 in
   let expected_seq = ref 0 in
 
-  (* OCaml tier: poll one CLCW word, cycling through the buffer *)
   let fn, cycling_reset =
     cycling ~data:buf ~n_items:n_words ~size:word_size (fun buf off ->
         let lockout = get_lockout buf off in
@@ -62,9 +61,7 @@ let () =
     expected_seq := 0
   in
 
-  (* Verify OCaml and C produce the same anomaly count *)
-  let verify () =
-    reset ();
+  let poll_all () =
     for i = 0 to n_words - 1 do
       let off = i * word_size in
       let lockout = get_lockout buf off in
@@ -76,7 +73,12 @@ let () =
         || report <> !expected_seq land 0xFF
       then incr anomalies;
       expected_seq := report
-    done;
+    done
+  in
+
+  let verify () =
+    reset ();
+    poll_all ();
     let ocaml_anomalies = !anomalies in
     let c_anomalies = c_clcw_poll_result buf 0 in
     if ocaml_anomalies <> c_anomalies then
@@ -92,19 +94,7 @@ let () =
 
   run_table ~title:"CLCW polling" ~n:(n_words * 10) ~unit:"word" [ t ];
 
-  (* Print final results *)
   reset ();
-  for i = 0 to n_words - 1 do
-    let off = i * word_size in
-    let lockout = get_lockout buf off in
-    let wait = get_wait buf off in
-    let retransmit = get_retransmit buf off in
-    let report = get_report buf off in
-    if
-      lockout <> 0 || wait <> 0 || retransmit <> 0
-      || report <> !expected_seq land 0xFF
-    then incr anomalies;
-    expected_seq := report
-  done;
+  poll_all ();
   let c_result = c_clcw_poll_result buf 0 in
   Fmt.pr "\n  OCaml anomalies: %d\n  C anomalies:     %d\n" !anomalies c_result

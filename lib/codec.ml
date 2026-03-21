@@ -920,3 +920,5 @@ let set (type a r) (_codec : r t) (f : (a, r) field) :
 
 let pp ppf t = Fmt.string ppf t.t_name
 let field_ref (type a r) (f : (a, r) field) : int expr = Ref f.name
+
+(* ── Snapshot: batch bitfield access ── *)
