@@ -155,22 +155,23 @@ let centre label width =
     let right = pad - left in
     String.make left ' ' ^ label ^ String.make right ' '
 
-(* Build the bit-position ruler lines. *)
+(* Build the bit-position ruler lines (RFC 791 style).
+   Line 1: byte offsets at every 8th bit
+   Line 2: bit positions 0–9 repeating *)
 let ruler () =
-  let tens = Buffer.create 80 in
-  let ones = Buffer.create 80 in
-  Buffer.add_string tens "  ";
-  Buffer.add_string ones "  ";
+  let bytes_line = Buffer.create 80 in
+  let bits_line = Buffer.create 80 in
+  Buffer.add_string bytes_line "  ";
+  Buffer.add_string bits_line "  ";
   for bit = 0 to row_bits - 1 do
-    let decade = bit / 10 in
-    let unit_ = bit mod 10 in
     if bit > 0 then (
-      Buffer.add_char tens ' ';
-      Buffer.add_char ones ' ');
-    Buffer.add_string tens (string_of_int decade);
-    Buffer.add_string ones (string_of_int unit_)
+      Buffer.add_char bytes_line ' ';
+      Buffer.add_char bits_line ' ');
+    if bit mod 8 = 0 then Buffer.add_string bytes_line (string_of_int (bit / 8))
+    else Buffer.add_char bytes_line ' ';
+    Buffer.add_string bits_line (string_of_int (bit mod 10))
   done;
-  (Buffer.contents tens, Buffer.contents ones)
+  (Buffer.contents bytes_line, Buffer.contents bits_line)
 
 (* Horizontal separator spanning [n] bits. *)
 let sep n =
