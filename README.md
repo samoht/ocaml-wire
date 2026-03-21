@@ -24,16 +24,19 @@ open Wire
 
 type packet = { version : int; flags : int; length : int }
 
-let version = Field.v "Version" (bits ~width:4 U8)
-let flags   = Field.v "Flags"   (bits ~width:4 U8)
-let length  = Field.v "Length"  uint16be
+let f_version = Field.v "Version" (bits ~width:4 U8)
+let f_flags   = Field.v "Flags"   (bits ~width:4 U8)
+let f_length  = Field.v "Length"  uint16be
+
+(* Bind fields before the codec — same objects used for get/set *)
+let bf_version = Codec.(f_version $ (fun p -> p.version))
+let bf_flags   = Codec.(f_flags   $ (fun p -> p.flags))
+let bf_length  = Codec.(f_length  $ (fun p -> p.length))
 
 let codec =
   let open Codec in
   v "Packet" (fun version flags length -> { version; flags; length })
-    [ version $ (fun p -> p.version);
-      flags   $ (fun p -> p.flags);
-      length  $ (fun p -> p.length) ]
+    [ bf_version; bf_flags; bf_length ]
 ```
 
 ```
@@ -46,26 +49,22 @@ let codec =
 
 ### Zero-copy field access
 
-The same field handles work for `get`/`set`, dependent sizes, and `Field.ref`:
+```ocaml
+(* Staged for performance — force once, reuse the closure *)
+let get_version = Staged.unstage (Codec.get codec bf_version)
+let set_version = Staged.unstage (Codec.set codec bf_version)
+
+let buf = Bytes.create (Codec.wire_size codec)
+let () = Codec.encode codec { version = 1; flags = 2; length = 1024 } buf 0
+let v = get_version buf 0        (* read version without allocating a record *)
+let () = set_version buf 0 3     (* mutate version in place *)
+```
+
+### Dependent sizes
 
 ```ocaml
-(* Bind fields for get/set *)
-let cf_version = Codec.(version $ (fun p -> p.version))
-
-(* Staged for performance — force once, reuse *)
-let get_version = Staged.unstage (Codec.get codec cf_version)
-let set_version = Staged.unstage (Codec.set codec cf_version)
-
-let v = get_version buf 0
-let () = set_version buf 0 3
-
-(* Dependent sizes use Field.ref *)
 let f_len  = Field.v "Length" uint16be
 let f_data = Field.v "Data" (byte_array ~size:(Field.ref f_len))
-
-(* Full record decode/encode *)
-let () = Codec.encode codec { version = 1; flags = 2; length = 1024 } buf 0
-let (Ok pkt) = Codec.decode codec buf 0
 ```
 
 ### EverParse 3D output

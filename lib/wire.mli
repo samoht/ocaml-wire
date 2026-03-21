@@ -7,21 +7,24 @@
     {[
       type header = { version : int; length : int }
 
-      (* 1. Name the fields *)
+      (* 1. Name fields and bind them *)
       let f_version = Field.v "Version" (bits ~width:4 U8)
       let f_length = Field.v "Length" uint16be
+      let bf_version = Codec.(f_version $ fun h -> h.version)
+      let bf_length = Codec.(f_length $ fun h -> h.length)
 
       (* 2. Build a codec *)
       let codec =
-        Codec.v "Header"
+        let open Codec in
+        v "Header"
           (fun version length -> { version; length })
-          Codec.
-            [ (f_version $ fun h -> h.version); (f_length $ fun h -> h.length) ]
+          [ bf_version; bf_length ]
 
       (* 3. Use it *)
       let buf = Bytes.create (Codec.wire_size codec)
       let () = Codec.encode codec { version = 1; length = 42 } buf 0
-      let (Ok v) = Codec.decode codec buf 0
+      let get_version = Staged.unstage (Codec.get codec bf_version)
+      let v = get_version buf 0
 
       (* 4. Export to EverParse 3D *)
       let schema = C.schema codec
