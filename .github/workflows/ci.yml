@@ -24,9 +24,11 @@ jobs:
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          dune-version: '3.21'
 
+      - run: opam pin add alcobar https://github.com/samoht/alcobar.git --no-action
       - run: opam install . --deps-only --with-test
-      - run: opam exec -- dune build
+      - run: opam exec -- dune build @install
       - run: opam exec -- dune runtest
 
   fmt:
@@ -37,7 +39,8 @@ jobs:
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: '5.3'
+          dune-version: '3.21'
 
-      - run: opam install ocamlformat
-      - run: opam exec -- dune fmt --auto-promote || true
+      - run: opam install ocamlformat.0.28.1
+      - run: opam exec -- dune fmt 2>/dev/null || true
       - run: git diff --exit-code
