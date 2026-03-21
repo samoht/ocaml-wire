@@ -21,6 +21,7 @@
  (depends
   (ocaml (>= 5.1))
   (bytesrw (>= 0.1))
+  (eio (>= 1.0))
   (fmt (>= 0.9))
   (alcotest :with-test)
   (alcobar :with-test)
