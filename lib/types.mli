@@ -129,6 +129,7 @@ and action =
 and action_stmt =
   | Assign : ('a, param_output) param_handle * int expr -> action_stmt
   | Field_assign of string * string * int expr
+  | Extern_call of string * string list
   | Return of bool expr
   | Abort
   | If of bool expr * action_stmt list * action_stmt list option
@@ -417,6 +418,7 @@ type decl =
       entrypoint : bool;
       export : bool;
       output : bool;
+      extern_ : bool;
       doc : string option;
       struct_ : struct_;
     }
@@ -439,6 +441,7 @@ val typedef :
   ?entrypoint:bool ->
   ?export:bool ->
   ?output:bool ->
+  ?extern_:bool ->
   ?doc:string ->
   struct_ ->
   decl

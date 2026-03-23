@@ -111,6 +111,8 @@ and action_stmt =
   | Assign : ('a, param_output) param_handle * int expr -> action_stmt
   | Field_assign of string * string * int expr
     (* [Field_assign (ptr, field_name, expr)] emits [ptr->field_name = expr;] *)
+  | Extern_call of string * string list
+    (* [Extern_call (fn, args)] emits [fn(arg1, arg2, ...);] *)
   | Return of bool expr
   | Abort
   | If of bool expr * action_stmt list * action_stmt list option
@@ -313,6 +315,7 @@ type decl =
       entrypoint : bool;
       export : bool;
       output : bool;
+      extern_ : bool;
       doc : string option;
       struct_ : struct_;
     }
@@ -331,9 +334,9 @@ type decl =
       cases : (packed_expr option * packed_typ) list;
     }
 
-let typedef ?(entrypoint = false) ?(export = false) ?(output = false) ?doc
-    struct_ =
-  Typedef { entrypoint; export; output; doc; struct_ }
+let typedef ?(entrypoint = false) ?(export = false) ?(output = false)
+    ?(extern_ = false) ?doc struct_ =
+  Typedef { entrypoint; export; output; extern_; doc; struct_ }
 
 let define name value = Define { name; value }
 let extern_fn name params ret = Extern_fn { name; params; ret = Pack_typ ret }
@@ -468,7 +471,7 @@ and pp_typ : type a. a typ Fmt.t =
   | Uint63 e -> Fmt.pf ppf "UINT63%a" pp_endian e
   | Uint64 e -> Fmt.pf ppf "UINT64%a" pp_endian e
   | Bits { base; _ } -> pp_bitfield_base ppf base
-  | Unit -> Fmt.string ppf "unit"
+  | Unit -> Fmt.string ppf "void"
   | All_bytes -> Fmt.string ppf "all_bytes"
   | All_zeros -> Fmt.string ppf "all_zeros"
   | Where { cond; inner } -> Fmt.pf ppf "%a { %a }" pp_typ inner pp_expr cond
@@ -496,6 +499,7 @@ let rec pp_action_stmt ppf = function
   | Assign (p, e) -> Fmt.pf ppf "*%s = %a;" p.ph_name pp_expr e
   | Field_assign (ptr, field_name, e) ->
       Fmt.pf ppf "%s->%s = %a;" ptr field_name pp_expr e
+  | Extern_call (fn, args) -> Fmt.pf ppf "%s(%s);" fn (String.concat ", " args)
   | Return e -> Fmt.pf ppf "return %a;" pp_expr e
   | Abort -> Fmt.string ppf "abort;"
   | If (cond, then_, None) ->
@@ -578,17 +582,22 @@ let pp_struct ppf (s : struct_) =
   Fmt.pf ppf "@]@,} %s" s.name
 
 let pp_decl ppf = function
-  | Typedef { entrypoint; export; output; doc; struct_ = st } ->
+  | Typedef { entrypoint; export; output; extern_; doc; struct_ = st } ->
       Option.iter (Fmt.pf ppf "/*++ %s --*/@,") doc;
-      if output then Fmt.pf ppf "output@,";
-      if export then Fmt.pf ppf "export@,";
-      if entrypoint then Fmt.pf ppf "entrypoint@,";
-      Fmt.pf ppf "%a;@,@," pp_struct st
+      if extern_ then
+        (* extern typedef struct _Name Name *)
+        Fmt.pf ppf "extern typedef struct _%s %s@,@," st.name st.name
+      else begin
+        if output then Fmt.pf ppf "output@,";
+        if export then Fmt.pf ppf "export@,";
+        if entrypoint then Fmt.pf ppf "entrypoint@,";
+        Fmt.pf ppf "%a;@,@," pp_struct st
+      end
   | Define { name; value } ->
       if value < 0 then Fmt.pf ppf "#define %s (%d)@," name value
       else Fmt.pf ppf "#define %s 0x%x@," name value
   | Extern_fn { name; params; ret = Pack_typ ret } ->
-      Fmt.pf ppf "extern %a %s(%a);@,@," pp_typ ret name
+      Fmt.pf ppf "extern %a %s(%a)@,@," pp_typ ret name
         Fmt.(list ~sep:comma pp_param)
         params
   | Extern_probe { init; name } ->

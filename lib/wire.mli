@@ -666,6 +666,7 @@ module C : sig
       ?entrypoint:bool ->
       ?export:bool ->
       ?output:bool ->
+      ?extern_:bool ->
       ?doc:string ->
       struct_ ->
       decl

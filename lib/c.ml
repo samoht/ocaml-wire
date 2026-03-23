@@ -8,45 +8,82 @@ let is_bitfield : type a. a Types.typ -> bool = function
   | Types.Map { inner = Types.Bits _; _ } -> true
   | _ -> false
 
+type setter_info = { setter_name : string; setter_val_typ : Types.packed_typ }
+
+(* 3D type suffix for unique extern function names *)
+let rec type_suffix : type a. a Types.typ -> string = function
+  | Types.Uint8 -> "U8"
+  | Types.Uint16 Types.Little -> "U16"
+  | Types.Uint16 Types.Big -> "U16BE"
+  | Types.Uint32 Types.Little -> "U32"
+  | Types.Uint32 Types.Big -> "U32BE"
+  | Types.Uint63 Types.Little -> "U63"
+  | Types.Uint63 Types.Big -> "U63BE"
+  | Types.Uint64 Types.Little -> "U64"
+  | Types.Uint64 Types.Big -> "U64BE"
+  | Types.Bits { base = Types.BF_U8; _ } -> "U8"
+  | Types.Bits { base = Types.BF_U16 Types.Little; _ } -> "U16"
+  | Types.Bits { base = Types.BF_U16 Types.Big; _ } -> "U16BE"
+  | Types.Bits { base = Types.BF_U32 Types.Little; _ } -> "U32"
+  | Types.Bits { base = Types.BF_U32 Types.Big; _ } -> "U32BE"
+  | Types.Map { inner; _ } -> type_suffix inner
+  | Types.Enum { base; _ } -> type_suffix base
+  | Types.Where { inner; _ } -> type_suffix inner
+  | _ -> "Bytes"
+
+let rec setter_of : type a. a Types.typ -> setter_info = function
+  | Types.Byte_array _ | Types.Byte_slice _ ->
+      {
+        setter_name = "WireSetBytes";
+        setter_val_typ = Types.Pack_typ (Types.Uint32 Types.Little);
+      }
+  | Types.Map { inner; _ } -> setter_of inner
+  | Types.Enum { base; _ } -> setter_of base
+  | Types.Where { inner; _ } -> setter_of inner
+  | t ->
+      let suffix = type_suffix t in
+      { setter_name = "WireSet" ^ suffix; setter_val_typ = Types.Pack_typ t }
+
 let with_output (s : Types.struct_) : Types.decl list =
-  let out_name = "O" ^ s.name in
-  let out_fields =
-    List.filter_map
-      (fun (Types.Field f) ->
-        match f.field_name with
-        | Some name -> Some (Types.field name f.field_typ)
-        | None -> None)
-      s.fields
-  in
-  let out_struct = Types.struct_ out_name out_fields in
-  let out_decl = Types.typedef ~output:true out_struct in
-  let out_param = Types.mutable_param "out" (Types.struct_typ out_struct) in
+  (* Extern declarations for the callback mechanism *)
+  let ctx_struct = Types.struct_ "WireCtx" [] in
+  let ctx_decl = Types.typedef ~extern_:true ctx_struct in
+  let ctx_param = Types.mutable_param "ctx" (Types.struct_typ ctx_struct) in
+  (* Extern setter functions *)
+  let u32 = Types.Uint32 Types.Little in
+  (* Count named fields to assign indices *)
+  let idx = ref 0 in
   let parse_fields =
     List.map
       (fun (Types.Field f) ->
         match f.field_name with
         | Some name ->
-            let assign = Types.Field_assign ("out", name, Types.Ref name) in
+            let field_idx = !idx in
+            incr idx;
+            let { setter_name = setter; _ } = setter_of f.field_typ in
+            let call =
+              Types.Extern_call
+                (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; name ])
+            in
             let is_bf = is_bitfield f.field_typ in
-            (* Bitfields use :act (unconditional), non-bf use :on-success *)
             let new_action =
               if is_bf then
                 match f.action with
-                | None -> Some (Types.On_act [ assign ])
+                | None -> Some (Types.On_act [ call ])
                 | Some (Types.On_act stmts) ->
-                    Some (Types.On_act (stmts @ [ assign ]))
+                    Some (Types.On_act (stmts @ [ call ]))
                 | Some (Types.On_success stmts) ->
-                    Some (Types.On_act (stmts @ [ assign ]))
+                    Some (Types.On_act (stmts @ [ call ]))
               else
                 match f.action with
                 | None ->
-                    Some (Types.On_success [ assign; Types.Return Types.true_ ])
+                    Some (Types.On_success [ call; Types.Return Types.true_ ])
                 | Some (Types.On_success stmts) ->
                     Some
                       (Types.On_success
-                         (stmts @ [ assign; Types.Return Types.true_ ]))
+                         (stmts @ [ call; Types.Return Types.true_ ]))
                 | Some (Types.On_act stmts) ->
-                    Some (Types.On_act (stmts @ [ assign ]))
+                    Some (Types.On_act (stmts @ [ call ]))
             in
             Types.Field
               {
@@ -55,15 +92,41 @@ let with_output (s : Types.struct_) : Types.decl list =
                 constraint_ = f.constraint_;
                 action = new_action;
               }
-        | None -> Types.Field f)
+        | None ->
+            incr idx;
+            Types.Field f)
       s.fields
   in
   let parse_struct =
-    Types.param_struct s.name (s.params @ [ out_param ]) ?where:s.where
+    Types.param_struct s.name (s.params @ [ ctx_param ]) ?where:s.where
       parse_fields
   in
   let parse_decl = Types.typedef ~entrypoint:true parse_struct in
-  [ out_decl; parse_decl ]
+  (* Collect unique extern function declarations *)
+  let seen = Hashtbl.create 8 in
+  let extern_decls =
+    List.filter_map
+      (fun (Types.Field f) ->
+        match f.field_name with
+        | None -> None
+        | Some _ ->
+            let si = setter_of f.field_typ in
+            if Hashtbl.mem seen si.setter_name then None
+            else begin
+              Hashtbl.add seen si.setter_name ();
+              let (Types.Pack_typ val_typ) = si.setter_val_typ in
+              Some
+                (Types.extern_fn si.setter_name
+                   [
+                     Types.mutable_param "ctx" (Types.struct_typ ctx_struct);
+                     Types.param "idx" u32;
+                     Types.param "v" val_typ;
+                   ]
+                   Types.Unit)
+            end)
+      s.fields
+  in
+  [ ctx_decl ] @ extern_decls @ [ parse_decl ]
 
 let schema ?(output = false) (type r) (codec : r Codec.t) : t =
   let s = Codec.to_struct codec in

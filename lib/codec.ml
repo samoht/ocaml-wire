@@ -905,6 +905,7 @@ let collect_params (fields : Types.field list) where =
           };
         scan_expr e
     | Field_assign (_, _, e) -> scan_expr e
+    | Extern_call (_, _) -> ()
     | Return e -> scan_expr e
     | Abort -> ()
     | If (c, t, e) ->
