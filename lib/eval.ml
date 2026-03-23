@@ -22,10 +22,7 @@ let rec int_of : type a. a typ -> a -> int =
   | Uint64 _ -> (
       match Int64.unsigned_to_int v with
       | Some n -> n
-      | None ->
-          invalid_arg
-            (Printf.sprintf
-               "Wire: uint64 value %Lu exceeds OCaml int range (63 bits)" v))
+      | None -> Int64.to_int v (* truncate to 63 bits *))
   | Bits _ -> v
   | Enum { base; _ } -> int_of base v
   | Where { inner; _ } -> int_of inner v
