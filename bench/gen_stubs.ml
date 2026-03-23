@@ -40,7 +40,7 @@ let entries =
 let () =
   let structs = List.map (fun (E (_, _, s)) -> s) entries in
   let schemas =
-    List.map (fun (E (_, codec, _)) -> Wire.C.schema codec) entries
+    List.map (fun (E (_, codec, _)) -> Wire.C.schema ~output:true codec) entries
   in
 
   (* Step 1: Generate .3d files and run EverParse *)

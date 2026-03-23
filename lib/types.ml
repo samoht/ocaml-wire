@@ -471,7 +471,7 @@ and pp_typ : type a. a typ Fmt.t =
   | Uint63 e -> Fmt.pf ppf "UINT63%a" pp_endian e
   | Uint64 e -> Fmt.pf ppf "UINT64%a" pp_endian e
   | Bits { base; _ } -> pp_bitfield_base ppf base
-  | Unit -> Fmt.string ppf "void"
+  | Unit -> Fmt.string ppf "unit"
   | All_bytes -> Fmt.string ppf "all_bytes"
   | All_zeros -> Fmt.string ppf "all_zeros"
   | Where { cond; inner } -> Fmt.pf ppf "%a { %a }" pp_typ inner pp_expr cond
@@ -597,7 +597,7 @@ let pp_decl ppf = function
       if value < 0 then Fmt.pf ppf "#define %s (%d)@," name value
       else Fmt.pf ppf "#define %s 0x%x@," name value
   | Extern_fn { name; params; ret = Pack_typ ret } ->
-      Fmt.pf ppf "extern %a %s(%a)@,@," pp_typ ret name
+      Fmt.pf ppf "@[<h>extern %a %s(%a)@]@,@," pp_typ ret name
         Fmt.(list ~sep:comma pp_param)
         params
   | Extern_probe { init; name } ->

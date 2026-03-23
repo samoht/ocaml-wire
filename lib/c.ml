@@ -2,10 +2,16 @@
 
 type t = { name : string; module_ : Types.module_; wire_size : int }
 
-(* Rewrite a struct to add the EverParse output-types pattern *)
-let is_bitfield : type a. a Types.typ -> bool = function
+let rec is_bitfield : type a. a Types.typ -> bool = function
   | Types.Bits _ -> true
-  | Types.Map { inner = Types.Bits _; _ } -> true
+  | Types.Map { inner; _ } -> is_bitfield inner
+  | Types.Enum { base; _ } -> is_bitfield base
+  | Types.Where { inner; _ } -> is_bitfield inner
+  | _ -> false
+
+let rec is_byte_field : type a. a Types.typ -> bool = function
+  | Types.Byte_array _ | Types.Byte_slice _ -> true
+  | Types.Map { inner; _ } -> is_byte_field inner
   | _ -> false
 
 type setter_info = { setter_name : string; setter_val_typ : Types.packed_typ }
@@ -60,30 +66,35 @@ let with_output (s : Types.struct_) : Types.decl list =
         | Some name ->
             let field_idx = !idx in
             incr idx;
-            let { setter_name = setter; _ } = setter_of f.field_typ in
-            let call =
-              Types.Extern_call
-                (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; name ])
-            in
-            let is_bf = is_bitfield f.field_typ in
             let new_action =
-              if is_bf then
-                match f.action with
-                | None -> Some (Types.On_act [ call ])
-                | Some (Types.On_act stmts) ->
-                    Some (Types.On_act (stmts @ [ call ]))
-                | Some (Types.On_success stmts) ->
-                    Some (Types.On_act (stmts @ [ call ]))
+              if is_byte_field f.field_typ then
+                (* byte_array/byte_slice: no setter (TODO: field_ptr) *)
+                f.action
               else
-                match f.action with
-                | None ->
-                    Some (Types.On_success [ call; Types.Return Types.true_ ])
-                | Some (Types.On_success stmts) ->
-                    Some
-                      (Types.On_success
-                         (stmts @ [ call; Types.Return Types.true_ ]))
-                | Some (Types.On_act stmts) ->
-                    Some (Types.On_act (stmts @ [ call ]))
+                let { setter_name = setter; _ } = setter_of f.field_typ in
+                let call =
+                  Types.Extern_call
+                    (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; name ])
+                in
+                if is_bitfield f.field_typ then
+                  (* Bitfields: :act (non-failing, required for coalescing) *)
+                  match f.action with
+                  | None -> Some (Types.On_act [ call ])
+                  | Some (Types.On_act stmts) ->
+                      Some (Types.On_act (stmts @ [ call ]))
+                  | Some (Types.On_success stmts) ->
+                      Some (Types.On_act (stmts @ [ call ]))
+                else
+                  (* Non-bitfields: :on-success (runs after validation) *)
+                  match f.action with
+                  | None ->
+                      Some (Types.On_success [ call; Types.Return Types.true_ ])
+                  | Some (Types.On_success stmts) ->
+                      Some
+                        (Types.On_success
+                           (stmts @ [ call; Types.Return Types.true_ ]))
+                  | Some (Types.On_act stmts) ->
+                      Some (Types.On_act (stmts @ [ call ]))
             in
             Types.Field
               {
