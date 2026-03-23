@@ -357,6 +357,8 @@ val struct_ : string -> field list -> struct_
 (** Construct a struct from fields. *)
 
 val struct_name : struct_ -> string
+
+val field_names : struct_ -> string list
 (** Return the struct name. *)
 
 val struct_typ : struct_ -> unit typ

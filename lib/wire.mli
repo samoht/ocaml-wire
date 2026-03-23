@@ -718,6 +718,9 @@ module C : sig
     val struct_name : struct_ -> string
     (** Name of a struct declaration. *)
 
+    val field_names : struct_ -> string list
+    (** Named field names in declaration order. *)
+
     val struct_params : struct_ -> param list
     (** Formal parameters of a struct (empty for non-parameterised structs). *)
 

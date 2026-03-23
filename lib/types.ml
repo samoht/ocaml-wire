@@ -252,6 +252,7 @@ let anon_field typ =
 let struct_ name fields = { name; params = []; where = None; fields }
 let struct_name s = s.name
 let struct_typ s = Struct s
+let field_names s = List.filter_map (fun (Field f) -> f.field_name) s.fields
 
 (* Parameters *)
 let param name typ =
