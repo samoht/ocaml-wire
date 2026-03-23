@@ -10,45 +10,37 @@
 
 let schema_dir = if Array.length Sys.argv > 1 then Sys.argv.(1) else "schemas"
 
-(* Each entry: (name, struct, wire_size, extra_decls).
-   extra_decls are emitted before the typedef in the .3d module — needed for
-   enum declarations that the struct fields reference. *)
+type entry = E : string * 'r Wire.Codec.t * Wire.C.Raw.struct_ -> entry
+
 let entries =
   [
     (* Demo: synthetic schemas covering every Wire type *)
-    ("Minimal", Demo.minimal_struct, Demo.minimal_size, []);
-    ("Bitfield8", Demo.bf8_struct, Demo.bf8_size, []);
-    ("Bitfield16", Demo.bf16_struct, Demo.bf16_size, []);
-    ("BoolFields", Demo.bool_fields_struct, Demo.bool_fields_size, []);
-    ("Bitfield32", Demo.bf32_struct, Demo.bf32_size, []);
-    ("AllInts", Demo.all_ints_struct, Demo.all_ints_size, []);
-    ("LargeMixed", Demo.large_mixed_struct, Demo.large_mixed_size, []);
+    E ("Minimal", Demo.minimal_codec, Demo.minimal_struct);
+    E ("Bitfield8", Demo.bf8_codec, Demo.bf8_struct);
+    E ("Bitfield16", Demo.bf16_codec, Demo.bf16_struct);
+    E ("BoolFields", Demo.bool_fields_codec, Demo.bool_fields_struct);
+    E ("Bitfield32", Demo.bf32_codec, Demo.bf32_struct);
+    E ("AllInts", Demo.all_ints_codec, Demo.all_ints_struct);
+    E ("LargeMixed", Demo.large_mixed_codec, Demo.large_mixed_struct);
     (* Demo: type combinators *)
-    ("Mapped", Demo.mapped_struct, Demo.mapped_size, []);
-    ("CasesDemo", Demo.cases_demo_struct, Demo.cases_demo_size, []);
-    ("EnumDemo", Demo.enum_demo_struct, Demo.enum_demo_size, []);
-    ("Constrained", Demo.constrained_struct, Demo.constrained_size, []);
+    E ("Mapped", Demo.mapped_codec, Demo.mapped_struct);
+    E ("CasesDemo", Demo.cases_demo_codec, Demo.cases_demo_struct);
+    E ("EnumDemo", Demo.enum_demo_codec, Demo.enum_demo_struct);
+    E ("Constrained", Demo.constrained_codec, Demo.constrained_struct);
     (* Space: real protocols *)
-    ("CLCW", Space.clcw_struct, Space.clcw_size, []);
-    ("SpacePacket", Space.packet_struct, Space.packet_size, []);
-    ("TMFrame", Space.tm_frame_struct, Space.tm_frame_size, []);
+    E ("CLCW", Space.clcw_codec, Space.clcw_struct);
+    E ("SpacePacket", Space.packet_codec, Space.packet_struct);
+    E ("TMFrame", Space.tm_frame_codec, Space.tm_frame_struct);
     (* Net: TCP/IP headers *)
-    ("Ethernet", Net.ethernet_struct, Net.ethernet_size, []);
-    ("IPv4", Net.ipv4_struct, Net.ipv4_size, []);
-    ("TCP", Net.tcp_struct, Net.tcp_size, []);
+    E ("Ethernet", Net.ethernet_codec, Net.ethernet_struct);
+    E ("IPv4", Net.ipv4_codec, Net.ipv4_struct);
+    E ("TCP", Net.tcp_codec, Net.tcp_struct);
   ]
 
 let () =
-  let structs = List.map (fun (_, s, _, _) -> s) entries in
+  let structs = List.map (fun (E (_, _, s)) -> s) entries in
   let schemas =
-    List.map
-      (fun (name, s, wire_size, extra_decls) ->
-        Wire_3d.schema ~name
-          ~module_:
-            (Wire.C.Raw.module_
-               (extra_decls @ [ Wire.C.Raw.typedef ~entrypoint:true s ]))
-          ~wire_size)
-      entries
+    List.map (fun (E (_, codec, _)) -> Wire.C.schema codec) entries
   in
 
   (* Step 1: Generate .3d files and run EverParse *)
@@ -112,7 +104,7 @@ let () =
   pr "(* Noop FFI stubs *)\n\n";
   pr "external noop : bytes -> bool = \"ep_noop\" [@@noalloc]\n\n";
   pr "external noop_safe : bytes -> bool = \"ep_noop_safe\"\n\n";
-  pr "(* Timed C benchmark loops — EverParse validation *)\n\n";
+  pr "(* Timed C benchmark loops *)\n\n";
   List.iter
     (fun s ->
       let lower = String.lowercase_ascii (Wire.C.Raw.struct_name s) in
