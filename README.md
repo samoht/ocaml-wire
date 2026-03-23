@@ -80,6 +80,13 @@ let schema = C.schema codec
 let () = C.generate ~outdir:"schemas" [ schema ]
 ```
 
+Use `~output:true` to generate the EverParse output-types pattern, where the
+generated C validates AND extracts all field values into an output struct:
+
+```ocaml
+let schema = C.schema ~output:true codec
+```
+
 To turn those schemas into EverParse-generated C:
 
 ```ocaml
@@ -91,8 +98,8 @@ from the exported structs:
 
 ```ocaml
 let struct_ = C.struct_of_codec codec
-let c_stubs = Wire_stubs.to_c_stubs [ struct_ ]
-let ml_stubs = Wire_stubs.to_ml_stubs [ struct_ ]
+let c_stubs = Wire_stubs.to_c_stubs ~output:true [ struct_ ]
+let ml_stubs = Wire_stubs.to_ml_stubs ~output:true [ struct_ ]
 ```
 
 For unusual EverParse constructs that have no codec equivalent yet, use the
@@ -228,10 +235,13 @@ let len = Param.get out_len
 ## Development
 
 ```
-make build      # dune build
-make test       # dune runtest
-make bench      # requires EverParse (3d.exe in PATH)
-make clean      # dune clean
+make build         # dune build
+make test          # dune runtest
+make bench         # EverParse C vs OCaml (needs 3d.exe)
+make bench-clcw    # CLCW polling loop (Wire OCaml vs hand-written C)
+make bench-routing # APID demux throughput (Wire OCaml vs hand-written C)
+make bench-gateway # TM frame reassembly (Wire OCaml vs hand-written C)
+make clean         # dune clean
 ```
 
 ## Project structure
@@ -241,11 +251,16 @@ make clean      # dune clean
 | `lib/` | Core `wire` library: DSL types, Codec, Eval, Param, Action, Ascii, C |
 | `lib/3d/` | `wire.3d` sublibrary: EverParse tooling (write `.3d`, run `3d.exe`, generate C artifacts) |
 | `lib/stubs/` | `wire.stubs` sublibrary: generate OCaml/C FFI stubs for generated validators |
+| `lib/test/stubs/` | Wire\_stubs test suite (compile + EverParse e2e tests) |
 | `examples/space/` | CCSDS space protocols (SpacePacket, CLCW, TMFrame) |
 | `examples/net/` | TCP/IP headers (Ethernet, IPv4, TCP, UDP) with zero-copy demo |
-| `bench/` | Field-level read/write benchmarks: EverParse C vs FFI vs pure OCaml |
+| `bench/demo/` | Field-level codec benchmark: EverParse C validation vs FFI vs OCaml `Codec.get`/`Codec.set` |
+| `bench/clcw/` | CLCW polling loop: Wire OCaml vs hand-written C (`clcw_c.c`) |
+| `bench/routing/` | APID demux throughput: Wire OCaml vs hand-written C (`routing_c.c`) |
+| `bench/gateway/` | TM frame reassembly: Wire OCaml vs hand-written C (`gateway_c.c`) |
 | `fuzz/` | Fuzz tests (wire, c, param) covering all DSL combinators |
 | `test/` | Alcotest unit tests and differential tests |
+| `.github/workflows/` | CI workflow |
 
 ## References
 
