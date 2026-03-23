@@ -308,7 +308,10 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
   | Casetype { cases; tag; _ } ->
       let tag_val, ctx' = parse_with dec ctx tag in
       let rec find_case = function
-        | [] -> raise (Parse_exn (Invalid_tag (val_to_int tag tag_val)))
+        | [] ->
+            raise
+              (Parse_exn
+                 (Invalid_tag (val_to_int tag tag_val |> Option.value ~default:0)))
         | (Some expected, case_typ) :: rest ->
             if expected = tag_val then parse_with dec ctx' case_typ
             else find_case rest
@@ -365,7 +368,10 @@ and parse_struct_fields dec ctx fields =
         let v, ctx'' = parse_with dec ctx' field_typ in
         let ctx'' =
           match field_name with
-          | Some n -> Eval.bind ctx'' n (val_to_int field_typ v)
+          | Some n -> (
+              match val_to_int field_typ v with
+              | Some iv -> Eval.bind ctx'' n iv
+              | None -> ctx'')
           | None -> ctx''
         in
         check_constraint ctx'' constraint_;

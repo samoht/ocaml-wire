@@ -360,7 +360,11 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
  fun (Record r) ({ name; typ; get; _ } as fld) ->
   let build_validator ~byte_off typ reader =
     let v ctx buf base =
-      let ctx' = ctx_add name (int_of_typ_value typ (reader buf base)) ctx in
+      let ctx' =
+        match int_of_typ_value typ (reader buf base) with
+        | Some v -> ctx_add name v ctx
+        | None -> ctx
+      in
       let ctx' =
         match fld.constraint_ with
         | Some c when not (eval_expr_ctx ctx' c) ->
@@ -528,7 +532,9 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
                   Dynamic_next (fun buf base -> f buf base + fsize)
             in
             let int_reader buf base =
-              int_of_typ_value typ (raw_reader buf base)
+              match int_of_typ_value typ (raw_reader buf base) with
+              | Some v -> v
+              | None -> 0
             in
             let encode_writer =
               match field_off_static with
@@ -601,7 +607,11 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
             let new_next_off =
               Dynamic_next (fun buf base -> base + field_off + size_fn buf base)
             in
-            let int_reader buf base = int_of_typ_value typ (reader buf base) in
+            let int_reader buf base =
+              match int_of_typ_value typ (reader buf base) with
+              | Some v -> v
+              | None -> 0
+            in
             extend
               ~readers:(Snoc (r.r_readers, wrap_reader reader))
               ~writers_rev:

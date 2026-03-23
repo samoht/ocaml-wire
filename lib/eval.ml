@@ -9,21 +9,17 @@ let empty = { fields = Fields.empty; sizeof_this = 0; field_pos = 0 }
 let bind ctx name v = { ctx with fields = Fields.add name v ctx.fields }
 let set_pos ctx ~sizeof_this ~field_pos = { ctx with sizeof_this; field_pos }
 
-(* Convert a typed value to [int] for context storage. All types that
-   appear in constraint expressions are numeric, so this conversion is
-   lossless for practical schemas. Non-numeric types store 0. *)
-let rec int_of : type a. a typ -> a -> int =
+(* Convert a typed value to [int] for context storage. Returns [None]
+   for types that don't fit in OCaml int (uint64, non-numeric). *)
+let rec int_of : type a. a typ -> a -> int option =
  fun typ v ->
   match typ with
-  | Uint8 -> v
-  | Uint16 _ -> v
-  | Uint32 _ -> UInt32.to_int v
-  | Uint63 _ -> UInt63.to_int v
-  | Uint64 _ -> (
-      match Int64.unsigned_to_int v with
-      | Some n -> n
-      | None -> Int64.to_int v (* truncate to 63 bits *))
-  | Bits _ -> v
+  | Uint8 -> Some v
+  | Uint16 _ -> Some v
+  | Uint32 _ -> Some (UInt32.to_int v)
+  | Uint63 _ -> Some (UInt63.to_int v)
+  | Uint64 _ -> Int64.unsigned_to_int v
+  | Bits _ -> Some v
   | Enum { base; _ } -> int_of base v
   | Where { inner; _ } -> int_of inner v
   | Single_elem { elem; _ } -> int_of elem v
@@ -31,7 +27,7 @@ let rec int_of : type a. a typ -> a -> int =
   | Map { inner; encode; _ } -> int_of inner (encode v)
   | Unit | All_bytes | All_zeros | Array _ | Byte_array _ | Byte_slice _
   | Casetype _ | Struct _ | Type_ref _ | Qualified_ref _ ->
-      0
+      None
 
 let get ctx name =
   match Fields.find_opt name ctx.fields with

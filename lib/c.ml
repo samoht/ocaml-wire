@@ -179,7 +179,7 @@ module Raw = struct
   let anon_field typ = Field.Anon (Field.anon typ)
 
   let field_ref = function
-    | Field.Named f -> Field.ref f
+    | Field.Named f -> Types.Ref (Field.name f)
     | Field.Anon _ -> invalid_arg "C.Raw.field_ref: anonymous field"
 
   let unpack_fields fields = List.map Field.to_decl fields

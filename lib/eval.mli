@@ -20,8 +20,10 @@ val set_pos : ctx -> sizeof_this:int -> field_pos:int -> ctx
 
 (** {1 Type-to-int conversion} *)
 
-val int_of : 'a Types.typ -> 'a -> int
-(** [int_of typ v] converts a typed value to [int] for context storage. *)
+val int_of : 'a Types.typ -> 'a -> int option
+(** [int_of typ v] converts a typed value to [int] for context storage. Returns
+    [None] for types that don't fit in OCaml int (uint64 > 2^62, non-numeric
+    types). *)
 
 (** {1 Expression evaluation} *)
 

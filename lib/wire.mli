@@ -306,8 +306,10 @@ module Field : sig
   val anon : 'a typ -> 'a anon
   (** [anon typ] creates an anonymous (padding) field. *)
 
-  val ref : 'a t -> int expr
-  (** [ref f] returns the expression referencing this field. *)
+  val ref : int t -> int expr
+  (** [ref f] returns the expression referencing this field. Only works for
+      int-sized fields (uint8, uint16, uint32, bitfields). uint64 fields cannot
+      be referenced in size/constraint expressions. *)
 end
 
 (** {1 Type Descriptions}

@@ -9,8 +9,20 @@ let test_empty_ctx () =
   Alcotest.(check int) "bind + expr" 42 v
 
 let test_int_of () =
-  Alcotest.(check int) "uint8" 7 (Eval.int_of Types.uint8 7);
-  Alcotest.(check int) "uint16be" 300 (Eval.int_of Types.uint16be 300)
+  Alcotest.(check (option int)) "uint8" (Some 7) (Eval.int_of Types.uint8 7);
+  Alcotest.(check (option int))
+    "uint16be" (Some 300)
+    (Eval.int_of Types.uint16be 300);
+  (* uint64 within range *)
+  Alcotest.(check (option int))
+    "uint64 small" (Some 42)
+    (Eval.int_of Types.uint64be 42L);
+  (* uint64 exceeding 63-bit range → None *)
+  Alcotest.(check (option int))
+    "uint64 overflow" None
+    (Eval.int_of Types.uint64be 0xFFFF_FFFF_FFFF_FFFFL);
+  (* non-numeric → None *)
+  Alcotest.(check (option int)) "unit" None (Eval.int_of Types.Unit ())
 
 let test_set_pos () =
   let ctx = Eval.empty in

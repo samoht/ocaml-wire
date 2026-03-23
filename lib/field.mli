@@ -23,8 +23,9 @@ val v :
 val anon : 'a Types.typ -> 'a anon
 (** [anon typ] creates an anonymous (padding) field. *)
 
-val ref : 'a t -> int Types.expr
-(** [ref f] returns the expression referencing this field. *)
+val ref : int t -> int Types.expr
+(** [ref f] returns the expression referencing this field. Only int-sized fields
+    can be referenced (not uint64). *)
 
 val name : 'a t -> string
 (** Field name. *)
