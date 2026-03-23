@@ -109,6 +109,8 @@ and action = On_success of action_stmt list | On_act of action_stmt list
 
 and action_stmt =
   | Assign : ('a, param_output) param_handle * int expr -> action_stmt
+  | Field_assign of string * string * int expr
+    (* [Field_assign (ptr, field_name, expr)] emits [ptr->field_name = expr;] *)
   | Return of bool expr
   | Abort
   | If of bool expr * action_stmt list * action_stmt list option
@@ -279,6 +281,7 @@ type decl =
   | Typedef of {
       entrypoint : bool;
       export : bool;
+      output : bool;
       doc : string option;
       struct_ : struct_;
     }
@@ -297,8 +300,9 @@ type decl =
       cases : (packed_expr option * packed_typ) list;
     }
 
-let typedef ?(entrypoint = false) ?(export = false) ?doc struct_ =
-  Typedef { entrypoint; export; doc; struct_ }
+let typedef ?(entrypoint = false) ?(export = false) ?(output = false) ?doc
+    struct_ =
+  Typedef { entrypoint; export; output; doc; struct_ }
 
 let define name value = Define { name; value }
 let extern_fn name params ret = Extern_fn { name; params; ret = Pack_typ ret }
@@ -459,6 +463,8 @@ and pp_packed_expr ppf (Pack_expr e) = pp_expr ppf e
 
 let rec pp_action_stmt ppf = function
   | Assign (p, e) -> Fmt.pf ppf "*%s = %a;" p.ph_name pp_expr e
+  | Field_assign (ptr, field_name, e) ->
+      Fmt.pf ppf "%s->%s = %a;" ptr field_name pp_expr e
   | Return e -> Fmt.pf ppf "return %a;" pp_expr e
   | Abort -> Fmt.string ppf "abort;"
   | If (cond, then_, None) ->
@@ -539,8 +545,9 @@ let pp_struct ppf (s : struct_) =
   Fmt.pf ppf "@]@,} %s" s.name
 
 let pp_decl ppf = function
-  | Typedef { entrypoint; export; doc; struct_ = st } ->
+  | Typedef { entrypoint; export; output; doc; struct_ = st } ->
       Option.iter (Fmt.pf ppf "/*++ %s --*/@,") doc;
+      if output then Fmt.pf ppf "output@,";
       if export then Fmt.pf ppf "export@,";
       if entrypoint then Fmt.pf ppf "entrypoint@,";
       Fmt.pf ppf "%a;@,@," pp_struct st

@@ -12,9 +12,14 @@ type decl_case = Types.decl_case
 type module_ = Types.module_
 
 val struct_of_codec : 'r Codec.t -> struct_
-(** Projects a typed codec to a 3D struct declaration. *)
 
-val schema : 'r Codec.t -> t
+val with_output : struct_ -> decl list
+(** [with_output s] rewrites struct [s] into the EverParse output-types pattern:
+    an [output typedef struct] with plain fields, plus a parsing struct with a
+    mutable output pointer and [:on-success] actions that assign each field to
+    the output struct. *)
+
+val schema : ?output:bool -> 'r Codec.t -> t
 (** Builds a one-struct schema from a codec. The resulting module contains a
     single entrypoint typedef. *)
 
@@ -30,7 +35,12 @@ module Raw : sig
   type nonrec t = t
 
   val typedef :
-    ?entrypoint:bool -> ?export:bool -> ?doc:string -> struct_ -> decl
+    ?entrypoint:bool ->
+    ?export:bool ->
+    ?output:bool ->
+    ?doc:string ->
+    struct_ ->
+    decl
 
   val define : string -> int -> decl
   val extern_fn : string -> Types.param list -> 'a Types.typ -> decl

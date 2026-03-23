@@ -81,6 +81,11 @@ let rec exec_stmt ctx = function
       let v = expr ctx e in
       p.Types.ph_cell := v;
       Continue (bind ctx p.Types.ph_name v)
+  | Field_assign (_, _, _) ->
+      (* Field_assign is a 3D-only construct for output struct patterns.
+         At the OCaml runtime level, it's a no-op — field extraction is
+         handled by the codec itself. *)
+      Continue ctx
   | Return e -> Return (expr ctx e, ctx)
   | Types.Abort -> Abort
   | If (cond, then_, else_) ->

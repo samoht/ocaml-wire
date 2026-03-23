@@ -1,14 +1,63 @@
 (** 3D code generation from Wire codecs. *)
 
-(* Schema from Codec *)
-
 type t = { name : string; module_ : Types.module_; wire_size : int }
 
-let schema (type r) (codec : r Codec.t) : t =
+(* Rewrite a struct to add the EverParse output-types pattern *)
+let with_output (s : Types.struct_) : Types.decl list =
+  let out_name = "O" ^ s.name in
+  let out_fields =
+    List.filter_map
+      (fun (Types.Field f) ->
+        match f.field_name with
+        | Some name -> Some (Types.field name f.field_typ)
+        | None -> None)
+      s.fields
+  in
+  let out_struct = Types.struct_ out_name out_fields in
+  let out_decl = Types.typedef ~output:true out_struct in
+  let out_param = Types.mutable_param "out" (Types.struct_typ out_struct) in
+  let parse_fields =
+    List.map
+      (fun (Types.Field f) ->
+        match f.field_name with
+        | Some name ->
+            let assign = Types.Field_assign ("out", name, Types.Ref name) in
+            let new_action =
+              match f.action with
+              | None ->
+                  Some (Types.On_success [ assign; Types.Return Types.true_ ])
+              | Some (Types.On_success stmts) ->
+                  Some
+                    (Types.On_success
+                       (stmts @ [ assign; Types.Return Types.true_ ]))
+              | Some (Types.On_act stmts) ->
+                  Some (Types.On_act (stmts @ [ assign ]))
+            in
+            Types.Field
+              {
+                field_name = Some name;
+                field_typ = f.field_typ;
+                constraint_ = f.constraint_;
+                action = new_action;
+              }
+        | None -> Types.Field f)
+      s.fields
+  in
+  let parse_struct =
+    Types.param_struct s.name (s.params @ [ out_param ]) ?where:s.where
+      parse_fields
+  in
+  let parse_decl = Types.typedef ~entrypoint:true parse_struct in
+  [ out_decl; parse_decl ]
+
+let schema ?(output = false) (type r) (codec : r Codec.t) : t =
   let s = Codec.to_struct codec in
   let name = Types.struct_name s in
   let wire_size = Codec.wire_size codec in
-  let m = Types.module_ [ Types.typedef ~entrypoint:true s ] in
+  let decls =
+    if output then with_output s else [ Types.typedef ~entrypoint:true s ]
+  in
+  let m = Types.module_ decls in
   { name; module_ = m; wire_size }
 
 let generate ~outdir schemas =

@@ -637,8 +637,13 @@ module C : sig
   val struct_of_codec : 'r Codec.t -> struct_
   (** Projects a record codec to a 3D struct. *)
 
-  val schema : 'r Codec.t -> t
-  (** Builds a one-struct schema from a codec. *)
+  val schema : ?output:bool -> 'r Codec.t -> t
+  (** [schema ?output codec] builds a schema from a codec. When [~output:true],
+      generates the EverParse output-types pattern: the generated C validates
+      AND extracts all field values into an output struct. *)
+
+  val with_output : struct_ -> decl list
+  (** Rewrite a struct into an output typedef + parsing struct pair. *)
 
   val generate : outdir:string -> t list -> unit
   (** Writes one [.3d] file per schema into [outdir]. *)
@@ -658,7 +663,12 @@ module C : sig
     type nonrec t = t
 
     val typedef :
-      ?entrypoint:bool -> ?export:bool -> ?doc:string -> struct_ -> decl
+      ?entrypoint:bool ->
+      ?export:bool ->
+      ?output:bool ->
+      ?doc:string ->
+      struct_ ->
+      decl
     (** Top-level typedef declaration. *)
 
     val define : string -> int -> decl

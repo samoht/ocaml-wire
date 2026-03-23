@@ -128,6 +128,7 @@ and action =
 
 and action_stmt =
   | Assign : ('a, param_output) param_handle * int expr -> action_stmt
+  | Field_assign of string * string * int expr
   | Return of bool expr
   | Abort
   | If of bool expr * action_stmt list * action_stmt list option
@@ -410,6 +411,7 @@ type decl =
   | Typedef of {
       entrypoint : bool;
       export : bool;
+      output : bool;
       doc : string option;
       struct_ : struct_;
     }
@@ -428,7 +430,13 @@ type decl =
       cases : (packed_expr option * packed_typ) list;
     }
 
-val typedef : ?entrypoint:bool -> ?export:bool -> ?doc:string -> struct_ -> decl
+val typedef :
+  ?entrypoint:bool ->
+  ?export:bool ->
+  ?output:bool ->
+  ?doc:string ->
+  struct_ ->
+  decl
 (** Create a typedef declaration. *)
 
 val define : string -> int -> decl

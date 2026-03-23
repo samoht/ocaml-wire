@@ -904,6 +904,7 @@ let collect_params (fields : Types.field list) where =
             mutable_ = p.ph_mutable;
           };
         scan_expr e
+    | Field_assign (_, _, e) -> scan_expr e
     | Return e -> scan_expr e
     | Abort -> ()
     | If (c, t, e) ->
