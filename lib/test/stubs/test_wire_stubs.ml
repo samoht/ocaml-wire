@@ -22,14 +22,14 @@ let compile_ml_stub ml =
   let ic = Unix.open_process_in cmd in
   let output = In_channel.input_all ic in
   let status = Unix.close_process_in ic in
-  (try Sys.remove ml_path with _ -> ());
-  (try Sys.remove cmi_path with _ -> ());
+  (try Sys.remove ml_path with Sys_error _ -> ());
+  (try Sys.remove cmi_path with Sys_error _ -> ());
   (try
      Sys.remove
        (Filename.concat dir
           (Filename.chop_extension (Filename.basename ml_path) ^ ".cmo"))
-   with _ -> ());
-  (try Sys.rmdir dir with _ -> ());
+   with Sys_error _ -> ());
+  (try Sys.rmdir dir with Sys_error _ | Unix.Unix_error _ -> ());
   match status with
   | Unix.WEXITED 0 -> ()
   | _ -> Alcotest.failf "stub compilation failed:\n%s\nGenerated:\n%s" output ml

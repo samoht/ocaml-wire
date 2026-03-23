@@ -50,6 +50,50 @@ let rec setter_of : type a. a Types.typ -> setter_info = function
       let suffix = type_suffix t in
       { setter_name = "WireSet" ^ suffix; setter_val_typ = Types.Pack_typ t }
 
+let map_field_action idx (Types.Field f) =
+  match f.field_name with
+  | Some name ->
+      let field_idx = !idx in
+      incr idx;
+      let new_action =
+        if is_byte_field f.field_typ then
+          (* byte_array/byte_slice: no setter (TODO: field_ptr) *)
+          f.action
+        else
+          let { setter_name = setter; _ } = setter_of f.field_typ in
+          let call =
+            Types.Extern_call
+              (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; name ])
+          in
+          if is_bitfield f.field_typ then
+            (* Bitfields: :act (non-failing, required for coalescing) *)
+            match f.action with
+            | None -> Some (Types.On_act [ call ])
+            | Some (Types.On_act stmts) ->
+                Some (Types.On_act (stmts @ [ call ]))
+            | Some (Types.On_success stmts) ->
+                Some (Types.On_act (stmts @ [ call ]))
+          else
+            (* Non-bitfields: :on-success (runs after validation) *)
+            match f.action with
+            | None -> Some (Types.On_success [ call; Types.Return Types.true_ ])
+            | Some (Types.On_success stmts) ->
+                Some
+                  (Types.On_success (stmts @ [ call; Types.Return Types.true_ ]))
+            | Some (Types.On_act stmts) ->
+                Some (Types.On_act (stmts @ [ call ]))
+      in
+      Types.Field
+        {
+          field_name = Some name;
+          field_typ = f.field_typ;
+          constraint_ = f.constraint_;
+          action = new_action;
+        }
+  | None ->
+      incr idx;
+      Types.Field f
+
 let with_output (s : Types.struct_) : Types.decl list =
   (* Extern declarations for the callback mechanism *)
   let ctx_struct = Types.struct_ "WireCtx" [] in
@@ -59,55 +103,7 @@ let with_output (s : Types.struct_) : Types.decl list =
   let u32 = Types.Uint32 Types.Little in
   (* Count named fields to assign indices *)
   let idx = ref 0 in
-  let parse_fields =
-    List.map
-      (fun (Types.Field f) ->
-        match f.field_name with
-        | Some name ->
-            let field_idx = !idx in
-            incr idx;
-            let new_action =
-              if is_byte_field f.field_typ then
-                (* byte_array/byte_slice: no setter (TODO: field_ptr) *)
-                f.action
-              else
-                let { setter_name = setter; _ } = setter_of f.field_typ in
-                let call =
-                  Types.Extern_call
-                    (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; name ])
-                in
-                if is_bitfield f.field_typ then
-                  (* Bitfields: :act (non-failing, required for coalescing) *)
-                  match f.action with
-                  | None -> Some (Types.On_act [ call ])
-                  | Some (Types.On_act stmts) ->
-                      Some (Types.On_act (stmts @ [ call ]))
-                  | Some (Types.On_success stmts) ->
-                      Some (Types.On_act (stmts @ [ call ]))
-                else
-                  (* Non-bitfields: :on-success (runs after validation) *)
-                  match f.action with
-                  | None ->
-                      Some (Types.On_success [ call; Types.Return Types.true_ ])
-                  | Some (Types.On_success stmts) ->
-                      Some
-                        (Types.On_success
-                           (stmts @ [ call; Types.Return Types.true_ ]))
-                  | Some (Types.On_act stmts) ->
-                      Some (Types.On_act (stmts @ [ call ]))
-            in
-            Types.Field
-              {
-                field_name = Some name;
-                field_typ = f.field_typ;
-                constraint_ = f.constraint_;
-                action = new_action;
-              }
-        | None ->
-            incr idx;
-            Types.Field f)
-      s.fields
-  in
+  let parse_fields = List.map (map_field_action idx) s.fields in
   let parse_struct =
     Types.param_struct s.name (s.params @ [ ctx_param ]) ?where:s.where
       parse_fields

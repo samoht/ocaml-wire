@@ -51,7 +51,8 @@ let () =
   (* Step 2: Generate c_stubs.c *)
   let oc = open_out "c_stubs.c" in
   output_string oc (Wire_stubs.to_c_stubs structs);
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
 
   pr "\n/* ── Noop FFI stubs (measure call overhead) ── */\n\n";
   pr "CAMLprim value ep_noop(value v_buf) {\n";
@@ -95,12 +96,14 @@ let () =
       pr "}\n\n")
     structs;
 
+  Format.pp_print_flush ppf ();
   close_out oc;
 
   (* Step 3: Generate c_stubs.ml *)
   let oc = open_out "c_stubs.ml" in
   output_string oc (Wire_stubs.to_ml_stubs structs);
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   pr "(* Noop FFI stubs *)\n\n";
   pr "external noop : bytes -> bool = \"ep_noop\" [@@noalloc]\n\n";
   pr "external noop_safe : bytes -> bool = \"ep_noop_safe\"\n\n";
@@ -111,7 +114,8 @@ let () =
       pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
         lower lower)
     structs;
+  Format.pp_print_flush ppf ();
   close_out oc;
 
-  Printf.printf "Generated %d schemas in %s/\n" (List.length structs) schema_dir;
-  Printf.printf "Generated c_stubs.c, c_stubs.ml\n"
+  Fmt.pr "Generated %d schemas in %s/@." (List.length structs) schema_dir;
+  Fmt.pr "Generated c_stubs.c, c_stubs.ml@."

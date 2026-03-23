@@ -17,6 +17,77 @@ let c_stub_error_handler ppf lower =
 
 let field_names = Wire.C.Raw.field_names
 
+let c_stub_output ppf ~lower ~ep s =
+  let fields = field_names s in
+  let n_fields = List.length fields in
+  Fmt.pf ppf "CAMLprim value caml_wire_%s_parse(value v_buf) {@\n" lower;
+  Fmt.pf ppf "  CAMLparam1(v_buf);@\n";
+  Fmt.pf ppf "  CAMLlocal1(v_result);@\n";
+  Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
+  Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
+  Fmt.pf ppf "  v_result = caml_alloc(%d, 0);@\n" n_fields;
+  Fmt.pf ppf "  WIRECTX ctx = { v_result };@\n";
+  Fmt.pf ppf "  uint64_t r = %sValidate%s(&ctx, NULL, %s_err, data, len, 0);@\n"
+    ep ep lower;
+  Fmt.pf ppf "  if (!EverParseIsSuccess(r)) { CAMLreturn(Atom(0)); }@\n";
+  Fmt.pf ppf "  CAMLreturn(v_result);@\n";
+  Fmt.pf ppf "}@\n@\n"
+
+let c_stub_no_params ppf ~lower ~ep =
+  Fmt.pf ppf "CAMLprim value caml_wire_%s_check(value v_buf) {@\n" lower;
+  Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
+  Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
+  Fmt.pf ppf "  uint64_t r = %sValidate%s(NULL, %s_err, data, len, 0);@\n" ep ep
+    lower;
+  Fmt.pf ppf "  return Val_bool(EverParseIsSuccess(r));@\n";
+  Fmt.pf ppf "}@\n@\n"
+
+let c_stub_with_params ppf ~lower ~ep ~input_params ~output_params =
+  let n_args = 1 + List.length input_params + List.length output_params in
+  let arg_names =
+    "v_buf"
+    :: List.map (fun (p : Wire.param) -> "v_" ^ param_name p) input_params
+    @ List.map (fun (p : Wire.param) -> "v_" ^ param_name p) output_params
+  in
+  if n_args <= 5 then begin
+    Fmt.pf ppf "CAMLprim value caml_wire_%s_check(%s) {@\n" lower
+      (String.concat ", " (List.map (fun a -> "value " ^ a) arg_names))
+  end
+  else begin
+    Fmt.pf ppf
+      "CAMLprim value caml_wire_%s_check_bytecode(value *argv, int argn) {@\n"
+      lower;
+    Fmt.pf ppf "  (void)argn;@\n";
+    List.iteri (fun i a -> Fmt.pf ppf "  value %s = argv[%d];@\n" a i) arg_names;
+    Fmt.pf ppf "@\n"
+  end;
+  Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
+  Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
+  List.iter
+    (fun p ->
+      let n = param_name p in
+      Fmt.pf ppf "  %s %s_val = Int_val(v_%s);@\n" (param_c_type p) n n)
+    input_params;
+  List.iter
+    (fun p ->
+      let n = param_name p in
+      Fmt.pf ppf "  %s %s_val = 0;@\n" (param_c_type p) n)
+    output_params;
+  let param_args =
+    List.map (fun p -> param_name p ^ "_val") input_params
+    @ List.map (fun p -> "&" ^ param_name p ^ "_val") output_params
+  in
+  let all_args = param_args @ [ "NULL"; lower ^ "_err"; "data"; "len"; "0" ] in
+  Fmt.pf ppf "  uint64_t r = %sValidate%s(%s);@\n" ep ep
+    (String.concat ", " all_args);
+  List.iter
+    (fun p ->
+      let n = param_name p in
+      Fmt.pf ppf "  Store_field(v_%s, 0, Val_int(%s_val));@\n" n n)
+    output_params;
+  Fmt.pf ppf "  return Val_bool(EverParseIsSuccess(r));@\n";
+  Fmt.pf ppf "}@\n@\n"
+
 let c_stub_check ?(output = false) ppf (s : Wire.C.Raw.struct_) =
   let name = Wire.C.Raw.struct_name s in
   let params = Wire.C.Raw.struct_params s in
@@ -29,83 +100,9 @@ let c_stub_check ?(output = false) ppf (s : Wire.C.Raw.struct_) =
   let output_params =
     List.filter (fun (p : Wire.param) -> param_is_mutable p) params
   in
-  if output then begin
-    (* Extern callback pattern: WireCtx holds OCaml record, setters fill it *)
-    let fields = field_names s in
-    let n_fields = List.length fields in
-    Fmt.pf ppf "CAMLprim value caml_wire_%s_parse(value v_buf) {@\n" lower;
-    Fmt.pf ppf "  CAMLparam1(v_buf);@\n";
-    Fmt.pf ppf "  CAMLlocal1(v_result);@\n";
-    Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
-    Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
-    Fmt.pf ppf "  v_result = caml_alloc(%d, 0);@\n" n_fields;
-    Fmt.pf ppf "  WIRECTX ctx = { v_result };@\n";
-    Fmt.pf ppf
-      "  uint64_t r = %sValidate%s(&ctx, NULL, %s_err, data, len, 0);@\n" ep ep
-      lower;
-    Fmt.pf ppf "  if (!EverParseIsSuccess(r)) { CAMLreturn(Atom(0)); }@\n";
-    Fmt.pf ppf "  CAMLreturn(v_result);@\n";
-    Fmt.pf ppf "}@\n@\n"
-  end
-  else if params = [] then begin
-    Fmt.pf ppf "CAMLprim value caml_wire_%s_check(value v_buf) {@\n" lower;
-    Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
-    Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
-    Fmt.pf ppf "  uint64_t r = %sValidate%s(NULL, %s_err, data, len, 0);@\n" ep
-      ep lower;
-    Fmt.pf ppf "  return Val_bool(EverParseIsSuccess(r));@\n";
-    Fmt.pf ppf "}@\n@\n"
-  end
-  else begin
-    let n_args = 1 + List.length input_params + List.length output_params in
-    let arg_names =
-      "v_buf"
-      :: List.map (fun (p : Wire.param) -> "v_" ^ param_name p) input_params
-      @ List.map (fun (p : Wire.param) -> "v_" ^ param_name p) output_params
-    in
-    if n_args <= 5 then begin
-      Fmt.pf ppf "CAMLprim value caml_wire_%s_check(%s) {@\n" lower
-        (String.concat ", " (List.map (fun a -> "value " ^ a) arg_names))
-    end
-    else begin
-      Fmt.pf ppf
-        "CAMLprim value caml_wire_%s_check_bytecode(value *argv, int argn) {@\n"
-        lower;
-      Fmt.pf ppf "  (void)argn;@\n";
-      List.iteri
-        (fun i a -> Fmt.pf ppf "  value %s = argv[%d];@\n" a i)
-        arg_names;
-      Fmt.pf ppf "@\n"
-    end;
-    Fmt.pf ppf "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);@\n";
-    Fmt.pf ppf "  uint32_t len = caml_string_length(v_buf);@\n";
-    List.iter
-      (fun p ->
-        let n = param_name p in
-        Fmt.pf ppf "  %s %s_val = Int_val(v_%s);@\n" (param_c_type p) n n)
-      input_params;
-    List.iter
-      (fun p ->
-        let n = param_name p in
-        Fmt.pf ppf "  %s %s_val = 0;@\n" (param_c_type p) n)
-      output_params;
-    let param_args =
-      List.map (fun p -> param_name p ^ "_val") input_params
-      @ List.map (fun p -> "&" ^ param_name p ^ "_val") output_params
-    in
-    let all_args =
-      param_args @ [ "NULL"; lower ^ "_err"; "data"; "len"; "0" ]
-    in
-    Fmt.pf ppf "  uint64_t r = %sValidate%s(%s);@\n" ep ep
-      (String.concat ", " all_args);
-    List.iter
-      (fun p ->
-        let n = param_name p in
-        Fmt.pf ppf "  Store_field(v_%s, 0, Val_int(%s_val));@\n" n n)
-      output_params;
-    Fmt.pf ppf "  return Val_bool(EverParseIsSuccess(r));@\n";
-    Fmt.pf ppf "}@\n@\n"
-  end
+  if output then c_stub_output ppf ~lower ~ep s
+  else if params = [] then c_stub_no_params ppf ~lower ~ep
+  else c_stub_with_params ppf ~lower ~ep ~input_params ~output_params
 
 let to_c_stubs ?(output = false) (structs : Wire.C.Raw.struct_ list) =
   let buf = Buffer.create 4096 in

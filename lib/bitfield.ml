@@ -14,21 +14,21 @@ let equal a b =
 
 (* Fast word reads — avoid Bytes.get_int32_be which goes through Int32
    boxing/unboxing and byte-by-byte assembly on ARM64. *)
-let[@inline always] get_u16_le buf off =
+let[@inline always] u16_le buf off =
   Char.code (Bytes.unsafe_get buf off)
   lor (Char.code (Bytes.unsafe_get buf (off + 1)) lsl 8)
 
-let[@inline always] get_u16_be buf off =
+let[@inline always] u16_be buf off =
   (Char.code (Bytes.unsafe_get buf off) lsl 8)
   lor Char.code (Bytes.unsafe_get buf (off + 1))
 
-let[@inline always] get_u32_le buf off =
+let[@inline always] u32_le buf off =
   Char.code (Bytes.unsafe_get buf off)
   lor (Char.code (Bytes.unsafe_get buf (off + 1)) lsl 8)
   lor (Char.code (Bytes.unsafe_get buf (off + 2)) lsl 16)
   lor (Char.code (Bytes.unsafe_get buf (off + 3)) lsl 24)
 
-let[@inline always] get_u32_be buf off =
+let[@inline always] u32_be buf off =
   (Char.code (Bytes.unsafe_get buf off) lsl 24)
   lor (Char.code (Bytes.unsafe_get buf (off + 1)) lsl 16)
   lor (Char.code (Bytes.unsafe_get buf (off + 2)) lsl 8)
@@ -37,10 +37,10 @@ let[@inline always] get_u32_be buf off =
 let read_word base buf off =
   match base with
   | BF_U8 -> Bytes.get_uint8 buf off
-  | BF_U16 Little -> get_u16_le buf off
-  | BF_U16 Big -> get_u16_be buf off
-  | BF_U32 Little -> get_u32_le buf off
-  | BF_U32 Big -> get_u32_be buf off
+  | BF_U16 Little -> u16_le buf off
+  | BF_U16 Big -> u16_be buf off
+  | BF_U32 Little -> u32_le buf off
+  | BF_U32 Big -> u32_be buf off
 
 let write_word base buf off v =
   match base with

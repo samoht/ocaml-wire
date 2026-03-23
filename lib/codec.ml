@@ -178,8 +178,7 @@ let rec compile_expr (env : (string * (bytes -> int -> int)) list)
       | Some reader -> reader
       | None ->
           invalid_arg
-            (Printf.sprintf "Codec: unbound field ref %S in size expression"
-               name))
+            (Fmt.str "Codec: unbound field ref %S in size expression" name))
   | Add (a, b) ->
       let fa = compile_expr env a in
       let fb = compile_expr env b in

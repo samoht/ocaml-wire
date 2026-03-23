@@ -124,7 +124,8 @@ let random_struct seed =
 
 let generate_c_stubs ~schema_dir outdir schemas =
   let oc = open_out (Filename.concat outdir "stubs.c") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   let param_name = Wire.Private.param_name in
   let param_is_mutable = Wire.Private.param_is_mutable in
   let param_c_type = Wire.Private.param_c_type in
@@ -193,21 +194,24 @@ let generate_c_stubs ~schema_dir outdir schemas =
       pr "  CAMLreturn(Val_bool(result));\n";
       pr "}\n\n")
     schemas;
+  Format.pp_print_flush ppf ();
   close_out oc
 
 let generate_ml_stubs outdir schemas =
   let oc = open_out (Filename.concat outdir "stubs.ml") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   List.iter
     (fun rs ->
       let name = Wire.C.Raw.struct_name rs.struct_ in
       let lower = String.lowercase_ascii name in
       pr "external %s_check : bytes -> bool = \"caml_%s_check\"\n" lower lower)
     schemas;
+  Format.pp_print_flush ppf ();
   close_out oc
 
-let emit_constraint_check oc rf offset k =
-  let pr fmt = Printf.fprintf oc fmt in
+let emit_constraint_check ppf rf offset k =
+  let pr fmt = Fmt.pf ppf fmt in
   let endian = if rf.big_endian then "be" else "le" in
   match rf.ft.wire_size with
   | 1 ->
@@ -218,14 +222,12 @@ let emit_constraint_check oc rf offset k =
       pr "  if %s > %d then false else\n" rf.name k
   | 4 ->
       pr "  let %s = Bytes.get_int32_%s buf %d in\n" rf.name endian offset;
-      Printf.fprintf oc
-        "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n" rf.name
-        (Int32.of_int k)
+      Fmt.pf ppf "  if Int32.unsigned_compare %s (%ldl) > 0 then false else\n"
+        rf.name (Int32.of_int k)
   | 8 ->
       pr "  let %s = Bytes.get_int64_%s buf %d in\n" rf.name endian offset;
-      Printf.fprintf oc
-        "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n" rf.name
-        (Int64.of_int k)
+      Fmt.pf ppf "  if Int64.unsigned_compare %s (%LdL) > 0 then false else\n"
+        rf.name (Int64.of_int k)
   | _ ->
       pr "  let %s = Bytes.get_uint8 buf %d in\n" rf.name offset;
       pr "  if %s > %d then false else\n" rf.name k
@@ -237,8 +239,8 @@ let fields_with_offsets fields =
   in
   aux 0 fields
 
-let emit_wire_checker oc rs =
-  let pr fmt = Printf.fprintf oc fmt in
+let emit_wire_checker ppf rs =
+  let pr fmt = Fmt.pf ppf fmt in
   let name = Wire.C.Raw.struct_name rs.struct_ in
   let lower = String.lowercase_ascii name in
   pr "(* %s: wire_size=%d *)\n" name rs.total_wire_size;
@@ -251,13 +253,14 @@ let emit_wire_checker oc rs =
       (fields_with_offsets rs.fields)
   in
   List.iter
-    (fun (rf, offset, k) -> emit_constraint_check oc rf offset k)
+    (fun (rf, offset, k) -> emit_constraint_check ppf rf offset k)
     constrained_fields;
   pr "  true\n\n"
 
 let generate_test_runner outdir schemas =
   let oc = open_out (Filename.concat outdir "diff_test.ml") in
-  let pr fmt = Printf.fprintf oc fmt in
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
   pr "(* Auto-generated differential test runner *)\n\n";
   pr "let num_values = 100\n\n";
   pr "type schema = {\n";
@@ -266,7 +269,7 @@ let generate_test_runner outdir schemas =
   pr "  wire_check : bytes -> bool;\n";
   pr "  c_check : bytes -> bool;\n";
   pr "}\n\n";
-  List.iter (emit_wire_checker oc) schemas;
+  List.iter (emit_wire_checker ppf) schemas;
   (* Generate schema list *)
   pr "let schemas = [\n";
   List.iter
@@ -306,6 +309,7 @@ let generate_test_runner outdir schemas =
     "  Printf.printf \"Tested %%d values across %%d schemas, %%d mismatches\\n\"\n";
   pr "    !total_tests (List.length schemas) !mismatches;\n";
   pr "  if !mismatches > 0 then exit 1\n";
+  Format.pp_print_flush ppf ();
   close_out oc
 
 (* ---- Parameterized schema for action testing ---- *)
