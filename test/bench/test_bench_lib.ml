@@ -94,7 +94,7 @@ let test_check_ffi_failure () =
   | exception Failure _ -> ()
   | () -> Alcotest.fail "expected Failure"
 
-let test_check_ffi_receives_correct_buf () =
+let test_ffi_buf_correct () =
   let expected = Bytes.of_string "DEADBEEF" in
   let received = ref Bytes.empty in
   let t =
@@ -108,7 +108,7 @@ let test_check_ffi_receives_correct_buf () =
   check t;
   Alcotest.(check string) "ffi buf" "DEADBEEF" (Bytes.to_string !received)
 
-let test_with_c_with_ffi_order_independent () =
+let test_c_ffi_order () =
   let c_called = ref false in
   let ffi_called = ref false in
   let c_loop _buf _off _n =
@@ -145,7 +145,7 @@ let test_reset_called_before_check () =
   let rev = List.rev !trace in
   Alcotest.(check (list string)) "order" [ "reset"; "ocaml" ] rev
 
-let test_reset_count_in_run_one () =
+let test_run_one_reset () =
   (* run_one calls reset: once in check, once before timing, once before alloc
      = 3 total *)
   let reset_count = ref 0 in
@@ -233,7 +233,7 @@ let test_time_ns_non_negative () =
   let ns = time_ns 1 noop in
   Alcotest.(check bool) "non-negative" true (ns >= 0.0)
 
-let test_time_ns_divides_by_n () =
+let test_time_ns_division () =
   (* time_ns 2 should return roughly half of time_ns 1 for the same work *)
   let work () =
     let r = ref 0 in
@@ -336,20 +336,18 @@ let () =
           Alcotest.test_case "with ffi" `Quick test_check_with_ffi;
           Alcotest.test_case "ffi failure" `Quick test_check_ffi_failure;
           Alcotest.test_case "ffi receives correct buf" `Quick
-            test_check_ffi_receives_correct_buf;
+            test_ffi_buf_correct;
         ] );
       ( "builder",
         [
           Alcotest.test_case "v ocaml only" `Quick test_v_ocaml_only;
-          Alcotest.test_case "with_c/with_ffi order" `Quick
-            test_with_c_with_ffi_order_independent;
+          Alcotest.test_case "with_c/with_ffi order" `Quick test_c_ffi_order;
         ] );
       ( "reset",
         [
           Alcotest.test_case "called before check" `Quick
             test_reset_called_before_check;
-          Alcotest.test_case "count in run_one" `Quick
-            test_reset_count_in_run_one;
+          Alcotest.test_case "count in run_one" `Quick test_run_one_reset;
           Alcotest.test_case "reinitializes cycling" `Quick
             test_reset_reinitializes_cycling;
           Alcotest.test_case "mutable counter" `Quick
@@ -366,8 +364,7 @@ let () =
         [
           Alcotest.test_case "time_ns non-negative" `Quick
             test_time_ns_non_negative;
-          Alcotest.test_case "time_ns divides by n" `Quick
-            test_time_ns_divides_by_n;
+          Alcotest.test_case "time_ns divides by n" `Quick test_time_ns_division;
           Alcotest.test_case "alloc_words zero" `Quick test_alloc_words_zero;
           Alcotest.test_case "alloc_words nonzero" `Quick
             test_alloc_words_nonzero;
