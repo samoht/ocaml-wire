@@ -124,12 +124,10 @@ let () =
 
   Fmt.pr "Wire Codec Benchmark\n";
   Fmt.pr "====================\n";
-  Fmt.pr
-    "All three tiers use EverParse-generated validators from the same Wire DSL.\n";
-  Fmt.pr "  C        = EverParse validate in a C loop (no OCaml overhead)\n";
-  Fmt.pr "  FFI      = same EverParse validate, called from OCaml\n";
-  Fmt.pr
-    "  OCaml    = Wire Codec.get (single field, zero-copy, no validation)\n";
+  Fmt.pr "All three tiers validate + decode the full record.\n";
+  Fmt.pr "  C        = EverParse validate+extract in a C loop\n";
+  Fmt.pr "  FFI      = same EverParse, called from OCaml\n";
+  Fmt.pr "  OCaml    = Wire Codec.decode (full record)\n";
 
   (* ── Read benchmarks ── *)
   run_table ~title:"Read: field access (ns/op)" ~n
