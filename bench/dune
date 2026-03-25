@@ -60,4 +60,7 @@
  (foreign_stubs
   (language c)
   (names c_stubs)
+  (extra_deps
+   (glob_files schemas/*.c)
+   (glob_files schemas/*.h))
   (flags :standard -I schemas)))

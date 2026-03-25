@@ -427,7 +427,7 @@ let test_view_get_bool () =
     (codec, cf_flag)
   in
   let buf = Bytes.create 1 in
-  Bytes.set_uint8 buf 0 0x80;
+  Bytes.set_uint8 buf 0 0x01;
   Alcotest.(check bool)
     "get flag=true" true
     ((Staged.unstage (Codec.get codec cf_flag)) buf 0);
@@ -537,7 +537,7 @@ let test_view_set_bool () =
   Alcotest.(check bool)
     "get flag after set true" true
     ((Staged.unstage (Codec.get codec cf_flag)) buf 0);
-  Alcotest.(check int) "byte value" 0x80 (Bytes.get_uint8 buf 0);
+  Alcotest.(check int) "byte value" 0x01 (Bytes.get_uint8 buf 0);
   (Staged.unstage (Codec.set codec cf_flag)) buf 0 false;
   Alcotest.(check bool)
     "get flag after set false" false
@@ -583,8 +583,8 @@ let test_view_shared_field_spec () =
 
 let test_view_shared_bitfield_spec () =
   (* Two codecs with different bitfield layouts, each with their own field "a".
-     Codec1: [3-bit a] [5-bit b]            -> a is top 3 bits
-     Codec2: [5-bit pad] [3-bit a]           -> a is bottom 3 bits
+     Codec1: [3-bit a] [5-bit b]            -> a is bottom 3 bits (LSBFirst)
+     Codec2: [5-bit pad] [3-bit a]           -> a is top 3 bits (LSBFirst)
      Each codec gets a fresh field object. *)
   let f1_a = Field.v "a" (bits ~width:3 U8) in
   let cf1_a = Codec.(f1_a $ fun (a, _) -> a) in
@@ -602,16 +602,16 @@ let test_view_shared_bitfield_spec () =
       (fun _pad a -> (a, 0))
       [ (Field.v "pad" (bits ~width:5 U8) $ fun _ -> 0); cf2_a ]
   in
-  (* 0xE3 = 0b_111_00011
-     codec1 reads top 3 bits -> 7
-     codec2 reads bottom 3 bits -> 3 *)
+  (* 0xE3 = 0b_1110_0011
+     codec1 reads bottom 3 bits -> 3
+     codec2 reads top 3 bits -> 7 *)
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0xE3;
   Alcotest.(check int)
-    "codec1 get a (top 3)" 7
+    "codec1 get a (bot 3)" 3
     ((Staged.unstage (Codec.get codec1 cf1_a)) buf 0);
   Alcotest.(check int)
-    "codec2 get a (bot 3)" 3
+    "codec2 get a (top 3)" 7
     ((Staged.unstage (Codec.get codec2 cf2_a)) buf 0)
 
 let test_view_shared_set_independent () =
@@ -632,17 +632,17 @@ let test_view_shared_set_independent () =
       (fun pad v -> (v, pad))
       [ (Field.v "pad" (bits ~width:4 U8) $ fun (_, p) -> p); cf2 ]
   in
-  (* Start: 0x00. Set codec1's field (top nibble) to 0xA *)
+  (* Start: 0x00. Set codec1's field (bottom nibble) to 0xA *)
   let buf = Bytes.create 1 in
   (Staged.unstage (Codec.set codec1 cf1)) buf 0 0xA;
-  Alcotest.(check int) "byte after set1" 0xA0 (Bytes.get_uint8 buf 0);
-  (* codec2's field is bottom nibble -- should still be 0 *)
+  Alcotest.(check int) "byte after set1" 0x0A (Bytes.get_uint8 buf 0);
+  (* codec2's field is top nibble -- should still be 0 *)
   Alcotest.(check int)
     "codec2 get after set1" 0
     ((Staged.unstage (Codec.get codec2 cf2)) buf 0);
-  (* Set codec2's field (bottom nibble) to 0x5 *)
+  (* Set codec2's field (top nibble) to 0x5 *)
   (Staged.unstage (Codec.set codec2 cf2)) buf 0 0x5;
-  Alcotest.(check int) "byte after set2" 0xA5 (Bytes.get_uint8 buf 0);
+  Alcotest.(check int) "byte after set2" 0x5A (Bytes.get_uint8 buf 0);
   (* codec1's field should still be 0xA *)
   Alcotest.(check int)
     "codec1 get after set2" 0xA
@@ -754,12 +754,12 @@ let test_raw_get_bitfield () =
   let codec = Codec.v "RawBF" (fun hi lo -> (hi, lo)) [ cf_hi; cf_lo ] in
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0xA7;
-  (* hi=0xA=10, lo=0x7=7 *)
+  (* hi=bits 3-0=0x7, lo=bits 7-4=0xA *)
   Alcotest.(check int)
-    "get hi" 0xA
+    "get hi" 0x7
     ((Staged.unstage (Codec.get codec cf_hi)) buf 0);
   Alcotest.(check int)
-    "get lo" 0x7
+    "get lo" 0xA
     ((Staged.unstage (Codec.get codec cf_lo)) buf 0)
 
 let test_raw_set_uint () =
@@ -785,7 +785,7 @@ let test_raw_set_bitfield () =
   Bytes.set_uint8 buf 0 0x00;
   (Staged.unstage (Codec.set codec cf_hi)) buf 0 0xC;
   (Staged.unstage (Codec.set codec cf_lo)) buf 0 0x3;
-  Alcotest.(check int) "set bf byte" 0xC3 (Bytes.get_uint8 buf 0)
+  Alcotest.(check int) "set bf byte" 0x3C (Bytes.get_uint8 buf 0)
 
 let test_raw_sub_nested () =
   (* Two-layer nested protocol using sub + get: zero alloc *)
@@ -1271,7 +1271,7 @@ let bf_codec =
 let test_bitfield_extract () =
   let buf = Bytes.create 1 in
   Bytes.set_uint8 buf 0 0xA7;
-  (* hi=0xA=10, lo=0x7=7 *)
+  (* hi=bits 3-0=0x7, lo=bits 7-4=0xA *)
   let bf_hi = Codec.bitfield bf_codec bf_cf_hi in
   let bf_lo = Codec.bitfield bf_codec bf_cf_lo in
   let load = Staged.unstage (Codec.load_word bf_hi) in
@@ -1283,8 +1283,8 @@ let test_bitfield_extract () =
   let get_lo = Staged.unstage (Codec.get bf_codec bf_cf_lo) in
   Alcotest.(check int) "extract hi = get hi" (get_hi buf 0) hi;
   Alcotest.(check int) "extract lo = get lo" (get_lo buf 0) lo;
-  Alcotest.(check int) "hi" 0xA hi;
-  Alcotest.(check int) "lo" 0x7 lo
+  Alcotest.(check int) "hi" 0x7 hi;
+  Alcotest.(check int) "lo" 0xA lo
 
 let test_bitfield_non_bf_raises () =
   let f_x = Field.v "x" uint16be in
