@@ -665,13 +665,6 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
     | Enum { base; _ } -> add base get_wire wrap_reader wrap_writer eq
     | Bits { width; base } ->
         let total = bf_base_total_bits base in
-        let need_new_group =
-          match r.r_bf with
-          | None -> true
-          | Some bf ->
-              (not (bf_base_equal bf.bfc_base base))
-              || bf.bfc_bits_used + width > bf.bfc_total_bits
-        in
         let static_off =
           match r.r_next_off with
           | Static_next n -> n
@@ -680,16 +673,17 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
                 "add_field: bitfields after variable-size fields not supported"
         in
         let base_off, bits_used, size_delta, extra_writers =
-          if need_new_group then
-            let base_off = static_off in
-            let clear = build_bf_clear base base_off in
-            ( base_off,
-              0,
-              bf_base_byte_size base,
-              [ (fun _v buf off -> clear buf off) ] )
-          else
-            let bf = Option.get r.r_bf in
-            (bf.bfc_base_off, bf.bfc_bits_used, 0, [])
+          match r.r_bf with
+          | Some bf
+            when bf_base_equal bf.bfc_base base
+                 && bf.bfc_bits_used + width <= bf.bfc_total_bits ->
+              (bf.bfc_base_off, bf.bfc_bits_used, 0, [])
+          | _ ->
+              let clear = build_bf_clear base static_off in
+              ( static_off,
+                0,
+                bf_base_byte_size base,
+                [ (fun _v buf off -> clear buf off) ] )
         in
         let shift =
           if Bitfield.is_lsb_first base then bits_used
