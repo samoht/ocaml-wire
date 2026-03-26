@@ -83,7 +83,7 @@ let test_pretty_print () =
     (contains ~sub:"UINT16BE" output)
 
 let suite =
-  ( "c",
+  ( "everparse",
     [
       Alcotest.test_case "generation: bitfields" `Quick test_bitfields;
       Alcotest.test_case "generation: enumerations" `Quick test_enumerations;

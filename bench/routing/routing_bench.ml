@@ -79,7 +79,7 @@ type state = {
 let pp_counts ppf (hk, sci, diag, idle) =
   Fmt.pf ppf "(hk=%d sci=%d diag=%d idle=%d)" hk sci diag idle
 
-let create_state buf total_bytes =
+let state buf total_bytes =
   let hdr = Wire.Codec.wire_size Space.packet_codec in
   {
     buf;
@@ -123,9 +123,9 @@ let run_packets state n_pkts =
 
 let verify ~n_pkts () =
   let buf, total_bytes, _payload_bytes = generate_stream n_pkts in
-  let state = create_state buf total_bytes in
-  reset state;
-  let ocaml_counts = run_packets state n_pkts in
+  let st = state buf total_bytes in
+  reset st;
+  let ocaml_counts = run_packets st n_pkts in
   let c_counts = c_apid_route_counts buf 0 n_pkts in
   if ocaml_counts <> c_counts then
     Fmt.failwith "Routing result mismatch: OCaml=%a C=%a" pp_counts ocaml_counts
@@ -133,28 +133,28 @@ let verify ~n_pkts () =
 
 let benchmark ~n_pkts =
   let buf, total_bytes, payload_bytes = generate_stream n_pkts in
-  let state = create_state buf total_bytes in
-  let ocaml_result () = run_packets state n_pkts in
+  let st = state buf total_bytes in
+  let ocaml_result () = run_packets st n_pkts in
   let c_result () = c_apid_route_counts buf 0 n_pkts in
   let t =
-    v "Wire (staged Codec.get)" ~size:state.hdr
-      ~reset:(fun () -> reset state)
-      (step state)
+    v "Wire (staged Codec.get)" ~size:st.hdr
+      ~reset:(fun () -> reset st)
+      (step st)
     |> with_c c_apid_route buf
     |> with_expect ~equal:( = ) ~pp:pp_counts ~c:c_result ocaml_result
   in
-  (t, payload_bytes, state, buf)
+  (t, payload_bytes, st, buf)
 
 let main () =
   Memtrace.trace_if_requested ~context:"routing" ();
   let n_pkts = 10_000_000 in
-  let t, payload_bytes, state, buf = benchmark ~n_pkts in
+  let t, payload_bytes, st, buf = benchmark ~n_pkts in
   Fmt.pr "APID demux (%d packets, %d MB stream, %d MB payload)\n\n" n_pkts
     (Bytes.length buf / 1_000_000)
     (payload_bytes / 1_000_000);
   run_table ~title:"APID routing" ~n:n_pkts ~unit:"pkt" [ t ];
-  reset state;
-  let ocaml_counts = run_packets state n_pkts in
+  reset st;
+  let ocaml_counts = run_packets st n_pkts in
   let c_counts = c_apid_route_counts buf 0 n_pkts in
   Fmt.pr "\n  OCaml: %a\n" pp_counts ocaml_counts;
   Fmt.pr "  C:     %a\n" pp_counts c_counts

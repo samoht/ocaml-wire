@@ -68,17 +68,14 @@ type state = {
   buf : bytes;
   n_frames : int;
   total_pkts : int;
-  pkt_size : int;
   get_vcid : bytes -> int -> int;
   get_fhp : bytes -> int -> int;
-  get_apid : bytes -> int -> int;
-  get_seq : bytes -> int -> int;
   walk_frame : int -> (int -> int -> unit) -> unit;
   scan_once : unit -> unit;
   reset_cycle : unit -> unit;
 }
 
-let create_state n_frames =
+let state n_frames =
   let buf, total_pkts = generate_frames n_frames in
   let pkt_payload = 64 in
   let pkt_size = sp_hdr + pkt_payload in
@@ -112,11 +109,8 @@ let create_state n_frames =
     buf;
     n_frames;
     total_pkts;
-    pkt_size;
     get_vcid;
     get_fhp;
-    get_apid;
-    get_seq;
     walk_frame;
     scan_once;
     reset_cycle;
@@ -142,35 +136,35 @@ let process_all_frames state =
   !checksum
 
 let verify ~n_frames () =
-  let state = create_state n_frames in
-  let ocaml_checksum = process_all_frames state in
-  let c_checksum = c_tm_reassemble_checksum state.buf 0 in
+  let st = state n_frames in
+  let ocaml_checksum = process_all_frames st in
+  let c_checksum = c_tm_reassemble_checksum st.buf 0 in
   if ocaml_checksum <> c_checksum then
     Fmt.failwith "TM reassembly mismatch: OCaml=%Lx C=%Lx" ocaml_checksum
       c_checksum
 
 let benchmark ~n_frames =
-  let state = create_state n_frames in
-  let ocaml_result () = process_all_frames state in
-  let c_result () = c_tm_reassemble_checksum state.buf 0 in
+  let st = state n_frames in
+  let ocaml_result () = process_all_frames st in
+  let c_result () = c_tm_reassemble_checksum st.buf 0 in
   let t =
     v "Wire (staged Codec.get)" ~size:cadu_size
-      ~reset:(fun () -> reset state)
-      (step state)
-    |> with_c c_tm_reassemble state.buf
+      ~reset:(fun () -> reset st)
+      (step st)
+    |> with_c c_tm_reassemble st.buf
     |> with_expect ~equal:Int64.equal ~pp:Fmt.int64 ~c:c_result ocaml_result
   in
-  (t, state)
+  (t, st)
 
 let main () =
   Memtrace.trace_if_requested ~context:"gateway" ();
   let n_frames = 1_000_000 in
-  let t, state = benchmark ~n_frames in
+  let t, st = benchmark ~n_frames in
   Fmt.pr
     "TM frame reassembly (%d frames, %d-byte CADUs, %d embedded packets)\n\n"
-    n_frames cadu_size state.total_pkts;
+    n_frames cadu_size st.total_pkts;
   run_table ~title:"TM frame reassembly" ~n:n_frames ~unit:"frm" [ t ];
-  let ocaml_checksum = process_all_frames state in
-  let c_checksum = c_tm_reassemble_checksum state.buf 0 in
+  let ocaml_checksum = process_all_frames st in
+  let c_checksum = c_tm_reassemble_checksum st.buf 0 in
   Fmt.pr "\n  OCaml checksum: 0x%Lx\n  C checksum:     0x%Lx\n" ocaml_checksum
     c_checksum

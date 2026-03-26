@@ -31,17 +31,12 @@ type state = {
   n_words : int;
   anomalies : int ref;
   expected_seq : int ref;
-  load : bytes -> int -> int;
-  bf_lockout : C.bitfield;
-  bf_wait : C.bitfield;
-  bf_retransmit : C.bitfield;
-  bf_report : C.bitfield;
   process_word : bytes -> int -> unit;
   step_once : unit -> unit;
   reset_cycle : unit -> unit;
 }
 
-let create_state n_words =
+let state n_words =
   let buf = generate_stream n_words in
   let bf_lockout = C.bitfield Space.clcw_codec cf_lockout in
   let bf_wait = C.bitfield Space.clcw_codec cf_wait in
@@ -69,11 +64,6 @@ let create_state n_words =
     n_words;
     anomalies;
     expected_seq;
-    load;
-    bf_lockout;
-    bf_wait;
-    bf_retransmit;
-    bf_report;
     process_word;
     step_once;
     reset_cycle;
@@ -94,36 +84,36 @@ let run_all state =
   !(state.anomalies)
 
 let verify ~n_words () =
-  let state = create_state n_words in
-  reset state;
-  let ocaml_anomalies = run_all state in
-  let c_anomalies = c_clcw_poll_result state.buf 0 in
+  let st = state n_words in
+  reset st;
+  let ocaml_anomalies = run_all st in
+  let c_anomalies = c_clcw_poll_result st.buf 0 in
   if ocaml_anomalies <> c_anomalies then
     Fmt.failwith "CLCW result mismatch: OCaml=%d C=%d" ocaml_anomalies
       c_anomalies
 
 let benchmark ~n_words =
-  let state = create_state n_words in
-  let ocaml_result () = run_all state in
-  let c_result () = c_clcw_poll_result state.buf 0 in
+  let st = state n_words in
+  let ocaml_result () = run_all st in
+  let c_result () = c_clcw_poll_result st.buf 0 in
   let t =
     v "Wire (staged Codec.get)" ~size:word_size
-      ~reset:(fun () -> reset state)
-      (step state)
-    |> with_c c_clcw_poll state.buf
+      ~reset:(fun () -> reset st)
+      (step st)
+    |> with_c c_clcw_poll st.buf
     |> with_expect ~equal:Int.equal ~pp:Fmt.int ~c:c_result ocaml_result
   in
-  (t, state)
+  (t, st)
 
 let main () =
   Memtrace.trace_if_requested ~context:"clcw" ();
   let n_words = 10_000_000 in
-  let t, state = benchmark ~n_words in
+  let t, st = benchmark ~n_words in
   Fmt.pr "CLCW polling loop (%d words, %dB each, contiguous buffer)\n\n" n_words
     word_size;
   run_table ~title:"CLCW polling" ~n:(n_words * 10) ~unit:"word" [ t ];
-  reset state;
-  let ocaml_anomalies = run_all state in
-  let c_anomalies = c_clcw_poll_result state.buf 0 in
+  reset st;
+  let ocaml_anomalies = run_all st in
+  let c_anomalies = c_clcw_poll_result st.buf 0 in
   Fmt.pr "\n  OCaml anomalies: %d\n  C anomalies:     %d\n" ocaml_anomalies
     c_anomalies

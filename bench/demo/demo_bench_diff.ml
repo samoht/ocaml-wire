@@ -104,10 +104,9 @@ let diff_of_case (Read_case c) =
   { id = c.id; label = c.label; packed }
 
 let cases = List.map diff_of_case projection_cases
-let find_case id = List.find (fun c -> c.id = id) cases
 
 let verify_of_id id =
-  let c = find_case id in
+  let c = List.find (fun c -> c.id = id) cases in
   let (Read_case r) =
     List.find (fun (Read_case r) -> r.id = id) projection_cases
   in

@@ -59,13 +59,13 @@ let dataset_of_packed packed ~size =
   let items = Array.init n_items (fun i -> Bytes.sub packed (i * size) size) in
   { items; packed; n_items }
 
-let priority_of_int = function
+let _priority_of_int = function
   | 0 -> Demo.Low
   | 1 -> Demo.Medium
   | 2 -> Demo.High
   | _ -> Demo.Critical
 
-let int_of_priority = function
+let _int_of_priority = function
   | Demo.Low -> 0
   | Demo.Medium -> 1
   | Demo.High -> 2
