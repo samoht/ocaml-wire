@@ -55,10 +55,10 @@ val cycling :
   size:int ->
   (bytes -> int -> unit) ->
   (unit -> unit) * (unit -> unit)
-(** [cycling ~data ~n_items ~size read_fn] returns
-    [((fn : unit -> unit), (reset : unit -> unit))] where [fn] cycles through
-    [n_items] packed items of [size] bytes in [data] using [read_fn], and
-    [reset] rewinds the index to 0. *)
+(** [cycling ~data ~n_items ~size read_fn] builds a cycling reader over
+    [n_items] packed items of [size] bytes in [data]. Returns [(fn, reset)]
+    where [fn ()] applies [read_fn] to the next item and [reset ()] rewinds the
+    index to 0. *)
 
 (** {1 Running and reporting} *)
 
