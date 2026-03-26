@@ -721,7 +721,7 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
           ~bf:(Some new_bf)
           ~configurators_rev:(configurator :: r.r_configurators_rev)
           ~field_readers:((name, int_reader) :: r.r_field_readers)
-    | _ -> (
+    | _ ->
         let field_off_static =
           match r.r_next_off with
           | Static_next n -> Some n
@@ -732,135 +732,143 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
           | Static_next n -> fun (_buf : bytes) (_base : int) -> n
           | Dynamic_next f -> fun buf base -> f buf base - base
         in
-        match field_wire_size typ with
-        | Some fsize ->
-            let field_off =
-              match field_off_static with Some n -> n | None -> -1
-            in
-            let raw_reader =
-              match field_off_static with
-              | Some _ -> build_field_reader typ field_off
-              | None ->
-                  let reader_at_0 = build_field_reader typ 0 in
-                  fun buf base ->
-                    let off = field_off_fn buf base in
-                    reader_at_0 buf (base + off)
-            in
-            let raw_encoder = build_field_encoder typ in
-            let configurator () =
-              fld.f_reader <- wrap_reader raw_reader;
-              fld.f_writer <-
-                (match field_off_static with
-                | Some fo ->
-                    wrap_writer (fun buf off value ->
-                        let _ = raw_encoder buf (off + fo) value in
-                        ())
-                | None ->
-                    wrap_writer (fun buf off value ->
-                        let fo = field_off_fn buf off in
-                        let _ = raw_encoder buf (off + fo) value in
-                        ()))
-            in
-            let new_next_off =
-              match r.r_next_off with
-              | Static_next n -> Static_next (n + fsize)
-              | Dynamic_next f ->
-                  Dynamic_next (fun buf base -> f buf base + fsize)
-            in
-            let int_reader buf base =
-              match int_of_typ_value typ (raw_reader buf base) with
-              | Some v -> v
-              | None -> 0
-            in
-            let encode_writer =
-              match field_off_static with
-              | Some fo ->
-                  fun v buf off ->
-                    let _ = raw_encoder buf (off + fo) (get_wire v) in
-                    ()
-              | None ->
-                  fun v buf off ->
+        add_fixed_or_variable typ get_wire wrap_reader wrap_writer
+          field_off_static field_off_fn
+  and add_fixed_or_variable : type w.
+      w typ ->
+      (r -> w) ->
+      ((bytes -> int -> w) -> bytes -> int -> a) ->
+      ((bytes -> int -> w -> unit) -> bytes -> int -> a -> unit) ->
+      int option ->
+      (bytes -> int -> int) ->
+      (f, r) record =
+   fun typ get_wire wrap_reader wrap_writer field_off_static field_off_fn ->
+    match field_wire_size typ with
+    | Some fsize ->
+        let field_off =
+          match field_off_static with Some n -> n | None -> -1
+        in
+        let raw_reader =
+          match field_off_static with
+          | Some _ -> build_field_reader typ field_off
+          | None ->
+              let reader_at_0 = build_field_reader typ 0 in
+              fun buf base ->
+                let off = field_off_fn buf base in
+                reader_at_0 buf (base + off)
+        in
+        let raw_encoder = build_field_encoder typ in
+        let configurator () =
+          fld.f_reader <- wrap_reader raw_reader;
+          fld.f_writer <-
+            (match field_off_static with
+            | Some fo ->
+                wrap_writer (fun buf off value ->
+                    let _ = raw_encoder buf (off + fo) value in
+                    ())
+            | None ->
+                wrap_writer (fun buf off value ->
                     let fo = field_off_fn buf off in
-                    let _ = raw_encoder buf (off + fo) (get_wire v) in
-                    ()
-            in
-            extend
-              ~readers:(Snoc (r.r_readers, wrap_reader raw_reader))
-              ~writers_rev:(encode_writer :: r.r_writers_rev)
-              ~min_wire_size:(r.r_min_wire_size + fsize)
-              ~next_off:new_next_off
-              ~fields_rev:(struct_field fld :: r.r_fields_rev)
-              ~validators_rev:
-                (build_validator ~byte_off:field_off typ raw_reader
-                :: r.r_validators_rev)
-              ~bf:None
-              ~configurators_rev:(configurator :: r.r_configurators_rev)
-              ~field_readers:((name, int_reader) :: r.r_field_readers)
-        | None ->
-            let size_expr =
-              match typ with
-              | Byte_slice { size } -> size
-              | Byte_array { size } -> size
-              | _ ->
-                  invalid_arg "add_field: unsupported variable-size field type"
-            in
-            let size_fn = compile_expr r.r_field_readers size_expr in
-            let field_off =
-              match field_off_static with
-              | Some n -> n
-              | None ->
-                  invalid_arg
-                    "add_field: multiple variable-size fields not yet supported"
-            in
-            let raw_reader : w typ -> bytes -> int -> w =
-             fun typ buf base ->
-              let sz = size_fn buf base in
-              match typ with
-              | Byte_slice _ ->
-                  Slice.make_or_eod buf ~first:(base + field_off) ~length:sz
-              | Byte_array _ -> Bytes.sub_string buf (base + field_off) sz
-              | _ -> assert false
-            in
-            let reader = raw_reader typ in
-            let raw_writer : w typ -> bytes -> int -> w -> unit =
-             fun typ buf base v ->
-              match typ with
-              | Byte_slice _ ->
-                  let src = (v : Slice.t) in
-                  let len = Slice.length src in
-                  Bytes.blit (Slice.bytes src) (Slice.first src) buf
-                    (base + field_off) len
-              | Byte_array _ ->
-                  let s = (v : string) in
-                  Bytes.blit_string s 0 buf (base + field_off) (String.length s)
-              | _ -> assert false
-            in
-            let writer = raw_writer typ in
-            let configurator () =
-              fld.f_reader <- wrap_reader reader;
-              fld.f_writer <- wrap_writer writer
-            in
-            let new_next_off =
-              Dynamic_next (fun buf base -> base + field_off + size_fn buf base)
-            in
-            let int_reader buf base =
-              match int_of_typ_value typ (reader buf base) with
-              | Some v -> v
-              | None -> 0
-            in
-            extend
-              ~readers:(Snoc (r.r_readers, wrap_reader reader))
-              ~writers_rev:
-                ((fun v buf off -> writer buf off (get_wire v))
-                :: r.r_writers_rev)
-              ~min_wire_size:r.r_min_wire_size ~next_off:new_next_off
-              ~fields_rev:(struct_field fld :: r.r_fields_rev)
-              ~validators_rev:
-                (build_validator ~byte_off:field_off typ reader
-                :: r.r_validators_rev)
-              ~bf:None
-              ~configurators_rev:(configurator :: r.r_configurators_rev)
-              ~field_readers:((name, int_reader) :: r.r_field_readers))
+                    let _ = raw_encoder buf (off + fo) value in
+                    ()))
+        in
+        let new_next_off =
+          match r.r_next_off with
+          | Static_next n -> Static_next (n + fsize)
+          | Dynamic_next f -> Dynamic_next (fun buf base -> f buf base + fsize)
+        in
+        let int_reader buf base =
+          match int_of_typ_value typ (raw_reader buf base) with
+          | Some v -> v
+          | None -> 0
+        in
+        let encode_writer =
+          match field_off_static with
+          | Some fo ->
+              fun v buf off ->
+                let _ = raw_encoder buf (off + fo) (get_wire v) in
+                ()
+          | None ->
+              fun v buf off ->
+                let fo = field_off_fn buf off in
+                let _ = raw_encoder buf (off + fo) (get_wire v) in
+                ()
+        in
+        extend
+          ~readers:(Snoc (r.r_readers, wrap_reader raw_reader))
+          ~writers_rev:(encode_writer :: r.r_writers_rev)
+          ~min_wire_size:(r.r_min_wire_size + fsize)
+          ~next_off:new_next_off
+          ~fields_rev:(struct_field fld :: r.r_fields_rev)
+          ~validators_rev:
+            (build_validator ~byte_off:field_off typ raw_reader
+            :: r.r_validators_rev)
+          ~bf:None
+          ~configurators_rev:(configurator :: r.r_configurators_rev)
+          ~field_readers:((name, int_reader) :: r.r_field_readers)
+    | None ->
+        let size_expr =
+          match typ with
+          | Byte_slice { size } -> size
+          | Byte_array { size } -> size
+          | _ -> invalid_arg "add_field: unsupported variable-size field type"
+        in
+        let size_fn = compile_expr r.r_field_readers size_expr in
+        let field_off =
+          match field_off_static with
+          | Some n -> n
+          | None ->
+              invalid_arg
+                "add_field: multiple variable-size fields not yet supported"
+        in
+        let raw_reader : w typ -> bytes -> int -> w =
+         fun typ buf base ->
+          let sz = size_fn buf base in
+          match typ with
+          | Byte_slice _ ->
+              Slice.make_or_eod buf ~first:(base + field_off) ~length:sz
+          | Byte_array _ -> Bytes.sub_string buf (base + field_off) sz
+          | _ -> assert false
+        in
+        let reader = raw_reader typ in
+        let raw_writer : w typ -> bytes -> int -> w -> unit =
+         fun typ buf base v ->
+          match typ with
+          | Byte_slice _ ->
+              let src = (v : Slice.t) in
+              let len = Slice.length src in
+              Bytes.blit (Slice.bytes src) (Slice.first src) buf
+                (base + field_off) len
+          | Byte_array _ ->
+              let s = (v : string) in
+              Bytes.blit_string s 0 buf (base + field_off) (String.length s)
+          | _ -> assert false
+        in
+        let writer = raw_writer typ in
+        let configurator () =
+          fld.f_reader <- wrap_reader reader;
+          fld.f_writer <- wrap_writer writer
+        in
+        let new_next_off =
+          Dynamic_next (fun buf base -> base + field_off + size_fn buf base)
+        in
+        let int_reader buf base =
+          match int_of_typ_value typ (reader buf base) with
+          | Some v -> v
+          | None -> 0
+        in
+        extend
+          ~readers:(Snoc (r.r_readers, wrap_reader reader))
+          ~writers_rev:
+            ((fun v buf off -> writer buf off (get_wire v)) :: r.r_writers_rev)
+          ~min_wire_size:r.r_min_wire_size ~next_off:new_next_off
+          ~fields_rev:(struct_field fld :: r.r_fields_rev)
+          ~validators_rev:
+            (build_validator ~byte_off:field_off typ reader
+            :: r.r_validators_rev)
+          ~bf:None
+          ~configurators_rev:(configurator :: r.r_configurators_rev)
+          ~field_readers:((name, int_reader) :: r.r_field_readers)
   in
   add typ get (fun reader -> reader) (fun writer -> writer) (Some Refl)
 
