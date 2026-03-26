@@ -455,6 +455,26 @@ let ( $ ) = bind
 (* Bitfield helpers — shared module for base operations, specialized closures
    for performance-critical read/write dispatched at codec construction time. *)
 
+(* Configure a field's reader/writer from a GADT equality witness.
+   When eq = Some Refl, a = w so we can assign the raw reader/writer directly.
+   Otherwise we wrap through the field's reader/writer adaptor. *)
+let configure_field_rw : type a r w.
+    (a, r) field ->
+    (a, w) eq option ->
+    (bytes -> int -> w) ->
+    (bytes -> int -> w -> unit) ->
+    ((bytes -> int -> w) -> bytes -> int -> a) ->
+    ((bytes -> int -> w -> unit) -> bytes -> int -> a -> unit) ->
+    unit =
+ fun fld eq raw_reader raw_writer wrap_reader wrap_writer ->
+  match eq with
+  | Some Refl ->
+      fld.f_reader <- raw_reader;
+      fld.f_writer <- raw_writer
+  | None ->
+      fld.f_reader <- wrap_reader raw_reader;
+      fld.f_writer <- wrap_writer raw_writer
+
 let bf_base_byte_size = Bitfield.byte_size
 let bf_base_total_bits = Bitfield.total_bits
 let bf_base_equal = Bitfield.equal
@@ -691,13 +711,8 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
                   (fun buf off -> word_reader buf (off + base_off));
                 bf_packed = shift lor (mask lsl 8);
               };
-          match eq with
-          | Some Refl ->
-              fld.f_reader <- raw_reader;
-              fld.f_writer <- accessor_writer
-          | None ->
-              fld.f_reader <- wrap_reader raw_reader;
-              fld.f_writer <- wrap_writer accessor_writer
+          configure_field_rw fld eq raw_reader accessor_writer wrap_reader
+            wrap_writer
         in
         let new_bf =
           {
