@@ -256,6 +256,17 @@ let struct_name s = s.name
 let struct_typ s = Struct s
 let field_names s = List.filter_map (fun (Field f) -> f.field_name) s.fields
 
+let struct_project s ~name ~keep =
+  let fields =
+    List.map
+      (fun (Field f) ->
+        if f.field_name = Some keep then Field f
+        else
+          Field { f with field_name = None; constraint_ = None; action = None })
+      s.fields
+  in
+  { s with name; fields }
+
 (* What kind of OCaml value a field produces — used by Wire_stubs to
    generate the right C-to-OCaml conversion in output stubs. *)
 type ocaml_kind = K_int | K_int64 | K_bool | K_string | K_unit

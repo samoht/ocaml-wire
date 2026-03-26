@@ -727,6 +727,10 @@ module Everparse : sig
     val field_names : struct_ -> string list
     (** Named field names in declaration order. *)
 
+    val struct_project : struct_ -> name:string -> keep:string -> struct_
+    (** [struct_project s ~name ~keep] returns a copy of [s] renamed to [name]
+        with all fields except [keep] made anonymous. *)
+
     val struct_params : struct_ -> param list
     (** Formal parameters of a struct (empty for non-parameterised structs). *)
 

@@ -101,6 +101,10 @@ module Raw : sig
   val field_names : struct_ -> string list
   (** Named field names in declaration order. *)
 
+  val struct_project : struct_ -> name:string -> keep:string -> struct_
+  (** [struct_project s ~name ~keep] keeps only the field named [keep], making
+      all others anonymous. *)
+
   val field_kinds : struct_ -> (string * Types.ocaml_kind) list
   (** Field names with their OCaml kind. *)
 

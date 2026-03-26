@@ -24,7 +24,7 @@ type tcp_syn_raw = { syn : int }
 type mapped_raw = { priority : int }
 type cases_raw = { packet_type : int }
 type enum_raw = { status_code : int }
-type constrained_raw = { version : int; data : int }
+type constrained_raw = { data : int }
 
 let ptype_of_int = function 0 -> Demo.Telemetry | _ -> Demo.Telecommand
 

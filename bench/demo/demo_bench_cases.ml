@@ -1,8 +1,14 @@
 open Wire
-open Wire.Everparse.Raw
 module Slice = Bytesrw.Bytes.Slice
 
 let n_data = 1024
+
+(* Project a codec to a 3D struct that extracts only one named field.
+   All other fields become anonymous (validation-only, no WireSet callback).
+   This derives the projection from the codec's own field list, avoiding
+   hand-copied field layouts that can drift from the codec definition. *)
+let project_field (type r) (codec : r Codec.t) ~name ~keep =
+  Everparse.Raw.struct_project (Everparse.struct_of_codec codec) ~name ~keep
 
 type dataset = { items : bytes array; packed : bytes; n_items : int }
 
@@ -30,7 +36,7 @@ type read_case =
       label : string;
       size : int;
       dataset : dataset;
-      struct_ : struct_;
+      struct_ : Everparse.struct_;
       codec : 'r Codec.t;
       get : bytes -> int -> 'a;
       set : bytes -> int -> 'a -> unit;
@@ -120,197 +126,48 @@ let tcp_dataset =
     [| Bytes.sub tcp_frame tcp_off Net.tcp_size |]
     ~size:Net.tcp_size
 
-let minimal_struct = struct_ "Minimal" [ field "Value" uint8 ]
+let minimal_struct =
+  project_field Demo.minimal_codec ~name:"Minimal" ~keep:"Value"
 
-(* Field order matches the codec: both Wire and EverParse now agree on
-   bit ordering (LSBFirst for UINT8, MSBFirst for UINT16BE/UINT32BE). *)
-let bf8_struct =
-  struct_ "Bitfield8"
-    [ anon_field (bits ~width:3 U8); field "Value" (bits ~width:5 U8) ]
-
-let bf16_struct =
-  struct_ "Bitfield16"
-    [
-      anon_field (bits ~width:1 U16be);
-      anon_field (bits ~width:4 U16be);
-      field "Id" (bits ~width:11 U16be);
-    ]
+let bf8_struct = project_field Demo.bf8_codec ~name:"Bitfield8" ~keep:"Value"
+let bf16_struct = project_field Demo.bf16_codec ~name:"Bitfield16" ~keep:"Id"
 
 let bool_fields_struct =
-  struct_ "BoolFields"
-    [
-      field "Active" (bool (bits ~width:1 U8));
-      anon_field (bool (bits ~width:1 U8));
-      anon_field (bits ~width:6 U8);
-      anon_field uint8;
-    ]
+  project_field Demo.bool_fields_codec ~name:"BoolFields" ~keep:"Active"
 
 let bf32_struct =
-  struct_ "Bitfield32"
-    [
-      anon_field (bits ~width:4 U32be);
-      anon_field (bits ~width:6 U32be);
-      anon_field (bits ~width:14 U32be);
-      field "Priority" (bits ~width:8 U32be);
-    ]
+  project_field Demo.bf32_codec ~name:"Bitfield32" ~keep:"Priority"
 
 let all_ints_struct =
-  struct_ "AllInts"
-    [
-      anon_field uint8;
-      anon_field uint16;
-      anon_field uint16be;
-      anon_field uint32;
-      anon_field uint32be;
-      field "U64BE" uint64be;
-    ]
+  project_field Demo.all_ints_codec ~name:"AllInts" ~keep:"U64BE"
 
 let large_mixed_struct =
-  struct_ "LargeMixed"
-    [
-      anon_field uint32be;
-      anon_field uint8;
-      anon_field uint8;
-      anon_field uint16be;
-      anon_field uint8;
-      anon_field uint8;
-      anon_field uint16be;
-      anon_field uint16be;
-      anon_field uint32be;
-      field "Timestamp" uint64be;
-    ]
+  project_field Demo.large_mixed_codec ~name:"LargeMixed" ~keep:"Timestamp"
 
 let mapped_struct =
-  struct_ "Mapped"
-    [
-      field "Priority"
-        (map ~decode:priority_of_int ~encode:int_of_priority uint8);
-      anon_field uint8;
-    ]
+  project_field Demo.mapped_codec ~name:"Mapped" ~keep:"Priority"
 
 let cases_demo_struct =
-  struct_ "CasesDemo"
-    [
-      field "PacketType"
-        (variants "PacketType"
-           [ ("TM", Demo.Telemetry); ("TC", Demo.Telecommand) ]
-           (bits ~width:1 U8));
-      anon_field (bits ~width:7 U8);
-    ]
+  project_field Demo.cases_demo_codec ~name:"CasesDemo" ~keep:"PacketType"
 
 let enum_demo_struct =
-  struct_ "EnumDemo"
-    [
-      field "StatusCode"
-        (variants "Status"
-           [ ("OK", `Ok); ("WARN", `Warn); ("ERR", `Err); ("CRIT", `Crit) ]
-           uint8);
-      anon_field uint8;
-    ]
-
-let constrained_version = field "Version" uint8
+  project_field Demo.enum_demo_codec ~name:"EnumDemo" ~keep:"StatusCode"
 
 let constrained_struct =
-  struct_ "Constrained"
-    [
-      field "Version" (where Expr.(field_ref constrained_version = int 0) uint8);
-      field "Data" uint8;
-    ]
+  project_field Demo.constrained_codec ~name:"Constrained" ~keep:"Data"
 
 let clcw_report_struct =
-  struct_ "CLCWReport"
-    [
-      anon_field (bits ~width:1 U32be);
-      anon_field (bits ~width:2 U32be);
-      anon_field (bits ~width:3 U32be);
-      anon_field (bits ~width:2 U32be);
-      anon_field (bits ~width:6 U32be);
-      anon_field (bits ~width:2 U32be);
-      anon_field (bits ~width:1 U32be);
-      anon_field (bits ~width:1 U32be);
-      anon_field (bits ~width:1 U32be);
-      anon_field (bits ~width:1 U32be);
-      anon_field (bits ~width:1 U32be);
-      anon_field (bits ~width:2 U32be);
-      field "ReportValue" (bits ~width:8 U32be);
-    ]
+  project_field Space.clcw_codec ~name:"CLCWReport" ~keep:"ReportValue"
 
 let space_packet_apid_struct =
-  struct_ "SpacePacketApid"
-    [
-      anon_field (bits ~width:3 U16be);
-      anon_field (bits ~width:1 U16be);
-      anon_field (bits ~width:1 U16be);
-      field "APID" (bits ~width:11 U16be);
-      anon_field (bits ~width:2 U16be);
-      anon_field (bits ~width:14 U16be);
-      anon_field uint16be;
-    ]
+  project_field Space.packet_codec ~name:"SpacePacketApid" ~keep:"APID"
 
-let ipv4_struct =
-  struct_ "IPv4"
-    [
-      anon_field (bits ~width:4 U8);
-      anon_field (bits ~width:4 U8);
-      anon_field (bits ~width:6 U8);
-      anon_field (bits ~width:2 U8);
-      anon_field uint16be;
-      anon_field uint16be;
-      anon_field (bits ~width:3 U16be);
-      anon_field (bits ~width:13 U16be);
-      anon_field uint8;
-      anon_field uint8;
-      anon_field uint16be;
-      field "SrcAddr" uint32be;
-      anon_field uint32be;
-      anon_field (byte_slice ~size:(int Net.ipv4_payload_size));
-    ]
+let ipv4_struct = project_field Net.ipv4_codec ~name:"IPv4" ~keep:"SrcAddr"
 
 let tcp_dst_port_struct =
-  struct_ "TCP"
-    [
-      anon_field uint16be;
-      field "DstPort" uint16be;
-      anon_field uint32be;
-      anon_field uint32be;
-      anon_field (bits ~width:4 U16be);
-      anon_field (bits ~width:3 U16be);
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field uint16be;
-      anon_field uint16be;
-      anon_field uint16be;
-    ]
+  project_field Net.tcp_codec ~name:"TCP" ~keep:"DstPort"
 
-let tcp_syn_struct =
-  struct_ "TCPSyn"
-    [
-      anon_field uint16be;
-      anon_field uint16be;
-      anon_field uint32be;
-      anon_field uint32be;
-      anon_field (bits ~width:4 U16be);
-      anon_field (bits ~width:3 U16be);
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      field "Syn" (bool (bits ~width:1 U16be));
-      anon_field (bool (bits ~width:1 U16be));
-      anon_field uint16be;
-      anon_field uint16be;
-      anon_field uint16be;
-    ]
+let tcp_syn_struct = project_field Net.tcp_codec ~name:"TCPSyn" ~keep:"Syn"
 
 let minimal_case =
   let get =
