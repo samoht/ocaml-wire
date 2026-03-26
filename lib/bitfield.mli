@@ -15,8 +15,9 @@ val write_word : Types.bitfield_base -> bytes -> int -> int -> unit
 (** Write the base word to bytes at offset. *)
 
 val is_lsb_first : Types.bitfield_base -> bool
-(** [true] for LSBFirst bases (UINT8, UINT16, UINT32), [false] for MSBFirst
-    (UINT16BE, UINT32BE). Matches EverParse 3D convention. *)
+(** [is_lsb_first base] is [true] for LSBFirst bases (UINT8, UINT16, UINT32),
+    [false] for MSBFirst (UINT16BE, UINT32BE). Matches EverParse 3D convention.
+*)
 
 val extract :
   base:Types.bitfield_base ->

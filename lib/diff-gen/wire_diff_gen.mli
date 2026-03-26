@@ -47,10 +47,12 @@ val run_everparse : ?quiet:bool -> outdir:string -> schema list -> unit
 (** Delegates to {!Wire_3d.run_everparse}. *)
 
 val generate_c_stubs : schema_dir:string -> outdir:string -> schema list -> unit
-(** Generate [stubs.c] with OCaml C stubs using {!Wire_3d.everparse_name}. *)
+(** [generate_c_stubs ~schema_dir ~outdir schemas] generates [stubs.c] with
+    OCaml C stubs using {!Wire_3d.everparse_name}. *)
 
 val generate_ml_stubs : outdir:string -> schema list -> unit
-(** Generate [stubs.ml] with OCaml externals. *)
+(** [generate_ml_stubs ~outdir schemas] generates [stubs.ml] with OCaml
+    externals. *)
 
 val generate_test_runner :
   outdir:string -> ?num_values:int -> schema list -> unit

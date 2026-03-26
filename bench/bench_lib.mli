@@ -55,9 +55,10 @@ val cycling :
   size:int ->
   (bytes -> int -> unit) ->
   (unit -> unit) * (unit -> unit)
-(** [cycling ~data ~n_items ~size read_fn] returns [(fn, reset)] where [fn]
-    cycles through [n_items] packed items in [data], and [reset] rewinds the
-    index to 0. *)
+(** [cycling ~data ~n_items ~size read_fn] returns
+    [((fn : unit -> unit), (reset : unit -> unit))] where [fn] cycles through
+    [n_items] packed items of [size] bytes in [data] using [read_fn], and
+    [reset] rewinds the index to 0. *)
 
 (** {1 Running and reporting} *)
 

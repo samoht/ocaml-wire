@@ -17,16 +17,18 @@ val struct_of_codec : 'r Codec.t -> struct_
 (** Project a codec to a 3D struct. *)
 
 val schema_of_struct : struct_ -> t
-(** Build a one-struct schema from a raw struct description.
+(** [schema_of_struct s] builds a one-struct schema from a raw struct
+    description.
 
     This uses the same EverParse output-types pattern as {!schema}: named fields
     get [WireSet*] extraction callbacks, while anonymous fields remain
     validation-only. *)
 
 val schema : 'r Codec.t -> t
-(** Builds a one-struct schema from a codec. The resulting module contains a
-    single entrypoint typedef with the EverParse output-types pattern: extern
-    callbacks ([WireSet*]) that extract all field values during validation. *)
+(** [schema codec] builds a one-struct schema from a codec. The resulting module
+    contains a single entrypoint typedef with the EverParse output-types
+    pattern: extern callbacks ([WireSet*]) that extract all field values during
+    validation. *)
 
 val write_3d : outdir:string -> t list -> unit
 (** [write_3d ~outdir ts] writes one [.3d] file per schema in [outdir]. *)
