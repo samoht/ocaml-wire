@@ -1,0 +1,5 @@
+(executable
+ (name test)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries demo_bench_diff alcotest))

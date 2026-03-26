@@ -335,7 +335,10 @@ let rec compile_stmt (cc : compile_ctx) (s : Types.action_stmt) :
         let v = fe arr in
         p.Types.ph_cell := v;
         (* If the param is also a field, update the array *)
-        try arr.(cc.idx p.Types.ph_name) <- v with _ -> ())
+        match cc.idx p.Types.ph_name with
+        | i when i < Array.length arr -> arr.(i) <- v
+        | _ -> ()
+        | exception Failure _ -> ())
   | Field_assign (_, _, _) | Extern_call (_, _) -> fun _ -> ()
   | Return e ->
       let fe = compile_bool_arr cc e in
@@ -359,7 +362,10 @@ let rec compile_stmt (cc : compile_ctx) (s : Types.action_stmt) :
       let fe = compile_int_arr cc e in
       fun arr ->
         (* Store in array if name is a known field *)
-        try arr.(cc.idx name) <- fe arr with _ -> ())
+        match cc.idx name with
+        | i when i < Array.length arr -> arr.(i) <- fe arr
+        | _ -> ()
+        | exception Failure _ -> ())
 
 and compile_stmts (cc : compile_ctx) (stmts : Types.action_stmt list) :
     compiled_action =

@@ -23,18 +23,16 @@ let test_read_benchmark_cases_are_subset () =
       Alcotest.(check bool) case.label true (List.mem case.id projection_ids))
     read_benchmark_cases
 
-let () =
-  Alcotest.run "demo_bench_cases"
-    [
-      ( "writes",
-        [
-          Alcotest.test_case "all write verifiers pass" `Quick test_write_cases;
-        ] );
-      ( "registry",
-        [
-          Alcotest.test_case "projection ids unique" `Quick
-            test_projection_case_ids_unique;
-          Alcotest.test_case "read cases subset" `Quick
-            test_read_benchmark_cases_are_subset;
-        ] );
-    ]
+let suites =
+  [
+    ( "writes",
+      [ Alcotest.test_case "all write verifiers pass" `Quick test_write_cases ]
+    );
+    ( "registry",
+      [
+        Alcotest.test_case "projection ids unique" `Quick
+          test_projection_case_ids_unique;
+        Alcotest.test_case "read cases subset" `Quick
+          test_read_benchmark_cases_are_subset;
+      ] );
+  ]

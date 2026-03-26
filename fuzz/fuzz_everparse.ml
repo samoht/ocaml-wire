@@ -619,4 +619,4 @@ let codegen_tests =
     test_case "be struct" [ const () ] test_be_struct;
   ]
 
-let suite = ("c", pp_tests @ codegen_tests)
+let suite = ("everparse", pp_tests @ codegen_tests)
