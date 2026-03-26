@@ -127,6 +127,26 @@ let () =
       pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
         lower lower)
     structs;
+
+  (* 5. Registry: uniform-type stubs looked up by schema name *)
+  pr "\n(* ── Per-schema stub registry ── *)\n\n";
+  pr "type stubs = {\n";
+  pr "  check : bytes -> bool;\n";
+  pr "  ffi_parse : bytes -> unit;\n";
+  pr "  loop : bytes -> int -> int -> int;\n";
+  pr "}\n\n";
+  pr "let stubs_of_name = function\n";
+  List.iter
+    (fun s ->
+      let name = Wire.Everparse.Raw.struct_name s in
+      let lower = String.lowercase_ascii name in
+      pr
+        "  | %S -> { check = %s_check; ffi_parse = (fun b -> ignore (%s_parse \
+         b)); loop = %s_loop }\n"
+        name lower lower lower)
+    structs;
+  pr "  | name -> failwith (\"C_stubs: unknown schema \" ^ name)\n";
+
   Format.pp_print_flush ppf ();
   close_out oc;
 

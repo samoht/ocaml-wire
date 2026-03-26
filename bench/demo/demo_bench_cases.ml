@@ -44,6 +44,7 @@ type read_case =
       write_offset : int;
       write_value : 'a;
       equal : 'a -> 'a -> bool;
+      mutable c_parse : (bytes -> 'a) option;
     }
       -> read_case
 
@@ -190,6 +191,7 @@ let minimal_case =
       write_offset = 0;
       write_value = 42;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let all_ints_case =
@@ -209,6 +211,7 @@ let all_ints_case =
       write_offset = 0;
       write_value = 0x0102_0304_0506_0708L;
       equal = Int64.equal;
+      c_parse = None;
     }
 
 let large_mixed_case =
@@ -232,6 +235,7 @@ let large_mixed_case =
       write_offset = 0;
       write_value = 0x1122_3344_5566_7788L;
       equal = Int64.equal;
+      c_parse = None;
     }
 
 let bitfield8_case =
@@ -251,6 +255,7 @@ let bitfield8_case =
       write_offset = 0;
       write_value = 19;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let bitfield16_case =
@@ -270,6 +275,7 @@ let bitfield16_case =
       write_offset = 0;
       write_value = 73;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let bitfield32_case =
@@ -289,6 +295,7 @@ let bitfield32_case =
       write_offset = 0;
       write_value = 17;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let bool_fields_case =
@@ -312,6 +319,7 @@ let bool_fields_case =
       write_offset = 0;
       write_value = true;
       equal = Bool.equal;
+      c_parse = None;
     }
 
 let clcw_case =
@@ -331,6 +339,7 @@ let clcw_case =
       write_offset = 0;
       write_value = 42;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let packet_case =
@@ -350,6 +359,7 @@ let packet_case =
       write_offset = 0;
       write_value = 123;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let ipv4_case =
@@ -369,6 +379,7 @@ let ipv4_case =
       write_offset = 0;
       write_value = 0x0A00_0001;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let tcp_case =
@@ -388,6 +399,7 @@ let tcp_case =
       write_offset = 0;
       write_value = 8080;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let tcp_syn_case =
@@ -407,6 +419,7 @@ let tcp_syn_case =
       write_offset = 0;
       write_value = true;
       equal = Bool.equal;
+      c_parse = None;
     }
 
 let mapped_case =
@@ -426,6 +439,7 @@ let mapped_case =
       write_offset = 0;
       write_value = Demo.High;
       equal = ( = );
+      c_parse = None;
     }
 
 let cases_case =
@@ -445,6 +459,7 @@ let cases_case =
       write_offset = 0;
       write_value = Demo.Telemetry;
       equal = ( = );
+      c_parse = None;
     }
 
 let enum_case =
@@ -464,6 +479,7 @@ let enum_case =
       write_offset = 0;
       write_value = `Warn;
       equal = ( = );
+      c_parse = None;
     }
 
 let constrained_case =
@@ -483,6 +499,7 @@ let constrained_case =
       write_offset = 0;
       write_value = 9;
       equal = Int.equal;
+      c_parse = None;
     }
 
 let projection_cases =

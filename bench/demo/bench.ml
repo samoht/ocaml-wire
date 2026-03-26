@@ -8,53 +8,21 @@
 open Bench_lib
 open Demo_bench_cases
 
-let c_loop_of_id = function
-  | Minimal -> C_stubs.minimal_loop
-  | All_ints -> C_stubs.allints_loop
-  | Large_mixed -> C_stubs.largemixed_loop
-  | Bitfield8 -> C_stubs.bitfield8_loop
-  | Bitfield16 -> C_stubs.bitfield16_loop
-  | Bitfield32 -> C_stubs.bitfield32_loop
-  | Bool_fields -> C_stubs.boolfields_loop
-  | Clcw_report -> C_stubs.clcwreport_loop
-  | Space_packet_apid -> C_stubs.spacepacketapid_loop
-  | Ipv4_src -> C_stubs.ipv4_loop
-  | Tcp_dst_port -> C_stubs.tcp_loop
-  | Tcp_syn -> C_stubs.tcpsyn_loop
-  | Mapped_priority -> C_stubs.mapped_loop
-  | Cases_type -> C_stubs.casesdemo_loop
-  | Enum_status -> C_stubs.enumdemo_loop
-  | Constrained_data -> C_stubs.constrained_loop
+let stubs_of_case (Read_case case) =
+  C_stubs.stubs_of_name (Wire.Everparse.Raw.struct_name case.struct_)
 
-let ffi_parse_of_id = function
-  | Minimal -> fun b -> ignore (C_stubs.minimal_parse b)
-  | All_ints -> fun b -> ignore (C_stubs.allints_parse b)
-  | Large_mixed -> fun b -> ignore (C_stubs.largemixed_parse b)
-  | Bitfield8 -> fun b -> ignore (C_stubs.bitfield8_parse b)
-  | Bitfield16 -> fun b -> ignore (C_stubs.bitfield16_parse b)
-  | Bitfield32 -> fun b -> ignore (C_stubs.bitfield32_parse b)
-  | Bool_fields -> fun b -> ignore (C_stubs.boolfields_parse b)
-  | Clcw_report -> fun b -> ignore (C_stubs.clcwreport_parse b)
-  | Space_packet_apid -> fun b -> ignore (C_stubs.spacepacketapid_parse b)
-  | Ipv4_src -> fun b -> ignore (C_stubs.ipv4_parse b)
-  | Tcp_dst_port -> fun b -> ignore (C_stubs.tcp_parse b)
-  | Tcp_syn -> fun b -> ignore (C_stubs.tcpsyn_parse b)
-  | Mapped_priority -> fun b -> ignore (C_stubs.mapped_parse b)
-  | Cases_type -> fun b -> ignore (C_stubs.casesdemo_parse b)
-  | Enum_status -> fun b -> ignore (C_stubs.enumdemo_parse b)
-  | Constrained_data -> fun b -> ignore (C_stubs.constrained_parse b)
-
-let read_row (Read_case case) =
+let read_row rc =
+  let (Read_case case) = rc in
+  let stubs = stubs_of_case rc in
   let ocaml_fn, ocaml_reset =
     cycling ~data:case.dataset.packed ~n_items:case.dataset.n_items
       ~size:case.size (fun buf off -> ignore (case.get buf off))
   in
   let ffi_index = ref 0 in
   let ffi_reset () = ffi_index := 0 in
-  let ffi_parse = ffi_parse_of_id case.id in
   let ffi_fn _buf =
     let item = case.dataset.items.(!ffi_index mod case.dataset.n_items) in
-    ffi_parse item;
+    stubs.ffi_parse item;
     incr ffi_index
   in
   let reset () =
@@ -62,7 +30,7 @@ let read_row (Read_case case) =
     ffi_reset ()
   in
   v case.label ~size:case.size ~reset ocaml_fn
-  |> with_c (c_loop_of_id case.id) case.dataset.packed
+  |> with_c stubs.loop case.dataset.packed
   |> with_ffi ffi_fn Bytes.empty
   |> with_verify (Demo_bench_diff.verify_of_id case.id)
 
