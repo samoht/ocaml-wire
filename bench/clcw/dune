@@ -1,12 +1,24 @@
 (library
  (name clcw_bench)
  (modules clcw_bench)
+ (libraries space wire bench_lib c_tier memtrace unix fmt))
+
+(library
+ (name clcw_bench_c)
+ (modules)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
  (foreign_stubs
   (language c)
-  (names clcw_c))
- (libraries space wire bench_lib c_tier memtrace unix fmt))
+  (names clcw_c)
+  (extra_deps
+   (glob_files ../schemas/*.c)
+   (glob_files ../schemas/*.h))
+  (flags :standard -I ../schemas)))
 
 (executable
  (name bench)
  (modules bench)
- (libraries clcw_bench))
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries clcw_bench clcw_bench_c))

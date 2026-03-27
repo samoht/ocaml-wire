@@ -1,12 +1,24 @@
 (library
  (name gateway_bench)
  (modules gateway_bench)
+ (libraries space wire bench_lib c_tier memtrace unix fmt))
+
+(library
+ (name gateway_bench_c)
+ (modules)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
  (foreign_stubs
   (language c)
-  (names gateway_c))
- (libraries space wire bench_lib c_tier memtrace unix fmt))
+  (names gateway_c)
+  (extra_deps
+   (glob_files ../schemas/*.c)
+   (glob_files ../schemas/*.h))
+  (flags :standard -I ../schemas)))
 
 (executable
  (name bench)
  (modules bench)
- (libraries gateway_bench))
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries gateway_bench gateway_bench_c))

@@ -418,10 +418,4 @@ let suite =
       Alcotest.test_case "run_table: ffi reset" `Quick test_run_table_ffi_reset;
       Alcotest.test_case "integration: cycling through run_table" `Quick
         test_cycling_through_run_table;
-      Alcotest.test_case "verify: routing counts" `Quick (fun () ->
-          Routing_bench.check ~n_pkts:10_000);
-      Alcotest.test_case "verify: clcw anomalies" `Quick (fun () ->
-          Clcw_bench.check ~n_words:10_000);
-      Alcotest.test_case "verify: gateway checksums" `Quick (fun () ->
-          Gateway_bench.check ~n_frames:1_000);
     ] )

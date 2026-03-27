@@ -1,12 +1,24 @@
 (library
  (name routing_bench)
  (modules routing_bench)
+ (libraries space wire bench_lib c_tier memtrace unix fmt))
+
+(library
+ (name routing_bench_c)
+ (modules)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
  (foreign_stubs
   (language c)
-  (names routing_c))
- (libraries space wire bench_lib c_tier memtrace unix fmt))
+  (names routing_c)
+  (extra_deps
+   (glob_files ../schemas/*.c)
+   (glob_files ../schemas/*.h))
+  (flags :standard -I ../schemas)))
 
 (executable
  (name bench)
  (modules bench)
- (libraries routing_bench))
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
+ (libraries routing_bench routing_bench_c))

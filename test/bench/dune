@@ -1,10 +1,18 @@
 (test
  (name test)
+ (libraries bench_lib demo_bench_cases alcotest unix))
+
+(executable
+ (name test_app)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
  (libraries
   bench_lib
   routing_bench
+  routing_bench_c
   clcw_bench
+  clcw_bench_c
   gateway_bench
-  demo_bench_cases
+  gateway_bench_c
   alcotest
   unix))

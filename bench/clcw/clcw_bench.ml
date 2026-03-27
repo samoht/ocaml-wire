@@ -1,8 +1,8 @@
 (** CLCW polling loop benchmark.
 
     Simulates a COP-1 receiver polling CLCW words using Wire's staged Codec.get
-    — all field access is generated from the Wire DSL. The C baseline does the
-    same work with hand-written bitfield extraction. *)
+    — all field access is generated from the Wire DSL. The C tier uses
+    EverParse-generated validators for field extraction. *)
 
 open Bench_lib
 module C = Wire.Codec
