@@ -3,8 +3,8 @@
     [Wire_stubs] generates C stubs and matching OCaml [external] declarations so
     OCaml code can call EverParse-generated validators. The generated stubs call
     a validator that fills an output struct (from {!Wire.Everparse.schema}),
-    returning field values as an OCaml record option via extern callbacks
-    ([WireSet*]). On validation failure, [None] is returned.
+    returning field values as an OCaml record via continuation callbacks
+    ([WireSet*]). On validation failure, [Failure] is raised.
 
     {b Typical usage} (in a code-generation executable):
     {[

@@ -45,23 +45,20 @@ let generate_ml oc =
       pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
         lower lower)
     structs;
-  (* Projected field extraction for single-output projection structs *)
+  (* Projected field extraction for single-output projection structs.
+     _parse_k Fun.id returns the raw field value directly — no record alloc. *)
   pr "(* ── Projected field extraction ── *)\n\n";
   List.iter
     (fun s ->
       let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
       match Wire.Everparse.Raw.field_kinds s with
-      | [ (field_name, kind) ] ->
+      | [ (_, kind) ] ->
           let suffix =
             match kind with
             | Wire.Private.Types.K_int64 -> "_int64"
             | _ -> "_int"
           in
-          let ml_field = String.lowercase_ascii field_name in
-          pr
-            "let %s_projected%s buf = match %s_parse buf with Some r -> r.%s | \
-             None -> failwith \"%s: parse failed\"\n\n"
-            lower suffix lower ml_field lower
+          pr "let %s_projected%s = %s_parse_k Fun.id\n\n" lower suffix lower
       | _ -> ())
     projection_structs;
   pr "\n(* ── Per-schema stub registry ── *)\n\n";
