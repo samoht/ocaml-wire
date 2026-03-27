@@ -18,18 +18,6 @@ let everparse_name name =
         if i = 0 then Char.uppercase_ascii c else c)
   else name
 
-let schema_of_struct s =
-  let name = Wire.Everparse.Raw.struct_name s in
-  let m =
-    Wire.Everparse.Raw.module_ [ Wire.Everparse.Raw.typedef ~entrypoint:true s ]
-  in
-  let wire_size =
-    match Wire.Everparse.Raw.struct_size s with
-    | Some n -> n
-    | None -> Fmt.failwith "schema %s has variable-length fields" name
-  in
-  Wire.Everparse.Raw.of_module ~name ~module_:m ~wire_size
-
 let schema = Wire.Everparse.Raw.of_module
 let write_3d = Wire.Everparse.write_3d
 
