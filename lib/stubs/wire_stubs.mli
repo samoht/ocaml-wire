@@ -6,13 +6,24 @@
     returning field values as an OCaml record option via extern callbacks
     ([WireSet*]). On validation failure, [None] is returned.
 
-    {b Typical usage}:
+    {b Typical usage} (in a code-generation executable):
     {[
-      let schema = Wire.Everparse.schema codec
-      let () = Wire_3d.run ~outdir:"schemas" [ schema ]
       let struct_ = Wire.Everparse.struct_of_codec codec
-      let c = Wire_stubs.to_c_stubs [ struct_ ]
-      let ml = Wire_stubs.to_ml_stubs [ struct_ ]
+      let name = Wire.Everparse.Raw.struct_name struct_
+
+      (* Write ExternalTypedefs.h (required by EverParse output types) *)
+      let () =
+        write "schemas"
+          (name ^ "_ExternalTypedefs.h")
+          (Wire_stubs.to_external_typedefs name)
+
+      (* Write WireSet* + C parse stubs *)
+      let () =
+        write "." "stubs.c"
+          (Wire_stubs.to_wire_setters () ^ Wire_stubs.to_c_stubs [ struct_ ])
+
+      (* Write OCaml external declarations *)
+      let () = write "." "stubs.ml" (Wire_stubs.to_ml_stubs [ struct_ ])
     ]} *)
 
 val everparse_name : string -> string
