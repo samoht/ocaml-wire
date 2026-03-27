@@ -135,14 +135,6 @@ let process_all_frames state =
   done;
   !checksum
 
-let verify ~n_frames () =
-  let st = state n_frames in
-  let ocaml_checksum = process_all_frames st in
-  let c_checksum = c_tm_reassemble_checksum st.buf 0 in
-  if ocaml_checksum <> c_checksum then
-    Fmt.failwith "TM reassembly mismatch: OCaml=%Lx C=%Lx" ocaml_checksum
-      c_checksum
-
 let benchmark ~n_frames =
   let st = state n_frames in
   let ocaml_result () = process_all_frames st in
@@ -155,6 +147,10 @@ let benchmark ~n_frames =
     |> with_expect ~equal:Int64.equal ~pp:Fmt.int64 ~c:c_result ocaml_result
   in
   (t, st)
+
+let check ~n_frames =
+  let t, _ = benchmark ~n_frames in
+  Bench_lib.check t
 
 let main () =
   Memtrace.trace_if_requested ~context:"gateway" ();

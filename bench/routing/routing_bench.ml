@@ -121,16 +121,6 @@ let run_packets state n_pkts =
   done;
   counts state
 
-let verify ~n_pkts () =
-  let buf, total_bytes, _payload_bytes = generate_stream n_pkts in
-  let st = state buf total_bytes in
-  reset st;
-  let ocaml_counts = run_packets st n_pkts in
-  let c_counts = c_apid_route_counts buf 0 n_pkts in
-  if ocaml_counts <> c_counts then
-    Fmt.failwith "Routing result mismatch: OCaml=%a C=%a" pp_counts ocaml_counts
-      pp_counts c_counts
-
 let benchmark ~n_pkts =
   let buf, total_bytes, payload_bytes = generate_stream n_pkts in
   let st = state buf total_bytes in
@@ -144,6 +134,10 @@ let benchmark ~n_pkts =
     |> with_expect ~equal:( = ) ~pp:pp_counts ~c:c_result ocaml_result
   in
   (t, payload_bytes, st, buf)
+
+let check ~n_pkts =
+  let t, _, _, _ = benchmark ~n_pkts in
+  Bench_lib.check t
 
 let main () =
   Memtrace.trace_if_requested ~context:"routing" ();

@@ -83,15 +83,6 @@ let run_all state =
   done;
   !(state.anomalies)
 
-let verify ~n_words () =
-  let st = state n_words in
-  reset st;
-  let ocaml_anomalies = run_all st in
-  let c_anomalies = c_clcw_poll_result st.buf 0 in
-  if ocaml_anomalies <> c_anomalies then
-    Fmt.failwith "CLCW result mismatch: OCaml=%d C=%d" ocaml_anomalies
-      c_anomalies
-
 let benchmark ~n_words =
   let st = state n_words in
   let ocaml_result () = run_all st in
@@ -104,6 +95,10 @@ let benchmark ~n_words =
     |> with_expect ~equal:Int.equal ~pp:Fmt.int ~c:c_result ocaml_result
   in
   (t, st)
+
+let check ~n_words =
+  let t, _ = benchmark ~n_words in
+  Bench_lib.check t
 
 let main () =
   Memtrace.trace_if_requested ~context:"clcw" ();
