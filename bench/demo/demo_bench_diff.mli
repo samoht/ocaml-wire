@@ -1,10 +1,6 @@
 (** Differential testing of demo bench cases against EverParse C stubs. *)
 
-type case = {
-  id : Demo_bench_cases.id;
-  label : string;
-  packed : Wire_diff.packed_test;
-}
+type case = { id : Demo_bench_cases.id; label : string; packed : Wire_diff.t }
 
 val cases : case list
 (** [cases] is the list of differential test cases for the demo benchmark. *)

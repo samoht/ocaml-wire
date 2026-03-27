@@ -40,7 +40,7 @@ let default_ocaml_read codec project buf =
     | Ok v -> Some (project v)
     | Error _ -> None
 
-let harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read () =
+let v ~name ~codec ~read ~write ~project ~equal ?ocaml_read () =
   let ocaml_read =
     match ocaml_read with
     | Some read -> read
@@ -48,7 +48,7 @@ let harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read () =
   in
   Harness { name; codec; ocaml_read; read; write; project; equal }
 
-let read (Harness h) buf =
+let read_test (Harness h) buf =
   let c_result = h.read buf in
   let ocaml_result = h.ocaml_read buf in
   match (c_result, ocaml_result) with
@@ -59,7 +59,7 @@ let read (Harness h) buf =
   | Some _, None -> Only_c_ok "OCaml decode returned empty"
   | None, Some _ -> Only_ocaml_ok "External read failed"
 
-let write (Harness h) value =
+let write_test (Harness h) value =
   let projected = h.project value in
   match h.write projected with
   | Some c_bytes -> (
@@ -70,7 +70,7 @@ let write (Harness h) value =
       | None -> Only_c_ok "OCaml rejected external bytes")
   | None -> Only_ocaml_ok "External write failed"
 
-let full_roundtrip (Harness h) value =
+let roundtrip_test (Harness h) value =
   let ocaml_bytes = encode_to_string h.codec value in
   match (h.read ocaml_bytes, h.ocaml_read ocaml_bytes) with
   | None, Some _ -> Only_ocaml_ok "External read failed on OCaml-encoded bytes"
@@ -89,7 +89,7 @@ let full_roundtrip (Harness h) value =
                 else Value_mismatch "values differ after full roundtrip"
             | None -> Only_c_ok "OCaml rejected external bytes"))
 
-type packed_test = {
+type t = {
   name : string;
   wire_size : int;
   test_read : string -> result;
@@ -97,9 +97,10 @@ type packed_test = {
   test_roundtrip : string -> result;
 }
 
-let pack (type r) (h : r harness) =
+let harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read () =
+  let h = v ~name ~codec ~read ~write ~project ~equal ?ocaml_read () in
   let ws = wire_size h in
-  let codec = match h with Harness h -> h.codec in
+  let codec_inner = match h with Harness h -> h.codec in
   let decode_value buf =
     let padded =
       if String.length buf >= ws then String.sub buf 0 ws
@@ -109,25 +110,22 @@ let pack (type r) (h : r harness) =
         Bytes.to_string b
     in
     if String.length padded = 0 then None
-    else Some (decode_from_string codec padded)
+    else Some (decode_from_string codec_inner padded)
   in
   {
     name = (match h with Harness h -> h.name);
     wire_size = ws;
-    test_read = (fun buf -> read h buf);
+    test_read = (fun buf -> read_test h buf);
     test_write =
       (fun buf ->
         match decode_value buf with
-        | Some (Ok v) -> write h v
+        | Some (Ok v) -> write_test h v
         | Some (Error _) -> Both_failed
         | None -> Both_failed);
     test_roundtrip =
       (fun buf ->
         match decode_value buf with
-        | Some (Ok v) -> full_roundtrip h v
+        | Some (Ok v) -> roundtrip_test h v
         | Some (Error _) -> Both_failed
         | None -> Both_failed);
   }
-
-let packed_harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read () =
-  pack (harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read ())

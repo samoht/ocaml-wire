@@ -7,11 +7,7 @@
 open Wire
 open Demo_bench_cases
 
-type case = {
-  id : Demo_bench_cases.id;
-  label : string;
-  packed : Wire_diff.packed_test;
-}
+type case = { id : Demo_bench_cases.id; label : string; packed : Wire_diff.t }
 
 let of_case (type a) (Read_case c : a read_case) =
   let stubs = C_stubs.stubs_of_name (Everparse.Raw.struct_name c.struct_) in
@@ -36,7 +32,7 @@ let of_case (type a) (Read_case c : a read_case) =
   in
   let write _ = None in
   let packed =
-    Wire_diff.packed_harness ~name:c.label ~codec:c.codec ~read ~write ~project
+    Wire_diff.harness ~name:c.label ~codec:c.codec ~read ~write ~project
       ~equal:c.equal ~ocaml_read ()
   in
   { id = c.id; label = c.label; packed }
