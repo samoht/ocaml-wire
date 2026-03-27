@@ -11,8 +11,8 @@ Define your format once, then:
 - **Read and write fields in-place** via `Codec.get` / `Codec.set` — zero-copy,
   zero-allocation for immediate types (int, bool)
 - **Decode and encode records** via `Codec.decode` / `Codec.encode`
-- **Export EverParse `.3d` schemas** via `C.schema` / `C.generate`
-- **Generate verified C artifacts** via `Wire_3d`
+- **Export EverParse `.3d` schemas** via `Everparse.schema` / `Everparse.write_3d`
+- **Generate verified C artifacts** via `Wire_3d.run`
 - **Generate OCaml FFI stubs** via `Wire_stubs` when OCaml should call the C
 - **Render RFC-style ASCII diagrams** via `Ascii.of_codec`
 - **Differential-test OCaml against C** via `Wire_diff`
@@ -76,8 +76,8 @@ let f_data = Field.v "Data" (byte_array ~size:(Field.ref f_len))
 The same codec produces `.3d` files:
 
 ```ocaml
-let schema = C.schema codec
-let () = C.generate ~outdir:"schemas" [ schema ]
+let schema = Everparse.schema codec
+let () = Everparse.write_3d ~outdir:"schemas" [ schema ]
 ```
 
 The generated 3D uses the EverParse output-types pattern, where the generated C
@@ -86,20 +86,20 @@ validates AND extracts all field values via extern callbacks (`WireSet*`).
 To turn those schemas into EverParse-generated C:
 
 ```ocaml
-let () = Wire_3d.generate ~outdir:"schemas" [ schema ]
+let () = Wire_3d.run ~outdir:"schemas" [ schema ]
 ```
 
 If OCaml needs to call the generated C validators, generate stubs separately
 from the exported structs:
 
 ```ocaml
-let struct_ = C.struct_of_codec codec
+let struct_ = Everparse.struct_of_codec codec
 let c_stubs = Wire_stubs.to_c_stubs [ struct_ ]
 let ml_stubs = Wire_stubs.to_ml_stubs [ struct_ ]
 ```
 
 For unusual EverParse constructs that have no codec equivalent yet, use the
-explicit escape hatch `C.Raw`.
+`Everparse.Raw` API.
 
 ### ASCII diagrams
 
@@ -206,9 +206,9 @@ let len = Param.get out_len
          |                   |                   |
          v                   v                   v
   +---------------+   +---------------+   +---------------+
-  | Codec         |   | C.schema      |   | Ascii         |
-  | decode/encode |   | C.generate    |   | of_codec      |
-  | get/set       |   |               |   |               |
+  | Codec         |   | Everparse     |   | Ascii         |
+  | decode/encode |   | schema        |   | of_codec      |
+  | get/set       |   | write_3d      |   |               |
   +-------+-------+   +-------+-------+   +---------------+
           |                   |
           |                   v
@@ -244,7 +244,7 @@ make clean         # dune clean
 
 | Directory | Description |
 |-----------|-------------|
-| `lib/` | Core `wire` library: DSL types, Codec, Eval, Param, Action, Ascii, C |
+| `lib/` | Core `wire` library: DSL types, Codec, Eval, Param, Action, Ascii, Everparse |
 | `lib/3d/` | `wire.3d` sublibrary: EverParse tooling (write `.3d`, run `3d.exe`, generate C artifacts) |
 | `lib/stubs/` | `wire.stubs` sublibrary: generate OCaml/C FFI stubs for generated validators |
 | `lib/test/stubs/` | Wire\_stubs test suite (compile + EverParse e2e tests) |
