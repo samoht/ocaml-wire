@@ -328,9 +328,11 @@ let () =
   let buf = Bytes.create 3 in
   Bytes.set_uint8 buf 0 1;
   Bytes.set_uint16_be buf 1 42;
-  let (r : test_header) = Stubs.testheader_parse buf in
-  assert (r.version = 1);
-  assert (r.length = 42)
+  match (Stubs.testheader_parse buf : test_header option) with
+  | None -> assert false
+  | Some r ->
+    assert (r.version = 1);
+    assert (r.length = 42)
 |}
 
 let test_e2e_with_constraint () =
@@ -351,12 +353,12 @@ let () =
   let buf = Bytes.create 1 in
   (* x=50 <= 100: passes *)
   Bytes.set_uint8 buf 0 50;
-  let (r : constrained) = Stubs.constrained_parse buf in
-  assert (r.x = 50);
-  (* x=200 > 100: fails — parse returns Atom(0), a zero-size block *)
+  (match (Stubs.constrained_parse buf : constrained option) with
+  | None -> assert false
+  | Some r -> assert (r.x = 50));
+  (* x=200 > 100: fails — parse returns None *)
   Bytes.set_uint8 buf 0 200;
-  let v = Obj.repr (Stubs.constrained_parse buf) in
-  assert (Obj.size v = 0)
+  assert ((Stubs.constrained_parse buf : constrained option) = None)
 |}
 
 let test_e2e_bitfields () =
@@ -382,11 +384,13 @@ let () =
   let buf = Bytes.create 3 in
   Bytes.set_uint8 buf 0 0x45;
   Bytes.set_uint16_be buf 1 100;
-  let (r : bf_header) = Stubs.bfheader_parse buf in
-  (* EverParse uses LSB-first bit numbering: version=bits[0..4], flags=bits[4..8] *)
-  assert (r.version = 5);
-  assert (r.flags = 4);
-  assert (r.length = 100)
+  match (Stubs.bfheader_parse buf : bf_header option) with
+  | None -> assert false
+  | Some r ->
+    (* EverParse uses LSB-first bit numbering: version=bits[0..4], flags=bits[4..8] *)
+    assert (r.version = 5);
+    assert (r.flags = 4);
+    assert (r.length = 100)
 |}
 
 (* ── Output types ── *)
@@ -609,11 +613,13 @@ let () =
   Bytes.set_int32_be buf 0 0x12345678l;
   Bytes.set_uint16_be buf 4 1000;
   Bytes.set_uint8 buf 6 42;
-  let (r : test_parse) = Stubs.testparse_parse buf in
-  assert (r.id = 0x12345678);
-  assert (r.length = 1000);
-  assert (r.tag = 42);
-  Printf.printf "OK: id=0x%x length=%d tag=%d\n" r.id r.length r.tag
+  match (Stubs.testparse_parse buf : test_parse option) with
+  | None -> assert false
+  | Some r ->
+    assert (r.id = 0x12345678);
+    assert (r.length = 1000);
+    assert (r.tag = 42);
+    Printf.printf "OK: id=0x%x length=%d tag=%d\n" r.id r.length r.tag
 |};
     (* 7. Compile everything *)
     let cmd =

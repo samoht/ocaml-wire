@@ -58,8 +58,10 @@ let generate_ml oc =
             | _ -> ("int", "_int")
           in
           pr "type %s_raw = { v : %s }\n" lower ml_type;
-          pr "let %s_projected%s buf = (%s_parse buf : %s_raw).v\n\n" lower
-            suffix lower lower
+          pr
+            "let %s_projected%s buf = match (%s_parse buf : %s_raw option) \
+             with Some r -> r.v | None -> failwith \"%s: parse failed\"\n\n"
+            lower suffix lower lower lower
       | _ -> ())
     projection_structs;
   pr "\n(* ── Per-schema stub registry ── *)\n\n";

@@ -3,7 +3,8 @@
     [Wire_stubs] generates C stubs and matching OCaml [external] declarations so
     OCaml code can call EverParse-generated validators. The generated stubs call
     a validator that fills an output struct (from {!Wire.Everparse.schema}),
-    returning field values as an OCaml record via extern callbacks ([WireSet*]).
+    returning field values as an OCaml record option via extern callbacks
+    ([WireSet*]). On validation failure, [None] is returned.
 
     {b Typical usage}:
     {[
@@ -22,7 +23,8 @@ val ml_type_of : 'a Wire.typ -> string
 
 val to_c_stubs : Wire.Everparse.Raw.struct_ list -> string
 (** [to_c_stubs structs] generates C FFI stubs. Each stub calls Validate with a
-    [WIRECTX] context and returns field values as an OCaml record. *)
+    [WIRECTX] context and returns [Some record] on success, [None] on failure.
+*)
 
 val to_ml_stubs : Wire.Everparse.Raw.struct_ list -> string
 (** [to_ml_stubs structs] generates matching OCaml [external] declarations. *)
