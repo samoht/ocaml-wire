@@ -17,15 +17,13 @@
    (c_stubs -> c_tier.everparse.ml)
    (-> c_tier.none.ml))))
 
-; ── EverParse benchmark infrastructure (BUILD_EVERPARSE=1 only) ──
+; ── EverParse benchmark infrastructure ──
 
-; Step 1: Generator — produces .3d files, runs EverParse, generates C/ML stubs
+; Generator — pure OCaml, always builds
 
 (executable
  (name gen_stubs)
  (modules gen_stubs)
- (enabled_if
-  (= %{env:BUILD_EVERPARSE=} "1"))
  (libraries
   demo_bench_cases
   demo
@@ -37,30 +35,30 @@
   bench_lib
   unix))
 
-; Step 2: Run the generator to produce all artifacts
+; Generate c_stubs.ml (OCaml external declarations) — always
+
+(rule
+ (target c_stubs.ml)
+ (deps gen_stubs.exe)
+ (action
+  (with-stdout-to
+   %{target}
+   (run ./gen_stubs.exe --ml-only))))
+
+; Generate .3d files, run EverParse, produce C code — gated
 
 (rule
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
  (targets
   (dir schemas)
-  c_stubs.c
-  c_stubs.ml)
+  c_stubs.c)
  (deps gen_stubs.exe)
  (action
   (run ./gen_stubs.exe schemas)))
 
-; Step 3: C stubs library (EverParse validation + timed loops + OCaml externals)
+; OCaml stubs library — always builds (externals resolved at link time)
 
 (library
  (name c_stubs)
- (modules c_stubs)
- (enabled_if
-  (= %{env:BUILD_EVERPARSE=} "1"))
- (foreign_stubs
-  (language c)
-  (names c_stubs)
-  (extra_deps
-   (glob_files schemas/*.c)
-   (glob_files schemas/*.h))
-  (flags :standard -I schemas)))
+ (modules c_stubs))

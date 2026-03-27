@@ -8,12 +8,11 @@
 open Bench_lib
 open Demo_bench_cases
 
-let stubs_of_case (Read_case case) =
-  C_stubs.stubs_of_name (Wire.Everparse.Raw.struct_name case.struct_)
-
-let read_row rc =
+let read_row (C rc) =
   let (Read_case case) = rc in
-  let stubs = stubs_of_case rc in
+  let stubs =
+    C_stubs.stubs_of_name (Wire.Everparse.Raw.struct_name case.struct_)
+  in
   let ocaml_fn, ocaml_reset =
     cycling ~data:case.dataset.packed ~n_items:case.dataset.n_items
       ~size:case.size (fun buf off -> ignore (case.get buf off))

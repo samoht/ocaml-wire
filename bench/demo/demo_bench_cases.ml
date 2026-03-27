@@ -30,7 +30,7 @@ type id =
   | Enum_status
   | Constrained_data
 
-type read_case =
+type 'a read_case =
   | Read_case : {
       id : id;
       label : string;
@@ -44,10 +44,11 @@ type read_case =
       write_offset : int;
       write_value : 'a;
       equal : 'a -> 'a -> bool;
-      mutable c_parse : (bytes -> 'a) option;
+      bench_read : bool;
     }
-      -> read_case
+      -> 'a read_case
 
+type packed_case = C : _ read_case -> packed_case
 type write_case = { label : string; run : unit -> unit; verify : unit -> unit }
 
 let dataset_of_array items ~size =
@@ -191,7 +192,7 @@ let minimal_case =
       write_offset = 0;
       write_value = 42;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let all_ints_case =
@@ -211,7 +212,7 @@ let all_ints_case =
       write_offset = 0;
       write_value = 0x0102_0304_0506_0708L;
       equal = Int64.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let large_mixed_case =
@@ -235,7 +236,7 @@ let large_mixed_case =
       write_offset = 0;
       write_value = 0x1122_3344_5566_7788L;
       equal = Int64.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let bitfield8_case =
@@ -255,7 +256,7 @@ let bitfield8_case =
       write_offset = 0;
       write_value = 19;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let bitfield16_case =
@@ -275,7 +276,7 @@ let bitfield16_case =
       write_offset = 0;
       write_value = 73;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let bitfield32_case =
@@ -295,7 +296,7 @@ let bitfield32_case =
       write_offset = 0;
       write_value = 17;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let bool_fields_case =
@@ -319,7 +320,7 @@ let bool_fields_case =
       write_offset = 0;
       write_value = true;
       equal = Bool.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let clcw_case =
@@ -339,7 +340,7 @@ let clcw_case =
       write_offset = 0;
       write_value = 42;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let packet_case =
@@ -359,7 +360,7 @@ let packet_case =
       write_offset = 0;
       write_value = 123;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let ipv4_case =
@@ -379,7 +380,7 @@ let ipv4_case =
       write_offset = 0;
       write_value = 0x0A00_0001;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let tcp_case =
@@ -399,7 +400,7 @@ let tcp_case =
       write_offset = 0;
       write_value = 8080;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
 let tcp_syn_case =
@@ -419,7 +420,7 @@ let tcp_syn_case =
       write_offset = 0;
       write_value = true;
       equal = Bool.equal;
-      c_parse = None;
+      bench_read = false;
     }
 
 let mapped_case =
@@ -439,7 +440,7 @@ let mapped_case =
       write_offset = 0;
       write_value = Demo.High;
       equal = ( = );
-      c_parse = None;
+      bench_read = true;
     }
 
 let cases_case =
@@ -459,7 +460,7 @@ let cases_case =
       write_offset = 0;
       write_value = Demo.Telemetry;
       equal = ( = );
-      c_parse = None;
+      bench_read = true;
     }
 
 let enum_case =
@@ -479,7 +480,7 @@ let enum_case =
       write_offset = 0;
       write_value = `Warn;
       equal = ( = );
-      c_parse = None;
+      bench_read = true;
     }
 
 let constrained_case =
@@ -499,50 +500,36 @@ let constrained_case =
       write_offset = 0;
       write_value = 9;
       equal = Int.equal;
-      c_parse = None;
+      bench_read = true;
     }
 
-let projection_cases =
+let all_cases =
   [
-    minimal_case;
-    all_ints_case;
-    large_mixed_case;
-    bitfield8_case;
-    bitfield16_case;
-    bitfield32_case;
-    bool_fields_case;
-    clcw_case;
-    packet_case;
-    ipv4_case;
-    tcp_case;
-    tcp_syn_case;
-    mapped_case;
-    cases_case;
-    enum_case;
-    constrained_case;
+    C minimal_case;
+    C all_ints_case;
+    C large_mixed_case;
+    C bitfield8_case;
+    C bitfield16_case;
+    C bitfield32_case;
+    C bool_fields_case;
+    C clcw_case;
+    C packet_case;
+    C ipv4_case;
+    C tcp_case;
+    C tcp_syn_case;
+    C mapped_case;
+    C cases_case;
+    C enum_case;
+    C constrained_case;
   ]
+
+let projection_cases = all_cases
 
 let read_benchmark_cases =
-  [
-    minimal_case;
-    all_ints_case;
-    large_mixed_case;
-    bitfield8_case;
-    bitfield16_case;
-    bitfield32_case;
-    bool_fields_case;
-    clcw_case;
-    packet_case;
-    ipv4_case;
-    tcp_case;
-    mapped_case;
-    cases_case;
-    enum_case;
-    constrained_case;
-  ]
+  List.filter (fun (C (Read_case c)) -> c.bench_read) all_cases
 
 let projection_structs =
-  List.map (fun (Read_case case) -> case.struct_) projection_cases
+  List.map (fun (C (Read_case case)) -> case.struct_) projection_cases
 
 let verify_write_case ~label ~template ~offset ~get ~set ~equal value () =
   let bytes = Bytes.copy template in

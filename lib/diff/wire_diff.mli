@@ -63,3 +63,17 @@ type packed_test = {
 
 val pack : 'r harness -> packed_test
 (** [pack h] creates a type-erased test from a harness. *)
+
+val packed_harness :
+  name:string ->
+  codec:'r Wire.Codec.t ->
+  read:(string -> 'a option) ->
+  write:('a -> string option) ->
+  project:('r -> 'a) ->
+  equal:('a -> 'a -> bool) ->
+  ?ocaml_read:(string -> 'a option) ->
+  unit ->
+  packed_test
+(** [packed_harness] is [pack (harness ...)]. Erases both ['r] and ['a] in one
+    step, which is needed when calling from inside a GADT match where the
+    existential types must not escape. *)

@@ -128,3 +128,6 @@ let pack (type r) (h : r harness) =
         | Some (Error _) -> Both_failed
         | None -> Both_failed);
   }
+
+let packed_harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read () =
+  pack (harness ~name ~codec ~read ~write ~project ~equal ?ocaml_read ())

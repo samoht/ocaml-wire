@@ -21,7 +21,7 @@ type id =
   | Enum_status
   | Constrained_data
 
-type read_case =
+type 'a read_case =
   | Read_case : {
       id : id;
       label : string;
@@ -35,13 +35,31 @@ type read_case =
       write_offset : int;
       write_value : 'a;
       equal : 'a -> 'a -> bool;
-      mutable c_parse : (bytes -> 'a) option;
+      bench_read : bool;
     }
-      -> read_case
+      -> 'a read_case
 
+type packed_case = C : _ read_case -> packed_case
 type write_case = { label : string; run : unit -> unit; verify : unit -> unit }
 
-val projection_cases : read_case list
+val minimal_case : int read_case
+val all_ints_case : int64 read_case
+val large_mixed_case : int64 read_case
+val bitfield8_case : int read_case
+val bitfield16_case : int read_case
+val bitfield32_case : int read_case
+val bool_fields_case : bool read_case
+val clcw_case : int read_case
+val packet_case : int read_case
+val ipv4_case : int read_case
+val tcp_case : int read_case
+val tcp_syn_case : bool read_case
+val mapped_case : Demo.priority read_case
+val cases_case : Demo.ptype read_case
+val enum_case : Demo.status read_case
+val constrained_case : int read_case
+
+val projection_cases : packed_case list
 (** [projection_cases] is the subset of read cases used for EverParse C
     projection. *)
 
@@ -49,7 +67,7 @@ val projection_structs : Wire.Everparse.struct_ list
 (** [projection_structs] is the list of EverParse struct definitions derived
     from projection cases. *)
 
-val read_benchmark_cases : read_case list
+val read_benchmark_cases : packed_case list
 (** [read_benchmark_cases] is the full list of read benchmark cases covering all
     Wire types. *)
 

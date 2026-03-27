@@ -6,6 +6,7 @@
     EverParse to produce C validators 3. Generates WireSet* implementations +
     parse stubs + timed C loops *)
 
+let ml_only = Array.length Sys.argv > 1 && Sys.argv.(1) = "--ml-only"
 let schema_dir = if Array.length Sys.argv > 1 then Sys.argv.(1) else "schemas"
 
 (* Keep full schemas for the optional scenario-benchmark tier. *)
@@ -25,31 +26,47 @@ let struct_size s =
       Fmt.failwith "benchmark schema %s has variable-length fields"
         (Wire.Everparse.Raw.struct_name s)
 
-let () =
-  let schemas = List.map Wire.Everparse.schema_of_struct structs in
-
-  (* 1. Generate .3d + ExternalTypedefs.h *)
-  Wire_3d.generate_3d ~outdir:schema_dir schemas;
+let generate_ml oc =
+  output_string oc (Wire_stubs.to_ml_stubs structs);
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
+  List.iter
+    (fun s ->
+      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
+      pr "external %s_check : bytes -> bool = \"caml_wire_%s_check\"\n\n" lower
+        lower)
+    structs;
+  pr "(* Timed C benchmark loops *)\n\n";
+  List.iter
+    (fun s ->
+      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
+      pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
+        lower lower)
+    structs;
+  pr "\n(* ── Per-schema stub registry ── *)\n\n";
+  pr "type stubs = {\n";
+  pr "  check : bytes -> bool;\n";
+  pr "  ffi_parse : bytes -> unit;\n";
+  pr "  loop : bytes -> int -> int -> int;\n";
+  pr "}\n\n";
+  pr "let stubs_of_name = function\n";
   List.iter
     (fun s ->
       let name = Wire.Everparse.Raw.struct_name s in
-      write_file
-        (Filename.concat schema_dir (name ^ "_ExternalTypedefs.h"))
-        (Wire_stubs.to_external_typedefs name))
+      let lower = String.lowercase_ascii name in
+      pr
+        "  | %S -> { check = %s_check; ffi_parse = (fun b -> ignore (%s_parse \
+         b)); loop = %s_loop }\n"
+        name lower lower lower)
     structs;
+  pr "  | name -> failwith (\"C_stubs: unknown schema \" ^ name)\n";
+  Format.pp_print_flush ppf ()
 
-  (* 2. Run EverParse *)
-  let quiet = Sys.getenv_opt "EVERPARSE_VERBOSE" = None in
-  Wire_3d.run_everparse ~quiet ~outdir:schema_dir schemas;
-
-  (* 3. Generate c_stubs.c: WireSet* + parse stubs + timed C loops *)
-  let oc = open_out "c_stubs.c" in
+let generate_c oc =
   output_string oc (Wire_stubs.to_wire_setters ());
   output_string oc (Wire_stubs.to_c_stubs structs);
-
   let ppf = Format.formatter_of_out_channel oc in
   let pr fmt = Fmt.pf ppf fmt in
-
   pr "\n/* ── Timed C benchmark loops ── */\n\n";
   pr "#include <time.h>\n\n";
   pr "static inline int64_t now_ns(void) {\n";
@@ -104,51 +121,37 @@ let () =
       pr "  CAMLreturn(Val_int(t1 - t0));\n";
       pr "}\n\n")
     structs;
+  Format.pp_print_flush ppf ()
 
-  Format.pp_print_flush ppf ();
-  close_out oc;
+let () =
+  if ml_only then generate_ml stdout
+  else begin
+    let schemas = List.map Wire.Everparse.schema_of_struct structs in
 
-  (* 4. Generate c_stubs.ml: parse externals + loop externals *)
-  let oc = open_out "c_stubs.ml" in
-  output_string oc (Wire_stubs.to_ml_stubs structs);
+    (* 1. Generate .3d + ExternalTypedefs.h *)
+    Wire_3d.generate_3d ~outdir:schema_dir schemas;
+    List.iter
+      (fun s ->
+        let name = Wire.Everparse.Raw.struct_name s in
+        write_file
+          (Filename.concat schema_dir (name ^ "_ExternalTypedefs.h"))
+          (Wire_stubs.to_external_typedefs name))
+      structs;
 
-  let ppf = Format.formatter_of_out_channel oc in
-  let pr fmt = Fmt.pf ppf fmt in
-  List.iter
-    (fun s ->
-      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
-      pr "external %s_check : bytes -> bool = \"caml_wire_%s_check\"\n\n" lower
-        lower)
-    structs;
-  pr "(* Timed C benchmark loops *)\n\n";
-  List.iter
-    (fun s ->
-      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
-      pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
-        lower lower)
-    structs;
+    (* 2. Run EverParse *)
+    let quiet = Sys.getenv_opt "EVERPARSE_VERBOSE" = None in
+    Wire_3d.run_everparse ~quiet ~outdir:schema_dir schemas;
 
-  (* 5. Registry: uniform-type stubs looked up by schema name *)
-  pr "\n(* ── Per-schema stub registry ── *)\n\n";
-  pr "type stubs = {\n";
-  pr "  check : bytes -> bool;\n";
-  pr "  ffi_parse : bytes -> unit;\n";
-  pr "  loop : bytes -> int -> int -> int;\n";
-  pr "}\n\n";
-  pr "let stubs_of_name = function\n";
-  List.iter
-    (fun s ->
-      let name = Wire.Everparse.Raw.struct_name s in
-      let lower = String.lowercase_ascii name in
-      pr
-        "  | %S -> { check = %s_check; ffi_parse = (fun b -> ignore (%s_parse \
-         b)); loop = %s_loop }\n"
-        name lower lower lower)
-    structs;
-  pr "  | name -> failwith (\"C_stubs: unknown schema \" ^ name)\n";
+    (* 3. Generate c_stubs.c *)
+    let oc = open_out "c_stubs.c" in
+    generate_c oc;
+    close_out oc;
 
-  Format.pp_print_flush ppf ();
-  close_out oc;
+    (* 4. Generate c_stubs.ml *)
+    let oc = open_out "c_stubs.ml" in
+    generate_ml oc;
+    close_out oc;
 
-  Fmt.pr "Generated %d schemas in %s/@." (List.length structs) schema_dir;
-  Fmt.pr "Generated c_stubs.c, c_stubs.ml@."
+    Fmt.pr "Generated %d schemas in %s/@." (List.length structs) schema_dir;
+    Fmt.pr "Generated c_stubs.c, c_stubs.ml@."
+  end
