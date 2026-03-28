@@ -281,8 +281,8 @@ let e2e ~name ~structs ~module_ ~test_ml =
     (* 3. Compile *)
     let cmd =
       Fmt.str
-        "cd %s && ocamlfind ocamlopt -package wire -linkpkg -ccopt '-I %s' \
-         wire_ffi.c stubs.ml main.ml -o test_e2e 2>&1"
+        "cd %s && ocamlfind ocamlopt -package wire,wire.stubs -linkpkg -ccopt \
+         '-I %s' wire_ffi.c stubs.ml main.ml -o test_e2e 2>&1"
         dir dir
     in
     run cmd;
@@ -568,11 +568,8 @@ let test_e2e_output_parse () =
     (* 3. Generate ExternalTypedefs.h *)
     let ext_h = Wire_stubs.to_external_typedefs name in
     write_file (Filename.concat dir (name ^ "_ExternalTypedefs.h")) ext_h;
-    (* 4. Generate WireSet* implementations + parse stub *)
-    let setters = Wire_stubs.to_wire_setters () in
-    let c_stubs = Wire_stubs.to_c_stubs [ s ] in
-    write_file (Filename.concat dir "wire_setters.c") setters;
-    write_file (Filename.concat dir "wire_stubs.c") c_stubs;
+    (* 4. Generate parse stubs — wire_setters linked from wire.stubs *)
+    Wire_stubs.of_structs ~schema_dir:dir ~outdir:dir [ s ];
     (* 5. Generate ML stubs *)
     let ml_stubs = Wire_stubs.to_ml_stubs [ s ] in
     write_file (Filename.concat dir "stubs.ml") ml_stubs;
@@ -593,8 +590,8 @@ let test_e2e_output_parse () =
     (* 7. Compile everything *)
     let cmd =
       Fmt.str
-        "cd %s && ocamlfind ocamlopt -package wire -linkpkg -ccopt '-I %s' \
-         wire_setters.c wire_stubs.c stubs.ml main.ml -o test_output 2>&1"
+        "cd %s && ocamlfind ocamlopt -package wire,wire.stubs -linkpkg -ccopt \
+         '-I %s' wire_ffi.c stubs.ml main.ml -o test_output 2>&1"
         dir dir
     in
     run cmd;

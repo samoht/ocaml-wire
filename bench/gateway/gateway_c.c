@@ -11,20 +11,7 @@
 #include <stdint.h>
 #include <time.h>
 
-/* WIRECTX definition — must match wire_stubs generated version */
-#ifndef WIRECTX_DEFINED
-#define WIRECTX_DEFINED
-typedef struct { int64_t *fields; } WIRECTX;
-#endif
-
-/* WireSet functions provided by c_stubs_c at link time */
-void WireSetU8(WIRECTX *ctx, uint32_t idx, uint8_t v);
-void WireSetU16(WIRECTX *ctx, uint32_t idx, uint16_t v);
-void WireSetU16be(WIRECTX *ctx, uint32_t idx, uint16_t v);
-void WireSetU32(WIRECTX *ctx, uint32_t idx, uint32_t v);
-void WireSetU32be(WIRECTX *ctx, uint32_t idx, uint32_t v);
-void WireSetU64(WIRECTX *ctx, uint32_t idx, uint64_t v);
-void WireSetU64be(WIRECTX *ctx, uint32_t idx, uint64_t v);
+#include "wire_setters.h"
 
 /* EverParse generated headers (implementation linked from c_stubs_c) */
 #include "EverParse.h"

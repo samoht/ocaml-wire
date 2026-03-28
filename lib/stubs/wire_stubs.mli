@@ -34,6 +34,5 @@ val to_ml_stubs : Wire.Everparse.Raw.struct_ list -> string
 val to_ml_stub : Wire.Everparse.Raw.struct_ -> string
 val to_ml_stub_name : Wire.Everparse.Raw.struct_ -> string
 val to_external_typedefs : string -> string
-val to_wire_setters : unit -> string
 val everparse_name : string -> string
 val ml_type_of : 'a Wire.typ -> string

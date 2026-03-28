@@ -76,4 +76,4 @@
   (extra_deps
    (glob_files schemas/*.c)
    (glob_files schemas/*.h))
-  (flags :standard -I schemas)))
+  (flags :standard -I schemas -I ../lib/stubs)))

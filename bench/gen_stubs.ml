@@ -98,7 +98,6 @@ let generate_ml oc =
   Format.pp_print_flush ppf ()
 
 let generate_c oc =
-  output_string oc (Wire_stubs.to_wire_setters ());
   output_string oc (Wire_stubs.to_c_stubs structs);
   let ppf = Format.formatter_of_out_channel oc in
   let pr fmt = Fmt.pf ppf fmt in
