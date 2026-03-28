@@ -1,6 +1,6 @@
 /* APID routing — application logic with EverParse field extraction.
 
-   Uses EverParse-generated SpacepacketValidateSpacepacket to extract fields
+   Uses EverParse-generated SpacePacketValidateSpacePacket to extract fields
    via WireSet callbacks into a C array. Application logic (routing dispatch)
    uses the extracted values. No hand-written bitfield manipulation. */
 
@@ -72,7 +72,7 @@ static void route_counts(uint8_t *buf, int total_bytes, int n, int counts[4]) {
 
   for (int i = 0; i < n; i++) {
     if (off + hdr > total_bytes) off = 0;
-    SpacepacketValidateSpacepacket(&ctx, NULL, sp_err,
+    SpacePacketValidateSpacePacket(&ctx, NULL, sp_err,
         buf + off, hdr, 0);
     int apid = (int)fields[SP_APID];
     int dlen = (int)fields[SP_DATALENGTH];

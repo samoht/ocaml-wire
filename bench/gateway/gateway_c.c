@@ -1,7 +1,7 @@
 /* TM frame reassembly — application logic with EverParse field extraction.
 
    Uses EverParse-generated TmframeValidateTmframe and
-   SpacepacketValidateSpacepacket to extract fields via WireSet callbacks
+   SpacePacketValidateSpacePacket to extract fields via WireSet callbacks
    into C arrays. Application logic (checksum computation) uses the extracted
    values. No hand-written bitfield manipulation. */
 
@@ -84,7 +84,7 @@ static void walk_frame(uint8_t *frame, int tm_hdr, int pkt_size,
   int sp_hdr = 6;
   int off = tm_hdr + fhp;
   while (off + pkt_size <= tm_hdr + data_field_size) {
-    SpacepacketValidateSpacepacket(&sp_ctx, NULL, gw_err,
+    SpacePacketValidateSpacePacket(&sp_ctx, NULL, gw_err,
         frame + off, sp_hdr, 0);
     int apid = (int)sp[SP_APID];
     int seq = (int)sp[SP_SEQCOUNT];
