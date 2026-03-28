@@ -126,9 +126,22 @@ let benchmark ~n_pkts =
   let st = state buf total_bytes in
   let ocaml_result () = run_packets st n_pkts in
   let c_result () = c_apid_route_counts buf 0 n_pkts in
+  let hdr = st.hdr in
+  let ffi_off = ref 0 in
+  let ffi_reset () = ffi_off := 0 in
+  let ffi_fn _buf =
+    if !ffi_off + hdr > total_bytes then ffi_off := 0;
+    ignore (C_stubs.spacepacket_parse (Bytes.sub buf !ffi_off hdr));
+    ffi_off := !ffi_off + hdr
+  in
+  let reset () =
+    reset st;
+    ffi_reset ()
+  in
   let t =
-    v "Wire OCaml" ~size:st.hdr ~reset:(fun () -> reset st) (step st)
+    v "Wire OCaml" ~size:hdr ~reset (step st)
     |> with_c c_apid_route buf
+    |> with_ffi ffi_fn Bytes.empty
     |> with_expect ~equal:( = ) ~pp:pp_counts ~c:c_result ocaml_result
   in
   (t, payload_bytes, st, buf)

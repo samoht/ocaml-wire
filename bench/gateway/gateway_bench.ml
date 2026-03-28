@@ -139,9 +139,21 @@ let benchmark ~n_frames =
   let st = state n_frames in
   let ocaml_result () = process_all_frames st in
   let c_result () = c_tm_reassemble_checksum st.buf 0 in
+  let ffi_frame = ref 0 in
+  let ffi_reset () = ffi_frame := 0 in
+  let ffi_fn _buf =
+    let off = !ffi_frame mod st.n_frames * cadu_size in
+    ignore (C_stubs.tmframe_parse (Bytes.sub st.buf off tm_hdr));
+    incr ffi_frame
+  in
+  let reset () =
+    reset st;
+    ffi_reset ()
+  in
   let t =
-    v "Wire OCaml" ~size:cadu_size ~reset:(fun () -> reset st) (step st)
+    v "Wire OCaml" ~size:cadu_size ~reset (step st)
     |> with_c c_tm_reassemble st.buf
+    |> with_ffi ffi_fn Bytes.empty
     |> with_expect ~equal:Int64.equal ~pp:Fmt.int64 ~c:c_result ocaml_result
   in
   (t, st)

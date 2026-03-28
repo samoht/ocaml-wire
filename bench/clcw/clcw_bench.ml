@@ -87,9 +87,21 @@ let benchmark ~n_words =
   let st = state n_words in
   let ocaml_result () = run_all st in
   let c_result () = c_clcw_poll_result st.buf 0 in
+  let ffi_index = ref 0 in
+  let ffi_reset () = ffi_index := 0 in
+  let ffi_fn _buf =
+    let off = !ffi_index mod st.n_words * word_size in
+    ignore (C_stubs.clcw_parse (Bytes.sub st.buf off word_size));
+    incr ffi_index
+  in
+  let reset () =
+    reset st;
+    ffi_reset ()
+  in
   let t =
-    v "Wire OCaml" ~size:word_size ~reset:(fun () -> reset st) (step st)
+    v "Wire OCaml" ~size:word_size ~reset (step st)
     |> with_c c_clcw_poll st.buf
+    |> with_ffi ffi_fn Bytes.empty
     |> with_expect ~equal:Int.equal ~pp:Fmt.int ~c:c_result ocaml_result
   in
   (t, st)
