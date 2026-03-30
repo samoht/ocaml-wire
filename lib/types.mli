@@ -366,8 +366,8 @@ val struct_name : struct_ -> string
 val field_names : struct_ -> string list
 (** Named field names in declaration order. *)
 
-val struct_project : struct_ -> name:string -> keep:string -> struct_
-(** [struct_project s ~name ~keep] keeps only the field named [keep], making all
+val struct_project : struct_ -> name:string -> keep:field list -> struct_
+(** [struct_project s ~name ~keep] keeps only the fields in [keep], making all
     others anonymous. *)
 
 type ocaml_kind = K_int | K_int64 | K_bool | K_string | K_unit

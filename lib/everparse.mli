@@ -105,9 +105,10 @@ module Raw : sig
   val field_names : struct_ -> string list
   (** Named field names in declaration order. *)
 
-  val struct_project : struct_ -> name:string -> keep:string -> struct_
-  (** [struct_project s ~name ~keep] keeps only the field named [keep], making
-      all others anonymous. *)
+  val struct_project :
+    struct_ -> name:string -> keep:Field.packed list -> struct_
+  (** [struct_project s ~name ~keep] keeps only the fields in [keep], making all
+      others anonymous. *)
 
   type ocaml_kind = Types.ocaml_kind =
     | K_int

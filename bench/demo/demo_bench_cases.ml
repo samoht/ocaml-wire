@@ -3,12 +3,15 @@ module Slice = Bytesrw.Bytes.Slice
 
 let n_data = 1024
 
-(* Project a codec to a 3D struct that extracts only one named field.
+(* Project a codec to a 3D struct that extracts only the given fields.
    All other fields become anonymous (validation-only, no WireSet callback).
    This derives the projection from the codec's own field list, avoiding
    hand-copied field layouts that can drift from the codec definition. *)
-let project_field (type r) (codec : r Codec.t) ~name ~keep =
+let project (type r) (codec : r Codec.t) ~name ~keep =
   Everparse.Raw.struct_project (Everparse.struct_of_codec codec) ~name ~keep
+
+let project_one (type r a) (codec : r Codec.t) ~name ~keep:(f : a Field.t) =
+  project codec ~name ~keep:[ Field.Named f ]
 
 type dataset = { items : bytes array; packed : bytes; n_items : int }
 
@@ -152,47 +155,52 @@ let tcp_dataset =
     ~size:Net.tcp_size
 
 let minimal_struct =
-  project_field Demo.minimal_codec ~name:"Minimal" ~keep:"Value"
+  project_one Demo.minimal_codec ~name:"Minimal" ~keep:Demo.f_minimal_value
 
-let bf8_struct = project_field Demo.bf8_codec ~name:"Bitfield8" ~keep:"Value"
-let bf16_struct = project_field Demo.bf16_codec ~name:"Bitfield16" ~keep:"Id"
+let bf8_struct =
+  project_one Demo.bf8_codec ~name:"Bitfield8" ~keep:Demo.f_bf8_value
+
+let bf16_struct =
+  project_one Demo.bf16_codec ~name:"Bitfield16" ~keep:Demo.f_bf16_id
 
 let bool_fields_struct =
-  project_field Demo.bool_fields_codec ~name:"BoolFields" ~keep:"Active"
+  project_one Demo.bool_fields_codec ~name:"BoolFields" ~keep:Demo.f_bool_active
 
 let bf32_struct =
-  project_field Demo.bf32_codec ~name:"Bitfield32" ~keep:"Priority"
+  project_one Demo.bf32_codec ~name:"Bitfield32" ~keep:Demo.f_bf32_pri
 
 let all_ints_struct =
-  project_field Demo.all_ints_codec ~name:"AllInts" ~keep:"U64BE"
+  project_one Demo.all_ints_codec ~name:"AllInts" ~keep:Demo.f_ints_u64be
 
 let large_mixed_struct =
-  project_field Demo.large_mixed_codec ~name:"LargeMixed" ~keep:"Timestamp"
+  project_one Demo.large_mixed_codec ~name:"LargeMixed"
+    ~keep:Demo.f_mixed_timestamp
 
 let mapped_struct =
-  project_field Demo.mapped_codec ~name:"Mapped" ~keep:"Priority"
+  project_one Demo.mapped_codec ~name:"Mapped" ~keep:Demo.f_mp_priority
 
 let cases_demo_struct =
-  project_field Demo.cases_demo_codec ~name:"CasesDemo" ~keep:"PacketType"
+  project_one Demo.cases_demo_codec ~name:"CasesDemo" ~keep:Demo.f_cd_type
 
 let enum_demo_struct =
-  project_field Demo.enum_demo_codec ~name:"EnumDemo" ~keep:"StatusCode"
+  project_one Demo.enum_demo_codec ~name:"EnumDemo" ~keep:Demo.f_en_status
 
 let constrained_struct =
-  project_field Demo.constrained_codec ~name:"Constrained" ~keep:"Data"
+  project_one Demo.constrained_codec ~name:"Constrained" ~keep:Demo.f_co_data
 
 let clcw_report_struct =
-  project_field Space.clcw_codec ~name:"CLCWReport" ~keep:"ReportValue"
+  project_one Space.clcw_codec ~name:"CLCWReport" ~keep:Space.cw_report
 
 let space_packet_apid_struct =
-  project_field Space.packet_codec ~name:"SpacePacketApid" ~keep:"APID"
+  project_one Space.packet_codec ~name:"SpacePacketApid" ~keep:Space.f_sp_apid
 
-let ipv4_struct = project_field Net.ipv4_codec ~name:"IPv4" ~keep:"SrcAddr"
+let ipv4_struct = project_one Net.ipv4_codec ~name:"IPv4" ~keep:Net.f_ip_src
 
 let tcp_dst_port_struct =
-  project_field Net.tcp_codec ~name:"TCP" ~keep:"DstPort"
+  project_one Net.tcp_codec ~name:"TCP" ~keep:Net.f_tcp_dst_port
 
-let tcp_syn_struct = project_field Net.tcp_codec ~name:"TCPSyn" ~keep:"SYN"
+let tcp_syn_struct =
+  project_one Net.tcp_codec ~name:"TCPSyn" ~keep:Net.f_tcp_syn
 
 let minimal_case =
   let get =

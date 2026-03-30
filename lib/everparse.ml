@@ -200,7 +200,9 @@ module Raw = struct
   let struct_ name fields = Types.struct_ name (unpack_fields fields)
   let struct_name = Types.struct_name
   let field_names = Types.field_names
-  let struct_project = Types.struct_project
+
+  let struct_project s ~name ~keep =
+    Types.struct_project s ~name ~keep:(List.map Field.to_decl keep)
 
   type ocaml_kind = Types.ocaml_kind =
     | K_int

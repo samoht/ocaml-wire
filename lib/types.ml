@@ -261,12 +261,15 @@ let struct_typ s = Struct s
 let field_names s = List.filter_map (fun (Field f) -> f.field_name) s.fields
 
 let struct_project s ~name ~keep =
+  let keep_names = List.filter_map (fun (Field f) -> f.field_name) keep in
   let fields =
     List.map
       (fun (Field f) ->
-        if f.field_name = Some keep then Field f
-        else
-          Field { f with field_name = None; constraint_ = None; action = None })
+        match f.field_name with
+        | Some n when List.mem n keep_names -> Field f
+        | _ ->
+            Field
+              { f with field_name = None; constraint_ = None; action = None })
       s.fields
   in
   { s with name; fields }

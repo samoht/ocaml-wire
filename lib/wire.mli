@@ -761,9 +761,10 @@ module Everparse : sig
     val field_kinds : struct_ -> (string * ocaml_kind) list
     (** Named field names with their OCaml type kind. *)
 
-    val struct_project : struct_ -> name:string -> keep:string -> struct_
+    val struct_project :
+      struct_ -> name:string -> keep:Field.packed list -> struct_
     (** [struct_project s ~name ~keep] returns a copy of [s] renamed to [name]
-        with all fields except [keep] made anonymous. *)
+        keeping only the fields in [keep]. All others become anonymous. *)
 
     val struct_params : struct_ -> param list
     (** Formal parameters of a struct (empty for non-parameterised structs). *)
