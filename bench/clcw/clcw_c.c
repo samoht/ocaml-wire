@@ -39,7 +39,6 @@ enum {
 };
 
 static int count_anomalies(uint8_t *buf, int n_words, int n_iters) {
-
   int anomalies = 0;
   int expected_seq = 0;
   int64_t fields[CLCW_N_FIELDS];
