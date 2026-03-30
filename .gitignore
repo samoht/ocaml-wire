@@ -6,9 +6,14 @@ _build/
 *.cmo
 *.o
 *.class
+a.out
+c_stubs.c
+c_stubs.ml
+.DS_Store
 prof.txt
 prof.trace/
 *.3d
 schemas/
 AGENTS.md
 .agents/
+.crush/
