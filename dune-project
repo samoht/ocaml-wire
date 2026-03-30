@@ -2,6 +2,7 @@
 (using directory-targets 0.1)
 
 (name wire)
+(version 0.9.0)
 
 (generate_opam_files true)
 
