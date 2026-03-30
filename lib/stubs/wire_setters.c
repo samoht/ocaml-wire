@@ -39,3 +39,7 @@ void WireSetU64(WIRECTX *ctx, uint32_t idx, uint64_t v) {
 void WireSetU64be(WIRECTX *ctx, uint32_t idx, uint64_t v) {
   if (ctx->fields) ctx->fields[idx] = (int64_t)v;
 }
+
+void WireSetBytes(WIRECTX *ctx, uint32_t idx, uint32_t v) {
+  if (ctx->fields) ctx->fields[idx] = (int64_t)v;
+}

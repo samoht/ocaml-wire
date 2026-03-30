@@ -18,5 +18,6 @@ void WireSetU32(WIRECTX *ctx, uint32_t idx, uint32_t v);
 void WireSetU32be(WIRECTX *ctx, uint32_t idx, uint32_t v);
 void WireSetU64(WIRECTX *ctx, uint32_t idx, uint64_t v);
 void WireSetU64be(WIRECTX *ctx, uint32_t idx, uint64_t v);
+void WireSetBytes(WIRECTX *ctx, uint32_t idx, uint32_t v);
 
 #endif

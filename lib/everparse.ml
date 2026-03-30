@@ -58,32 +58,29 @@ let map_field_action idx (Types.Field f) =
       let field_idx = !idx in
       incr idx;
       let new_action =
-        if is_byte_field f.field_typ then
-          (* byte_array/byte_slice: no setter (TODO: field_ptr) *)
-          f.action
+        let { setter_name = setter; _ } = setter_of f.field_typ in
+        let value =
+          if is_byte_field f.field_typ then "(UINT32) field_pos" else name
+        in
+        let call =
+          Types.Extern_call
+            (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; value ])
+        in
+        if is_bitfield f.field_typ then
+          (* Bitfields: :act (non-failing, required for coalescing) *)
+          match f.action with
+          | None -> Some (Types.On_act [ call ])
+          | Some (Types.On_act stmts) -> Some (Types.On_act (stmts @ [ call ]))
+          | Some (Types.On_success stmts) ->
+              Some (Types.On_act (stmts @ [ call ]))
         else
-          let { setter_name = setter; _ } = setter_of f.field_typ in
-          let call =
-            Types.Extern_call
-              (setter, [ "ctx"; Fmt.str "(UINT32) %d" field_idx; name ])
-          in
-          if is_bitfield f.field_typ then
-            (* Bitfields: :act (non-failing, required for coalescing) *)
-            match f.action with
-            | None -> Some (Types.On_act [ call ])
-            | Some (Types.On_act stmts) ->
-                Some (Types.On_act (stmts @ [ call ]))
-            | Some (Types.On_success stmts) ->
-                Some (Types.On_act (stmts @ [ call ]))
-          else
-            (* Non-bitfields: :on-success (runs after validation) *)
-            match f.action with
-            | None -> Some (Types.On_success [ call; Types.Return Types.true_ ])
-            | Some (Types.On_success stmts) ->
-                Some
-                  (Types.On_success (stmts @ [ call; Types.Return Types.true_ ]))
-            | Some (Types.On_act stmts) ->
-                Some (Types.On_act (stmts @ [ call ]))
+          (* Non-bitfields: :on-success (runs after validation) *)
+          match f.action with
+          | None -> Some (Types.On_success [ call; Types.Return Types.true_ ])
+          | Some (Types.On_success stmts) ->
+              Some
+                (Types.On_success (stmts @ [ call; Types.Return Types.true_ ]))
+          | Some (Types.On_act stmts) -> Some (Types.On_act (stmts @ [ call ]))
       in
       Types.Field
         {

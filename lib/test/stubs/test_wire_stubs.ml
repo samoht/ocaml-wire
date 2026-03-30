@@ -468,11 +468,12 @@ let test_output_byte_array () =
       (fun tag payload -> (tag, payload))
       [ (f_tag $ fun (t, _) -> t); (f_payload $ fun (_, p) -> p) ]
   in
-  (* byte_array fields use WireSetBytes which EverParse may not handle;
-     skip EverParse compilation but verify the 3D string structure. *)
   let s3d = check_output_3d ~run_everparse:false codec in
-  Alcotest.(check bool) "has :on-success" true (contains ~sub:":on-success" s3d);
-  Alcotest.(check bool) "has payload" true (contains ~sub:"payload" s3d)
+  Alcotest.(check bool)
+    "has WireSetBytes" true
+    (contains ~sub:"WireSetBytes" s3d);
+  Alcotest.(check bool) "has field_pos" true (contains ~sub:"field_pos" s3d);
+  Alcotest.(check bool) "has :on-success" true (contains ~sub:":on-success" s3d)
 
 let test_output_only_bitfields () =
   let f_a = Field.v "a" (bits ~width:3 U8) in
