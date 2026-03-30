@@ -102,16 +102,7 @@ let generate_c oc =
   let ppf = Format.formatter_of_out_channel oc in
   let pr fmt = Fmt.pf ppf fmt in
   pr "\n/* ── Timed C benchmark loops ── */\n\n";
-  pr "#include <time.h>\n\n";
-  pr "static inline int64_t now_ns(void) {\n";
-  pr "  struct timespec ts;\n";
-  pr "  clock_gettime(CLOCK_MONOTONIC, &ts);\n";
-  pr "  return ts.tv_sec * 1000000000LL + ts.tv_nsec;\n";
-  pr "}\n\n";
-  pr "static void bench_err(const char *t, const char *f, const char *r,\n";
-  pr "  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {\n";
-  pr "  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;\n";
-  pr "}\n\n";
+  pr "#include \"bench_common.h\"\n\n";
   List.iter
     (fun s ->
       let name = Wire.Everparse.Raw.struct_name s in
@@ -124,8 +115,8 @@ let generate_c oc =
       pr "  uint8_t *data = (uint8_t *)Bytes_val(v_buf);\n";
       pr "  uint32_t len = caml_string_length(v_buf);\n";
       pr "  WIRECTX ctx = { NULL };\n";
-      pr "  uint64_t r = %sValidate%s(&ctx, NULL, %s_err, data, len, 0);\n" ep
-        ep lower;
+      pr "  uint64_t r = %sValidate%s(&ctx, NULL, bench_err, data, len, 0);\n"
+        ep ep;
       pr "  CAMLreturn(Val_bool(EverParseIsSuccess(r)));\n";
       pr "}\n\n";
       let item_size = struct_size s in

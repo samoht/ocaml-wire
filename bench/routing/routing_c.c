@@ -9,7 +9,6 @@
 #include <caml/mlvalues.h>
 #include <stdint.h>
 #include <string.h>
-#include <time.h>
 
 #include "wire_setters.h"
 
@@ -17,10 +16,7 @@
 #include "EverParse.h"
 #include "SpacePacket.h"
 
-static void sp_err(const char *t, const char *f, const char *r,
-  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {
-  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;
-}
+#include "bench_common.h"
 
 /* SpacePacket field indices (declaration order) */
 enum {
@@ -34,12 +30,6 @@ enum {
   SP_N_FIELDS
 };
 
-static inline int64_t now_ns(void) {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000000000LL + ts.tv_nsec;
-}
-
 static int routing_table[2048];
 
 static void init_routing_table(void) {
@@ -52,14 +42,14 @@ static void init_routing_table(void) {
 }
 
 static void route_counts(uint8_t *buf, int total_bytes, int n, int counts[4]) {
-  int hdr = 6;  /* SpacePacket primary header size */
+  int hdr = 6;  /* Wire.Codec.wire_size Space.packet_codec */
   int off = 0;
   int64_t fields[SP_N_FIELDS];
   WIRECTX ctx = { fields };
 
   for (int i = 0; i < n; i++) {
     if (off + hdr > total_bytes) off = 0;
-    SpacePacketValidateSpacePacket(&ctx, NULL, sp_err,
+    SpacePacketValidateSpacePacket(&ctx, NULL, bench_err,
         buf + off, hdr, 0);
     int apid = (int)fields[SP_APID];
     int dlen = (int)fields[SP_DATALENGTH];

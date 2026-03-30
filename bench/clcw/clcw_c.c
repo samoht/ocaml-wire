@@ -7,7 +7,6 @@
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
 #include <stdint.h>
-#include <time.h>
 
 #include "wire_setters.h"
 
@@ -15,10 +14,10 @@
 #include "EverParse.h"
 #include "CLCW.h"
 
-static void clcw_err(const char *t, const char *f, const char *r,
-  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {
-  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;
-}
+#include "bench_common.h"
+
+/* Must match clcw_bench.ml — derived from Space.clcw_codec */
+static const int WORD_SIZE = 4;  /* Wire.Codec.wire_size Space.clcw_codec */
 
 /* Field indices in the CLCW output struct (declaration order of named fields).
    These must match the order in Space.clcw_codec. */
@@ -39,22 +38,16 @@ enum {
   CLCW_N_FIELDS
 };
 
-static inline int64_t now_ns(void) {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000000000LL + ts.tv_nsec;
-}
-
 static int count_anomalies(uint8_t *buf, int n_words, int n_iters) {
-  int word_size = 4;
+
   int anomalies = 0;
   int expected_seq = 0;
   int64_t fields[CLCW_N_FIELDS];
   WIRECTX ctx = { fields };
 
   for (int i = 0; i < n_iters; i++) {
-    uint8_t *p = buf + (i % n_words) * word_size;
-    ClcwValidateClcw(&ctx, NULL, clcw_err, p, word_size, 0);
+    uint8_t *p = buf + (i % n_words) * WORD_SIZE;
+    ClcwValidateClcw(&ctx, NULL, bench_err, p, WORD_SIZE, 0);
 
     int lockout    = (int)fields[CLCW_LOCKOUT];
     int wait_      = (int)fields[CLCW_WAIT];
@@ -72,8 +65,8 @@ CAMLprim value c_clcw_poll(value v_buf, value v_off, value v_n) {
   uint8_t *buf = (uint8_t *)Bytes_val(v_buf) + Int_val(v_off);
   int buf_len = caml_string_length(v_buf) - Int_val(v_off);
   int n = Int_val(v_n);
-  int word_size = 4;
-  int n_words = buf_len / word_size;
+
+  int n_words = buf_len / WORD_SIZE;
   int64_t t0 = now_ns();
   volatile int anomalies = count_anomalies(buf, n_words, n);
   (void)anomalies;
@@ -84,7 +77,7 @@ CAMLprim value c_clcw_poll(value v_buf, value v_off, value v_n) {
 CAMLprim value c_clcw_poll_result(value v_buf, value v_off) {
   uint8_t *buf = (uint8_t *)Bytes_val(v_buf) + Int_val(v_off);
   int buf_len = caml_string_length(v_buf) - Int_val(v_off);
-  int word_size = 4;
-  int n_words = buf_len / word_size;
+
+  int n_words = buf_len / WORD_SIZE;
   return Val_int(count_anomalies(buf, n_words, n_words));
 }

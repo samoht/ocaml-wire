@@ -9,7 +9,6 @@
 #include <caml/alloc.h>
 #include <caml/memory.h>
 #include <stdint.h>
-#include <time.h>
 
 #include "wire_setters.h"
 
@@ -18,10 +17,7 @@
 #include "TMFrame.h"
 #include "SpacePacket.h"
 
-static void gw_err(const char *t, const char *f, const char *r,
-  uint64_t c, uint8_t *ctx, EVERPARSE_INPUT_BUFFER i, uint64_t p) {
-  (void)t; (void)f; (void)r; (void)c; (void)ctx; (void)i; (void)p;
-}
+#include "bench_common.h"
 
 /* TMFrame field indices (declaration order) */
 enum {
@@ -38,14 +34,14 @@ enum {
   SP_N_FIELDS
 };
 
+/* Must match gateway_bench.ml — derived from Space.tm_frame_codec / Space.packet_codec */
+static const int CADU_SIZE = 1115;
+static const int TM_HDR = 6;       /* Wire.Codec.wire_size Space.tm_frame_codec */
+static const int PKT_SIZE = 70;    /* sp_hdr (6) + pkt_payload (64) */
+static const int DATA_FIELD_SIZE = 1115 - 6;  /* CADU_SIZE - TM_HDR */
+
 static const uint64_t CHECKSUM_INIT = 0xCBF29CE484222325ULL;
 static const uint64_t CHECKSUM_PRIME = 0x100000001B3ULL;
-
-static inline int64_t now_ns(void) {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000000000LL + ts.tv_nsec;
-}
 
 static inline uint64_t hash_int(uint64_t state, int value) {
   return (state ^ (uint64_t)value) * CHECKSUM_PRIME;
@@ -55,7 +51,7 @@ static void walk_frame(uint8_t *frame, int tm_hdr, int pkt_size,
                         int data_field_size, uint64_t *checksum) {
   int64_t tf[TF_N_FIELDS];
   WIRECTX tf_ctx = { tf };
-  TmframeValidateTmframe(&tf_ctx, NULL, gw_err, frame, tm_hdr, 0);
+  TmframeValidateTmframe(&tf_ctx, NULL, bench_err, frame, tm_hdr, 0);
 
   int vcid = (int)tf[TF_VCID];
   int fhp = (int)tf[TF_FIRSTHDRPTR];
@@ -71,7 +67,7 @@ static void walk_frame(uint8_t *frame, int tm_hdr, int pkt_size,
   int sp_hdr = 6;
   int off = tm_hdr + fhp;
   while (off + pkt_size <= tm_hdr + data_field_size) {
-    SpacePacketValidateSpacePacket(&sp_ctx, NULL, gw_err,
+    SpacePacketValidateSpacePacket(&sp_ctx, NULL, bench_err,
         frame + off, sp_hdr, 0);
     int apid = (int)sp[SP_APID];
     int seq = (int)sp[SP_SEQCOUNT];
@@ -89,15 +85,11 @@ CAMLprim value c_tm_reassemble(value v_buf, value v_off, value v_n) {
   uint8_t *buf = (uint8_t *)Bytes_val(v_buf) + Int_val(v_off);
   int buf_len = caml_string_length(v_buf) - Int_val(v_off);
   int n = Int_val(v_n);
-  int cadu_size = 1115;
-  int tm_hdr = 6;
-  int pkt_size = 70;
-  int data_field_size = cadu_size - tm_hdr;
-  int n_frames = buf_len / cadu_size;
+  int n_frames = buf_len / CADU_SIZE;
   int64_t t0 = now_ns();
   for (int i = 0; i < n; i++) {
-    uint8_t *frame = buf + (i % n_frames) * cadu_size;
-    walk_frame(frame, tm_hdr, pkt_size, data_field_size, NULL);
+    uint8_t *frame = buf + (i % n_frames) * CADU_SIZE;
+    walk_frame(frame, TM_HDR, PKT_SIZE, DATA_FIELD_SIZE, NULL);
   }
   int64_t t1 = now_ns();
   return Val_int(t1 - t0);
@@ -107,15 +99,11 @@ CAMLprim value c_tm_reassemble_checksum(value v_buf, value v_off) {
   CAMLparam2(v_buf, v_off);
   uint8_t *buf = (uint8_t *)Bytes_val(v_buf) + Int_val(v_off);
   int buf_len = caml_string_length(v_buf) - Int_val(v_off);
-  int cadu_size = 1115;
-  int tm_hdr = 6;
-  int pkt_size = 70;
-  int data_field_size = cadu_size - tm_hdr;
-  int n_frames = buf_len / cadu_size;
+  int n_frames = buf_len / CADU_SIZE;
   uint64_t checksum = CHECKSUM_INIT;
   for (int i = 0; i < n_frames; i++) {
-    uint8_t *frame = buf + i * cadu_size;
-    walk_frame(frame, tm_hdr, pkt_size, data_field_size, &checksum);
+    uint8_t *frame = buf + i * CADU_SIZE;
+    walk_frame(frame, TM_HDR, PKT_SIZE, DATA_FIELD_SIZE, &checksum);
   }
   CAMLreturn(caml_copy_int64((int64_t)checksum));
 }
