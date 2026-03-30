@@ -109,7 +109,14 @@ module Raw : sig
   (** [struct_project s ~name ~keep] keeps only the field named [keep], making
       all others anonymous. *)
 
-  val field_kinds : struct_ -> (string * Types.ocaml_kind) list
+  type ocaml_kind = Types.ocaml_kind =
+    | K_int
+    | K_int64
+    | K_bool
+    | K_string
+    | K_unit
+
+  val field_kinds : struct_ -> (string * ocaml_kind) list
   (** Field names with their OCaml kind. *)
 
   val struct_params : struct_ -> Types.param list

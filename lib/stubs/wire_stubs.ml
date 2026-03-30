@@ -39,7 +39,7 @@ let c_stub_output ppf ~lower ~ep (s : Wire.Everparse.Raw.struct_) =
     List.iteri
       (fun i (_, kind) ->
         match kind with
-        | Wire.Private.Types.K_int64 ->
+        | Wire.Everparse.Raw.K_int64 ->
             Fmt.pf ppf
               "  Store_field(v_result, %d, caml_copy_int64(fields[%d]));@\n" i i
         | _ ->
@@ -66,7 +66,7 @@ let c_stub_output ppf ~lower ~ep (s : Wire.Everparse.Raw.struct_) =
     List.iteri
       (fun i (_, kind) ->
         match kind with
-        | Wire.Private.Types.K_int64 ->
+        | Wire.Everparse.Raw.K_int64 ->
             Fmt.pf ppf "  args[%d] = caml_copy_int64(fields[%d]);@\n" i i
         | _ -> Fmt.pf ppf "  args[%d] = Val_long(fields[%d]);@\n" i i)
       kinds;
@@ -122,7 +122,7 @@ let ml_field_name name =
   | _ -> lower
 
 let ml_kind_string = function
-  | Wire.Private.Types.K_int -> "int"
+  | Wire.Everparse.Raw.K_int -> "int"
   | K_int64 -> "int64"
   | K_bool -> "int"
   | K_string -> "string"

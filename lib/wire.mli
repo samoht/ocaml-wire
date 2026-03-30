@@ -61,15 +61,16 @@ type param
 (** Untyped formal parameter declaration. Create via {!Param.v}. *)
 
 module Param : sig
-  (** Typed parameter handles.
+  (** Formal parameters for codecs.
 
-      Parameters must have integer-representable wire types: unsigned integers
-      (uint8 through uint64), bitfields, bools, and enums. This matches
-      EverParse 3D parameter types. Values are stored internally as [int].
+      A parameter lets a codec depend on a value that is not in the buffer. An
+      {e input} parameter is supplied by the caller before decoding — use it in
+      constraints or size expressions. An {e output} parameter is written by an
+      action during decoding — read it back afterwards to extract a computed
+      result.
 
-      Input parameters are set once before decoding with {!init}, which returns
-      the corresponding expression node. Output parameters are mutable cells
-      written by {!Action.assign} during decoding, read back with {!get}.
+      Both kinds carry a wire type (uint8 … uint64, bool, enum) so the same
+      definition can be projected to EverParse 3D.
 
       {[
         let max_len = Param.input "max_len" uint16be
@@ -740,7 +741,16 @@ module Everparse : sig
     val field_names : struct_ -> string list
     (** Named field names in declaration order. *)
 
-    val field_kinds : struct_ -> (string * Types.ocaml_kind) list
+    type ocaml_kind =
+      | K_int
+      | K_int64
+      | K_bool
+      | K_string
+      | K_unit
+          (** The OCaml representation kind of a field (for FFI stub
+              generation). *)
+
+    val field_kinds : struct_ -> (string * ocaml_kind) list
     (** Named field names with their OCaml type kind. *)
 
     val struct_project : struct_ -> name:string -> keep:string -> struct_

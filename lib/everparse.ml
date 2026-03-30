@@ -201,6 +201,14 @@ module Raw = struct
   let struct_name = Types.struct_name
   let field_names = Types.field_names
   let struct_project = Types.struct_project
+
+  type ocaml_kind = Types.ocaml_kind =
+    | K_int
+    | K_int64
+    | K_bool
+    | K_string
+    | K_unit
+
   let field_kinds = Types.field_kinds
   let struct_params (s : Types.struct_) = s.params
   let struct_typ = Types.struct_typ
