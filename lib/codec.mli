@@ -34,6 +34,16 @@ val decode : 'r t -> bytes -> int -> 'r
     Raises {!Types.Parse_error} if the buffer is too short or a field constraint
     or where-clause fails. *)
 
+val env : 'r t -> Param.env
+(** [env c] creates a fresh parameter environment for codec [c], with all params
+    initialised to 0. *)
+
+val decode_with : 'r t -> Param.env -> bytes -> int -> 'r
+(** [decode_with c env buf off] decodes with parameters. Input params are read
+    from [env]; output params are written back to [env] after decoding.
+
+    Raises {!Types.Parse_error} on constraint/where-clause failure. *)
+
 val encode : 'r t -> 'r -> bytes -> int -> unit
 (** [encode c r buf off] encodes record [r] into [buf] at offset [off].
 

@@ -723,6 +723,10 @@ module Codec = struct
 
   let decode t buf off =
     try Ok (Codec_backend.decode t buf off) with Parse_error e -> Error e
+
+  let decode_with t env buf off =
+    try Ok (Codec_backend.decode_with t env buf off)
+    with Parse_error e -> Error e
 end
 
 module Everparse = Everparse_backend

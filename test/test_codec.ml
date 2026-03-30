@@ -122,7 +122,7 @@ let test_metadata_action_fail () =
   | Ok _ -> Alcotest.fail "expected decode failure"
 
 let projection_limit = Param.input "limit" uint8
-let _projection_limit_expr = Param.init projection_limit 10
+let _projection_limit_expr = Param.expr projection_limit
 let projection_outx = Param.output "outx" uint8
 let projection_f_x = Field.v "x" uint8
 
@@ -142,18 +142,16 @@ let projection_codec =
     ]
 
 let test_metadata_with_params () =
-  ignore (Param.init projection_limit 10);
-  ignore (Param.expr projection_outx);
+  let env = Codec.env projection_codec |> Param.bind projection_limit 10 in
   let buf = Bytes.of_string "\x08" in
-  let v = decode_ok (Codec.decode projection_codec buf 0) in
+  let v = decode_ok (Codec.decode_with projection_codec env buf 0) in
   Alcotest.(check int) "x" 8 v.x;
-  Alcotest.(check int) "outx" 8 (Param.get projection_outx)
+  Alcotest.(check int) "outx" 8 (Param.get env projection_outx)
 
 let test_metadata_where_fail () =
-  ignore (Param.init projection_limit 7);
-  ignore (Param.expr projection_outx);
+  let env = Codec.env projection_codec |> Param.bind projection_limit 7 in
   let buf = Bytes.of_string "\x08" in
-  match Codec.decode projection_codec buf 0 with
+  match Codec.decode_with projection_codec env buf 0 with
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
   | Ok _ -> Alcotest.fail "expected decode failure"
@@ -1229,10 +1227,11 @@ let test_codec_sizeof_this () =
         $ fun r -> r.pc );
       ]
   in
+  let env = Codec.env codec in
   let buf = Bytes.of_string "\x01\x00\x02\x03" in
-  let _v = decode_ok (Codec.decode codec buf 0) in
+  let _v = decode_ok (Codec.decode_with codec env buf 0) in
   (* sizeof_this at field c = 1 (uint8) + 2 (uint16be) = 3 *)
-  Alcotest.(check int) "sizeof_this at c" 3 (Param.get out)
+  Alcotest.(check int) "sizeof_this at c" 3 (Param.get env out)
 
 let test_codec_field_pos () =
   let out = Param.output "out" uint8 in
@@ -1249,10 +1248,11 @@ let test_codec_field_pos () =
         $ fun r -> r.pc );
       ]
   in
+  let env = Codec.env codec in
   let buf = Bytes.of_string "\x01\x02\x03" in
-  let _v = decode_ok (Codec.decode codec buf 0) in
+  let _v = decode_ok (Codec.decode_with codec env buf 0) in
   (* field_pos at c = 2 (third field, zero-indexed) *)
-  Alcotest.(check int) "field_pos at c" 2 (Param.get out)
+  Alcotest.(check int) "field_pos at c" 2 (Param.get env out)
 
 (* ── Bitfield batch access ── *)
 

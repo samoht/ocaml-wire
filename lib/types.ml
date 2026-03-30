@@ -10,6 +10,8 @@ type ('a, 'k) param_handle = {
   ph_packed_typ : packed_typ;
   ph_mutable : bool;
   ph_cell : int ref;
+  mutable ph_slot : int;
+  mutable ph_env_idx : int;
 }
 
 and packed_typ = Pack_typ : 'a typ -> packed_typ
@@ -117,6 +119,8 @@ and action_stmt =
   | Abort
   | If of bool expr * action_stmt list * action_stmt list option
   | Var of string * int expr
+
+type param_env = { pe_slots : int array }
 
 (* Expression constructors *)
 let int n = Int n

@@ -83,27 +83,25 @@ module Param : sig
               (Action.on_success [ Action.assign out_len (Field.ref f_length) ])
             (byte_slice ~size:(Field.ref f_length))
 
-        let bounded ~max_len:ml =
-          let ml_expr = Param.init max_len ml in
+        let codec =
           let open Codec in
           v "Bounded"
-            ~where:Expr.(Field.ref f_length <= ml_expr)
+            ~where:Expr.(Field.ref f_length <= Param.expr max_len)
             (fun len data -> { len; data })
             [ (f_length $ fun r -> r.len); (f_data $ fun r -> r.data) ]
 
-        let codec = bounded ~max_len:1024
-        let _ = Codec.decode codec buf 0
-        let len = Param.get out_len
+        let env = Codec.env codec |> Param.bind max_len 1024
+        let _ = Codec.decode_with codec env buf 0
+        let len = Param.get env out_len
       ]}
 
-      Output parameters are mutable — do not share an output handle across
-      concurrent decodes. *)
+      Do not share an {!env} across concurrent decodes. *)
 
   type input = Param.input
-  (** Phantom kind for input parameters (set once before decode). *)
+  (** Phantom kind for input parameters. *)
 
   type output = Param.output
-  (** Phantom kind for mutable output parameters. *)
+  (** Phantom kind for output parameters. *)
 
   type ('a, 'k) t = ('a, 'k) Param.t
   (** Typed handle for one formal parameter. *)
@@ -112,22 +110,25 @@ module Param : sig
   (** [input name typ] declares an input parameter. *)
 
   val output : string -> 'a typ -> ('a, output) t
-  (** [output name typ] declares a mutable output parameter. *)
+  (** [output name typ] declares an output parameter. *)
 
   val v : ('a, 'k) t -> param
   (** Formal declaration for 3D rendering. *)
 
   val name : ('a, 'k) t -> string
 
-  val get : ('a, 'k) t -> 'a
-  (** Read the current value. *)
+  type env = Param.env
+  (** Parameter environment. Create with {!Codec.env}, bind inputs with {!bind},
+      read outputs with {!get}. *)
 
-  val set : ('a, output) t -> 'a -> unit
-  (** Set the value of an output parameter. *)
+  val empty_env : env
+  (** Empty environment (for codecs with no parameters). *)
 
-  val init : ('a, input) t -> 'a -> int expr
-  (** [init p v] sets input param [p] to [v] and returns its expression. Call
-      this once before decoding to bind the input value. *)
+  val bind : ('a, input) t -> 'a -> env -> env
+  (** [bind p v env] returns an environment with input [p] set to [v]. *)
+
+  val get : env -> ('a, 'k) t -> 'a
+  (** [get env p] reads param [p]. For outputs, call after decode. *)
 
   val expr : ('a, 'k) t -> int expr
   (** [expr p] returns the expression referencing this param. *)
@@ -579,6 +580,13 @@ module Codec : sig
 
   val decode : 'r t -> bytes -> int -> ('r, parse_error) result
   (** Decodes one record value from a buffer at the given base offset. *)
+
+  val env : 'r t -> Param.env
+  (** [env c] creates a fresh parameter environment for codec [c]. *)
+
+  val decode_with :
+    'r t -> Param.env -> bytes -> int -> ('r, parse_error) result
+  (** Decode with parameters. Output params in [env] are updated on success. *)
 
   val encode : 'r t -> 'r -> bytes -> int -> unit
   (** Encodes one record value into a buffer at the given base offset.

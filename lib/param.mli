@@ -1,8 +1,7 @@
-(** Typed parameter handles.
+(** Formal parameters for codecs.
 
-    Input parameters are set before decoding with {!init}, which returns the
-    corresponding expression. Output parameters are mutable cells written by
-    actions during decoding, read back with {!get}. *)
+    Input parameters are bound before decoding with {!bind}. Output parameters
+    are written by actions during decoding, read back with {!get}. *)
 
 type input = Types.param_input
 type output = Types.param_output
@@ -12,24 +11,30 @@ val input : string -> 'a Types.typ -> ('a, input) t
 (** [input name typ] declares an input parameter. *)
 
 val output : string -> 'a Types.typ -> ('a, output) t
-(** [output name typ] declares an output parameter (mutable cell, initially 0).
-*)
+(** [output name typ] declares an output parameter (initially 0). *)
 
 val v : ('a, 'k) t -> Types.param
 (** Formal declaration for 3D rendering. *)
 
 val name : ('a, 'k) t -> string
 
-val get : ('a, 'k) t -> 'a
-(** Read the current value. *)
-
-val set : ('a, output) t -> 'a -> unit
-(** Set the value of an output parameter. *)
-
-val init : ('a, input) t -> 'a -> int Types.expr
-(** [init p v] sets the input param to [v] and returns its expression. *)
-
 val expr : ('a, 'k) t -> int Types.expr
 (** [expr p] returns the expression referencing this param. *)
+
+(** {1 Parameter environment} *)
+
+type env = Types.param_env
+(** Immutable parameter environment backed by a flat [int array]. Create one
+    with {!Codec.env}, bind inputs with {!bind}, read outputs with {!get}. *)
+
+val empty_env : env
+(** Empty environment (for codecs with no parameters). *)
+
+val bind : ('a, input) t -> 'a -> env -> env
+(** [bind p v env] returns an environment with input [p] set to [v]. *)
+
+val get : env -> ('a, 'k) t -> 'a
+(** [get env p] reads the current value of param [p] from [env]. For output
+    params, call after {!Codec.decode_with}. *)
 
 type packed = Pack : ('a, 'k) t -> packed

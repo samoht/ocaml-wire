@@ -32,17 +32,35 @@ let test_output_spec () =
     "contains out" true
     (Re.execp (Re.compile (Re.str "out")) output)
 
-(* ── Param.init / Param.set / Param.get ── *)
+(* ── Param.bind / Param.get / Param.env ── *)
 
 let test_input_binding () =
   let p = Param.input "limit" uint8 in
-  ignore (Param.init p 42);
-  Alcotest.(check int) "value" 42 (Param.get p)
+  let f_x = Field.v "x" uint8 in
+  let cf_x =
+    Field.v "x" ~constraint_:Expr.(Field.ref f_x <= Param.expr p) uint8
+  in
+  let c = Codec.v "InputBinding" (fun x -> x) Codec.[ (cf_x $ fun r -> r) ] in
+  let env = Codec.env c |> Param.bind p 42 in
+  Alcotest.(check int) "value" 42 (Param.get env p)
 
 let test_output_binding () =
-  let p = Param.output "out" uint8 in
-  Param.set p 7;
-  Alcotest.(check int) "initial value" 7 (Param.get p)
+  let out = Param.output "out" uint8 in
+  let f_x = Field.v "x" uint8 in
+  let cf_x =
+    Field.v "x"
+      ~action:(Action.on_success [ Action.assign out (Field.ref f_x) ])
+      uint8
+  in
+  let c = Codec.v "OutputBinding" (fun x -> x) Codec.[ (cf_x $ fun r -> r) ] in
+  let env = Codec.env c in
+  (* output param starts at 0 *)
+  Alcotest.(check int) "initial value" 0 (Param.get env out);
+  (* after decode, output param is written by the action *)
+  let buf = Bytes.of_string "\x07" in
+  match Codec.decode_with c env buf 0 with
+  | Ok _ -> Alcotest.(check int) "after decode" 7 (Param.get env out)
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 (* ── Input param visible to constraints (via Codec) ── *)
 
@@ -50,7 +68,6 @@ type bounded_record = { x : int }
 
 let test_input_param_constraint () =
   let limit = Param.input "limit" uint8 in
-  let _limit_expr = Param.init limit 10 in
   let f_x = Field.v "x" uint8 in
   let cf_x =
     Field.v "x" ~constraint_:Expr.(Field.ref f_x <= Param.expr limit) uint8
@@ -58,12 +75,13 @@ let test_input_param_constraint () =
   let c = Codec.v "Bounded" (fun x -> { x }) Codec.[ (cf_x $ fun r -> r.x) ] in
   (* limit=10, x=5: passes *)
   let buf = Bytes.of_string "\x05" in
-  (match Codec.decode c buf 0 with
+  let env = Codec.env c |> Param.bind limit 10 in
+  (match Codec.decode_with c env buf 0 with
   | Ok r -> Alcotest.(check int) "x" 5 r.x
   | Error e -> Alcotest.failf "pass: %a" pp_parse_error e);
   (* limit=3, x=5: fails *)
-  ignore (Param.init limit 3);
-  match Codec.decode c buf 0 with
+  let env = Codec.env c |> Param.bind limit 3 in
+  match Codec.decode_with c env buf 0 with
   | Ok _ -> Alcotest.fail "expected constraint failure"
   | Error (Constraint_failed _) -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
@@ -80,8 +98,9 @@ let test_output_param_action () =
   in
   let c = Codec.v "Writer" (fun x -> { x }) Codec.[ (cf_x $ fun r -> r.x) ] in
   let buf = Bytes.of_string "\x2A" in
-  match Codec.decode c buf 0 with
-  | Ok _ -> Alcotest.(check int) "out" 42 (Param.get out)
+  let env = Codec.env c in
+  match Codec.decode_with c env buf 0 with
+  | Ok _ -> Alcotest.(check int) "out" 42 (Param.get env out)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_output_param_computed () =
@@ -95,8 +114,9 @@ let test_output_param_computed () =
   in
   let c = Codec.v "Computed" (fun x -> { x }) Codec.[ (cf_x $ fun r -> r.x) ] in
   let buf = Bytes.of_string "\x15" in
-  match Codec.decode c buf 0 with
-  | Ok _ -> Alcotest.(check int) "out" 42 (Param.get out)
+  let env = Codec.env c in
+  match Codec.decode_with c env buf 0 with
+  | Ok _ -> Alcotest.(check int) "out" 42 (Param.get env out)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 (* ── Where clause with params (via Codec) ── *)
@@ -105,7 +125,6 @@ type bounded_value = { bv_value : int }
 
 let test_where_clause_pass () =
   let max_val = Param.input "max_val" uint16be in
-  let _max_val_expr = Param.init max_val 100 in
   let f_value = Field.v "value" uint16be in
   let cf_value = Field.v "value" uint16be in
   let c =
@@ -116,13 +135,13 @@ let test_where_clause_pass () =
   in
   (* max_val=100, value=50: passes *)
   let buf = Bytes.of_string "\x00\x32" in
-  match Codec.decode c buf 0 with
+  let env = Codec.env c |> Param.bind max_val 100 in
+  match Codec.decode_with c env buf 0 with
   | Ok r -> Alcotest.(check int) "value" 50 r.bv_value
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_where_clause_fail () =
   let max_val = Param.input "max_val" uint16be in
-  let _max_val_expr = Param.init max_val 10 in
   let f_value = Field.v "value" uint16be in
   let cf_value = Field.v "value" uint16be in
   let c =
@@ -133,7 +152,8 @@ let test_where_clause_fail () =
   in
   (* max_val=10, value=50: where clause fails *)
   let buf = Bytes.of_string "\x00\x32" in
-  match Codec.decode c buf 0 with
+  let env = Codec.env c |> Param.bind max_val 10 in
+  match Codec.decode_with c env buf 0 with
   | Ok _ -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
@@ -144,7 +164,6 @@ type mixed_record = { a : int; b : int }
 
 let test_mixed_params () =
   let max_val = Param.input "max_val" uint8 in
-  let _max_val_expr = Param.init max_val 50 in
   let out_sum = Param.output "out_sum" uint8 in
   let f_a = Field.v "a" uint8 in
   let f_b = Field.v "b" uint8 in
@@ -168,24 +187,23 @@ let test_mixed_params () =
   in
   (* a=10, b=20 => out_sum=30, max_val=50 => 30 <= 50: OK *)
   let buf = Bytes.of_string "\x0A\x14" in
-  (match Codec.decode c buf 0 with
-  | Ok _ -> Alcotest.(check int) "out_sum" 30 (Param.get out_sum)
+  let env = Codec.env c |> Param.bind max_val 50 in
+  (match Codec.decode_with c env buf 0 with
+  | Ok _ -> Alcotest.(check int) "out_sum" 30 (Param.get env out_sum)
   | Error e -> Alcotest.failf "%a" pp_parse_error e);
   (* a=10, b=20 => out_sum=30, max_val=20 => 30 > 20: FAIL *)
-  ignore (Param.init max_val 20);
-  Param.set out_sum 0;
-  match Codec.decode c buf 0 with
+  let env = Codec.env c |> Param.bind max_val 20 in
+  match Codec.decode_with c env buf 0 with
   | Ok _ -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed _) -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
-(* ── Codec.decode with params ── *)
+(* ── Codec.decode_with with params ── *)
 
 type record_with_param = { x : int }
 
-let param_codec =
+let test_codec_param_decode () =
   let limit = Param.input "limit" uint8 in
-  let _limit_expr = Param.init limit 10 in
   let outx = Param.output "outx" uint8 in
   let f_x = Field.v "x" uint8 in
   let cf_x =
@@ -193,15 +211,16 @@ let param_codec =
       ~action:(Action.on_success [ Action.assign outx (Field.ref f_x) ])
       uint8
   in
-  Codec.v "ParamCodec"
-    ~where:Expr.(Field.ref f_x <= Param.expr limit)
-    (fun x -> { x })
-    Codec.[ (cf_x $ fun r -> r.x) ]
-
-let test_codec_param_decode () =
+  let c =
+    Codec.v "ParamCodec"
+      ~where:Expr.(Field.ref f_x <= Param.expr limit)
+      (fun x -> { x })
+      Codec.[ (cf_x $ fun r -> r.x) ]
+  in
   let buf = Bytes.of_string "\x05" in
+  let env = Codec.env c |> Param.bind limit 10 in
   let v =
-    match Codec.decode param_codec buf 0 with
+    match Codec.decode_with c env buf 0 with
     | Ok v -> v
     | Error e -> Alcotest.failf "%a" pp_parse_error e
   in
@@ -209,7 +228,6 @@ let test_codec_param_decode () =
 
 let test_codec_param_where_fail () =
   let limit = Param.input "limit" uint8 in
-  let _limit_expr = Param.init limit 3 in
   let outx = Param.output "outx" uint8 in
   let f_x = Field.v "x" uint8 in
   let cf_x =
@@ -224,7 +242,8 @@ let test_codec_param_where_fail () =
       Codec.[ (cf_x $ fun r -> r.x) ]
   in
   let buf = Bytes.of_string "\x05" in
-  match Codec.decode c buf 0 with
+  let env = Codec.env c |> Param.bind limit 3 in
+  match Codec.decode_with c env buf 0 with
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
   | Ok _ -> Alcotest.fail "expected decode failure"

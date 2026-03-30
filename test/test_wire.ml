@@ -225,7 +225,6 @@ type bounded_payload = { bp_length : int; bp_data : string }
 
 let test_parse_param_with_params () =
   let max_len = Param.input "max_len" uint16be in
-  let _max_len_expr = Param.init max_len 3 in
   let out_len = Param.output "out_len" uint16be in
   let f_length_c = field "Length" uint16be in
   let f_length =
@@ -245,14 +244,14 @@ let test_parse_param_with_params () =
             r.bp_data );
         ]
   in
+  let env = Codec.env c |> Param.bind max_len 3 in
   let buf = Bytes.of_string "\x00\x03abc" in
-  match Codec.decode c buf 0 with
-  | Ok _ -> Alcotest.(check int) "out_len" 3 (Param.get out_len)
+  match Codec.decode_with c env buf 0 with
+  | Ok _ -> Alcotest.(check int) "out_len" 3 (Param.get env out_len)
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
 let test_parse_param_where_fail () =
   let max_len = Param.input "max_len" uint16be in
-  let _max_len_expr = Param.init max_len 2 in
   let out_len = Param.output "out_len" uint16be in
   let f_length_c = field "Length" uint16be in
   let f_length =
@@ -272,8 +271,9 @@ let test_parse_param_where_fail () =
             r.bp_data );
         ]
   in
+  let env = Codec.env c |> Param.bind max_len 2 in
   let buf = Bytes.of_string "\x00\x03abc" in
-  match Codec.decode c buf 0 with
+  match Codec.decode_with c env buf 0 with
   | Ok _ -> Alcotest.fail "expected where failure"
   | Error (Constraint_failed "where clause") -> ()
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
@@ -374,9 +374,10 @@ let test_sizeof_this_with_action () =
           $ fun r -> r.sa_c );
         ]
   in
+  let env = Codec.env c in
   let buf = Bytes.of_string "\x01\x00\x02\x00" in
-  match Codec.decode c buf 0 with
-  | Ok _ -> Alcotest.(check int) "sizeof_this via action" 3 (Param.get out)
+  match Codec.decode_with c env buf 0 with
+  | Ok _ -> Alcotest.(check int) "sizeof_this via action" 3 (Param.get env out)
   | Error e -> Alcotest.failf "sizeof_this action: %a" pp_parse_error e
 
 (* ── Encoding tests ── *)

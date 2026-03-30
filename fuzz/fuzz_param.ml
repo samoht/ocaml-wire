@@ -91,7 +91,6 @@ let test_parse_struct_sizeof buf =
 let test_parse_param_struct buf =
   let buf = truncate buf in
   let limit = Wire.Param.input "limit" Wire.uint8 in
-  let _limit_expr = Wire.Param.init limit 128 in
   let out = Wire.Param.output "out" Wire.uint8 in
   let f_x = Wire.Field.v "x" Wire.uint8 in
   let c =
@@ -108,7 +107,8 @@ let test_parse_param_struct buf =
           $ fun x -> x );
         ]
   in
-  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
+  let env = Wire.Codec.env c |> Wire.Param.bind limit 128 in
+  let _ = Wire.Codec.decode_with c env (Bytes.of_string buf) 0 in
   ()
 
 let f_fuzz_x = Wire.Field.v "x" Wire.uint8
@@ -117,21 +117,20 @@ let f_fuzz_x = Wire.Field.v "x" Wire.uint8
 let test_param_ref_where buf =
   let buf = truncate buf in
   let max_val = Wire.Param.input "max_val" Wire.uint16be in
-  let _ = Wire.Param.init max_val 200 in
   let c =
     Wire.Codec.v "ParamRefWhere"
       ~where:Wire.Expr.(Wire.Field.ref f_fuzz_x <= Wire.Param.expr max_val)
       (fun x -> x)
       Wire.Codec.[ (f_fuzz_x $ fun x -> x) ]
   in
-  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
+  let env = Wire.Codec.env c |> Wire.Param.bind max_val 200 in
+  let _ = Wire.Codec.decode_with c env (Bytes.of_string buf) 0 in
   ()
 
 (* Fuzz: Param_ref in constraint with random input *)
 let test_param_ref_constraint buf =
   let buf = truncate buf in
   let limit = Wire.Param.input "limit" Wire.uint8 in
-  let _ = Wire.Param.init limit 50 in
   let f_v = Wire.Field.v "v" Wire.uint8 in
   let c =
     Wire.Codec.v "ParamRefConst"
@@ -145,7 +144,8 @@ let test_param_ref_constraint buf =
           $ fun v -> v );
         ]
   in
-  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
+  let env = Wire.Codec.env c |> Wire.Param.bind limit 50 in
+  let _ = Wire.Codec.decode_with c env (Bytes.of_string buf) 0 in
   ()
 
 (* Fuzz: typed Assign to output param *)
@@ -166,9 +166,10 @@ let test_typed_assign buf =
           $ fun v -> v );
         ]
   in
-  let _ = Wire.Codec.decode c (Bytes.of_string buf) 0 in
+  let env = Wire.Codec.env c in
+  let _ = Wire.Codec.decode_with c env (Bytes.of_string buf) 0 in
   (* Verify output was set (no crash) *)
-  let _ = Wire.Param.get out in
+  let _ = Wire.Param.get env out in
   ()
 
 (* Fuzz: map ~decode ~encode roundtrip *)

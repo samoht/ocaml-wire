@@ -60,6 +60,8 @@ let input name typ =
     ph_packed_typ = Types.Pack_typ typ;
     ph_mutable = false;
     ph_cell = ref 0;
+    ph_slot = -1;
+    ph_env_idx = -1;
   }
 
 let output name typ =
@@ -70,6 +72,8 @@ let output name typ =
     ph_packed_typ = Types.Pack_typ typ;
     ph_mutable = true;
     ph_cell = ref 0;
+    ph_slot = -1;
+    ph_env_idx = -1;
   }
 
 let v (t : ('a, 'k) t) : Types.param =
@@ -80,14 +84,23 @@ let v (t : ('a, 'k) t) : Types.param =
   }
 
 let name t = t.Types.ph_name
-let get t = of_int t.Types.ph_typ !(t.Types.ph_cell)
-let set_cell t v = t.Types.ph_cell := to_int t.Types.ph_typ v
-let set (t : ('a, output) t) v = set_cell t v
-
-let init (t : ('a, input) t) (v : 'a) : int Types.expr =
-  set_cell t v;
-  Types.Param_ref t
-
 let expr t : int Types.expr = Types.Param_ref t
+
+(* ── Param.env ── *)
+
+type env = Types.param_env
+
+let empty_env : env = { Types.pe_slots = [||] }
+
+let bind (p : ('a, input) t) (v : 'a) (env : env) : env =
+  let iv = to_int p.Types.ph_typ v in
+  let slots = Array.copy env.pe_slots in
+  if p.ph_env_idx >= 0 then slots.(p.ph_env_idx) <- iv;
+  p.ph_cell := iv;
+  { Types.pe_slots = slots }
+
+let get (env : env) (p : ('a, 'k) t) : 'a =
+  if p.Types.ph_env_idx < 0 then of_int p.ph_typ !(p.ph_cell)
+  else of_int p.ph_typ env.pe_slots.(p.ph_env_idx)
 
 type packed = Pack : ('a, 'k) t -> packed

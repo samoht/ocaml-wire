@@ -211,7 +211,10 @@ let rec compile_int_arr (cc : compile_ctx) (e : int expr) : int array -> int =
   | Ref name ->
       let i = cc.idx name in
       fun a -> a.(i)
-  | Param_ref p -> fun _ -> !(p.ph_cell)
+  | Param_ref p ->
+      fun a ->
+        let i = p.ph_slot in
+        if i >= 0 then a.(i) else !(p.ph_cell)
   | Sizeof t ->
       let n = field_wire_size t |> Option.value ~default:0 in
       fun _ -> n
@@ -323,28 +326,29 @@ and compile_bool_arr (cc : compile_ctx) (e : bool expr) : int array -> bool =
 (* Compile action statements to operate on an int array instead of Eval.ctx.
    Assign writes to ph_cell (mutable param) and updates the array.
    Var binds a local by extending the index — but since we can't grow the
-   array, local vars in actions use ph_cell-style mutation or are inlined. *)
+   array, local vars in actions use ph_cell-style mutation or are inlined.
+
+   Return true short-circuits remaining statements (the action succeeds).
+   Return false and Abort raise Parse_error to abort the parse. *)
 type compiled_action = int array -> unit
+
+exception Return_true
 
 let rec compile_stmt (cc : compile_ctx) (s : Types.action_stmt) :
     compiled_action =
   match s with
-  | Assign (p, e) -> (
+  | Assign (p, e) ->
       let fe = compile_int_arr cc e in
       fun arr ->
         let v = fe arr in
-        p.Types.ph_cell := v;
-        (* If the param is also a field, update the array *)
-        match cc.idx p.Types.ph_name with
-        | i when i < Array.length arr -> arr.(i) <- v
-        | _ -> ()
-        | exception Failure _ -> ())
+        let slot = p.Types.ph_slot in
+        if slot >= 0 then arr.(slot) <- v else p.Types.ph_cell := v
   | Field_assign (_, _, _) | Extern_call (_, _) -> fun _ -> ()
   | Return e ->
       let fe = compile_bool_arr cc e in
       fun arr ->
-        if not (fe arr) then
-          raise (Parse_error (Constraint_failed "field action"))
+        if fe arr then raise_notrace Return_true
+        else raise (Parse_error (Constraint_failed "field action"))
   | Types.Abort ->
       fun _ -> raise (Parse_error (Constraint_failed "field action"))
   | If (cond, then_, else_) ->
@@ -380,7 +384,9 @@ let compile_action (cc : compile_ctx) (act : action option) :
     compiled_action option =
   match act with
   | None -> None
-  | Some (On_success stmts | On_act stmts) -> Some (compile_stmts cc stmts)
+  | Some (On_success stmts | On_act stmts) ->
+      let f = compile_stmts cc stmts in
+      Some (fun arr -> try f arr with Return_true -> ())
 
 type ('f, 'r) record =
   | Record : {
@@ -415,6 +421,11 @@ type 'r t = {
   t_wire_size : wire_size_info;
   t_struct_fields : Types.field list;
   t_validate : bytes -> int -> unit;
+  t_validate_arr : int array -> bytes -> int -> unit;
+  t_n_array_slots : int;
+  t_param_base : int;
+  t_n_params : int;
+  t_param_handles : Param.packed list;
   t_where : bool expr option;
 }
 
@@ -996,7 +1007,113 @@ let seal : type r. (r, r) record -> r t =
   in
   let raw_decode = build_decode r.r_make r.r_readers in
   let validators = List.rev r.r_validators_rev in
-  let n_fields = r.r_n_array_slots in
+  let param_base = r.r_n_array_slots in
+  (* Collect and index params *)
+  let struct_fields = List.rev r.r_fields_rev in
+  let param_handles =
+    let seen = Hashtbl.create 4 in
+    let handles = Stdlib.ref ([] : Param.packed list) in
+    let rec scan_expr : type a. a expr -> unit = function
+      | Param_ref p ->
+          if not (Hashtbl.mem seen p.ph_name) then begin
+            Hashtbl.add seen p.ph_name ();
+            handles := Param.Pack p :: !handles
+          end
+      | Add (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Sub (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Mul (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Div (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Mod (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Land (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Lor (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Lxor (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Lsl (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Lsr (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Eq (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Ne (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Lt (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Le (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Gt (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Ge (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | And (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Or (a, b) ->
+          scan_expr a;
+          scan_expr b
+      | Not e -> scan_expr e
+      | Lnot e -> scan_expr e
+      | Cast (_, e) -> scan_expr e
+      | Int _ | Int64 _ | Bool _ | Ref _ | Sizeof _ | Sizeof_this | Field_pos ->
+          ()
+    in
+    let rec scan_stmt = function
+      | Types.Assign (p, e) ->
+          if not (Hashtbl.mem seen p.ph_name) then begin
+            Hashtbl.add seen p.ph_name ();
+            handles := Param.Pack p :: !handles
+          end;
+          scan_expr e
+      | Types.Field_assign (_, _, e) -> scan_expr e
+      | Types.Extern_call (_, _) -> ()
+      | Types.Return e -> scan_expr e
+      | Types.Abort -> ()
+      | Types.If (c, t, e) ->
+          scan_expr c;
+          List.iter scan_stmt t;
+          Option.iter (List.iter scan_stmt) e
+      | Types.Var (_, e) -> scan_expr e
+    in
+    let scan_action = function
+      | Types.On_success stmts | Types.On_act stmts -> List.iter scan_stmt stmts
+    in
+    List.iter
+      (fun (Types.Field f) ->
+        Option.iter scan_expr f.constraint_;
+        Option.iter scan_action f.action)
+      struct_fields;
+    Option.iter scan_expr r.r_where;
+    List.rev !handles
+  in
+  let n_params = List.length param_handles in
+  List.iteri
+    (fun i (Param.Pack p) ->
+      p.ph_slot <- param_base + i;
+      p.ph_env_idx <- i)
+    param_handles;
+  let n_total = param_base + n_params in
   let compiled_where =
     match r.r_where with
     | None -> None
@@ -1013,13 +1130,16 @@ let seal : type r. (r, r) record -> r t =
         let cc = { idx; sizeof_this = 0; field_pos = 0 } in
         Some (compile_bool_arr cc cond)
   in
-  let validate buf off =
-    let arr = Array.make n_fields 0 in
+  let validate_arr arr buf off =
     List.iter (fun (_byte_off, f) -> f arr buf off) validators;
     match compiled_where with
     | Some f when not (f arr) ->
         raise (Parse_error (Constraint_failed "where clause"))
     | _ -> ()
+  in
+  let validate buf off =
+    let arr = Array.make n_total 0 in
+    validate_arr arr buf off
   in
   {
     t_name = r.r_name;
@@ -1039,8 +1159,13 @@ let seal : type r. (r, r) record -> r t =
           writers.(i) v buf off
         done);
     t_wire_size = wire_size_info;
-    t_struct_fields = List.rev r.r_fields_rev;
+    t_struct_fields = struct_fields;
     t_validate = validate;
+    t_validate_arr = validate_arr;
+    t_n_array_slots = n_total;
+    t_param_base = param_base;
+    t_n_params = n_params;
+    t_param_handles = param_handles;
     t_where = r.r_where;
   }
 
@@ -1083,6 +1208,23 @@ let is_fixed t =
 let decode t buf off =
   let v = t.t_decode buf off in
   t.t_validate buf off;
+  v
+
+let env t : Param.env = { Types.pe_slots = Array.make t.t_n_params 0 }
+
+let decode_with t (e : Param.env) buf off =
+  let v = t.t_decode buf off in
+  let arr = Array.make t.t_n_array_slots 0 in
+  if t.t_n_params > 0 then
+    Array.blit e.pe_slots 0 arr t.t_param_base t.t_n_params;
+  t.t_validate_arr arr buf off;
+  (* Sync output params back to env and ph_cell *)
+  List.iter
+    (fun (Param.Pack p) ->
+      let v = arr.(p.ph_slot) in
+      e.pe_slots.(p.ph_env_idx) <- v;
+      p.ph_cell := v)
+    t.t_param_handles;
   v
 
 let encode t v buf off = t.t_encode v buf off
