@@ -7,8 +7,8 @@ description:
 maintainer: ["Thomas Gazagnaire <thomas@gazagnaire.org>"]
 authors: ["Thomas Gazagnaire <thomas@gazagnaire.org>"]
 license: "ISC"
-homepage: "https://tangled.org/gazagnaire.org/ocaml-wire"
-bug-reports: "https://tangled.org/gazagnaire.org/ocaml-wire/issues"
+homepage: "https://github.com/parsimoni-labs/ocaml-wire"
+bug-reports: "https://github.com/parsimoni-labs/ocaml-wire/issues"
 depends: [
   "dune" {>= "3.21"}
   "ocaml" {>= "5.1"}
@@ -35,5 +35,5 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://tangled.org/gazagnaire.org/ocaml-wire"
+dev-repo: "git+https://github.com/parsimoni-labs/ocaml-wire.git"
 x-maintenance-intent: ["(latest)"]

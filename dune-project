@@ -10,7 +10,7 @@
 (authors "Thomas Gazagnaire <thomas@gazagnaire.org>")
 (maintainers "Thomas Gazagnaire <thomas@gazagnaire.org>")
 
-(source (tangled gazagnaire.org/ocaml-wire))
+(source (github parsimoni-labs/ocaml-wire))
 
 (package
  (name wire)
