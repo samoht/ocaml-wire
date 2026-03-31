@@ -8,6 +8,8 @@
 (library
  (name demo_bench_diff)
  (modules demo_bench_diff)
+ (enabled_if
+  (= %{env:BUILD_EVERPARSE=} "1"))
  (libraries demo_bench_cases c_stubs wire wire.diff bytesrw fmt))
 
 (executable
