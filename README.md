@@ -232,9 +232,9 @@ let len = Param.get out_len
 make build         # dune build
 make test          # dune runtest
 make bench         # EverParse C vs OCaml (needs 3d.exe)
-make bench-clcw    # CLCW polling loop (Wire OCaml vs hand-written C)
-make bench-routing # APID demux throughput (Wire OCaml vs hand-written C)
-make bench-gateway # TM frame reassembly (Wire OCaml vs hand-written C)
+make bench-clcw    # CLCW polling loop (Wire OCaml vs EverParse C)
+make bench-routing # APID demux throughput (Wire OCaml vs EverParse C)
+make bench-gateway # TM frame reassembly (Wire OCaml vs EverParse C)
 make clean         # dune clean
 ```
 
@@ -249,9 +249,9 @@ make clean         # dune clean
 | `examples/space/` | CCSDS space protocols (SpacePacket, CLCW, TMFrame) |
 | `examples/net/` | TCP/IP headers (Ethernet, IPv4, TCP, UDP) with zero-copy demo |
 | `bench/demo/` | Field-level codec benchmark: EverParse C validation vs FFI vs OCaml `Codec.get`/`Codec.set` |
-| `bench/clcw/` | CLCW polling loop: Wire OCaml vs hand-written C (`clcw_c.c`) |
-| `bench/routing/` | APID demux throughput: Wire OCaml vs hand-written C (`routing_c.c`) |
-| `bench/gateway/` | TM frame reassembly: Wire OCaml vs hand-written C (`gateway_c.c`) |
+| `bench/clcw/` | CLCW polling loop: Wire OCaml vs EverParse C |
+| `bench/routing/` | APID demux throughput: Wire OCaml vs EverParse C |
+| `bench/gateway/` | TM frame reassembly: Wire OCaml vs EverParse C |
 | `fuzz/` | Fuzz tests (wire, c, param) covering all DSL combinators |
 | `test/` | Alcotest unit tests and differential tests |
 | `.github/workflows/` | CI workflow |
