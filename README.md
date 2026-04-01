@@ -178,18 +178,17 @@ let f_data =
     ~action:(Action.on_success [ Action.assign out_len (Field.ref f_len) ])
     (byte_array ~size:(Field.ref f_len))
 
-let bounded ~max_len:v =
-  let ml = Param.init max_len v in
+let codec =
   let open Codec in
   v "Bounded"
-    ~where:Expr.(Field.ref f_len <= ml)
+    ~where:Expr.(Field.ref f_len <= Param.expr max_len)
     (fun len data -> { len; data })
     [ f_len  $ (fun r -> r.len);
       f_data $ (fun r -> r.data) ]
 
-let c = bounded ~max_len:1024
-let _ = Codec.decode c buf 0
-let len = Param.get out_len
+let env = Codec.env codec |> Param.bind max_len 1024
+let _ = Codec.decode_with codec env buf 0
+let len = Param.get env out_len
 ```
 
 ## Architecture
@@ -229,13 +228,14 @@ let len = Param.get out_len
 ## Development
 
 ```
-make build         # dune build
-make test          # dune runtest
-make bench         # EverParse C vs OCaml (needs 3d.exe)
-make bench-clcw    # CLCW polling loop (Wire OCaml vs EverParse C)
-make bench-routing # APID demux throughput (Wire OCaml vs EverParse C)
-make bench-gateway # TM frame reassembly (Wire OCaml vs EverParse C)
-make clean         # dune clean
+make build          # dune build
+make test           # dune runtest
+make bench          # all benchmarks (needs 3d.exe)
+make bench-demo     # field-level codec: EverParse C vs FFI vs OCaml
+make bench-clcw     # CLCW polling loop: Wire OCaml vs EverParse C
+make bench-routing  # APID demux throughput: Wire OCaml vs EverParse C
+make bench-gateway  # TM frame reassembly: Wire OCaml vs EverParse C
+make clean          # dune clean
 ```
 
 ## Project structure
@@ -245,6 +245,8 @@ make clean         # dune clean
 | `lib/` | Core `wire` library: DSL types, Codec, Eval, Param, Action, Ascii, Everparse |
 | `lib/3d/` | `wire.3d` sublibrary: EverParse tooling (write `.3d`, run `3d.exe`, generate C artifacts) |
 | `lib/stubs/` | `wire.stubs` sublibrary: generate OCaml/C FFI stubs for generated validators |
+| `lib/diff/` | `wire.diff` sublibrary: differential testing harness (OCaml codec vs C stubs) |
+| `lib/diff-gen/` | `wire.diff-gen`: generate differential test schemas and runners |
 | `lib/test/stubs/` | Wire\_stubs test suite (compile + EverParse e2e tests) |
 | `examples/space/` | CCSDS space protocols (SpacePacket, CLCW, TMFrame) |
 | `examples/net/` | TCP/IP headers (Ethernet, IPv4, TCP, UDP) with zero-copy demo |
