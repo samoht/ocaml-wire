@@ -453,6 +453,7 @@ type 'r t = {
   t_id : int;
   t_name : string;
   t_field_access : (string * field_access) list;
+  t_field_readers : (string * (bytes -> int -> int)) list;
   t_field_actions : (string * compiled_action) list;
   t_decode : bytes -> int -> 'r;
   t_encode : 'r -> bytes -> int -> unit;
@@ -826,8 +827,15 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
           ~bf:(Some new_bf)
           ~field_access_rev:((name, fa) :: r.r_field_access_rev)
           ~field_readers:((name, int_reader) :: r.r_field_readers)
-    | Codec { codec_decode; codec_encode; codec_fixed_size; codec_size_of; _ }
-      -> (
+    | Codec
+        {
+          codec_decode;
+          codec_encode;
+          codec_fixed_size;
+          codec_size_of;
+          codec_field_readers;
+          _;
+        } -> (
         let field_off_static =
           match r.r_next_off with
           | Static_next n -> Some n
@@ -837,6 +845,23 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
           match r.r_next_off with
           | Static_next n -> fun (_buf : bytes) (_base : int) -> n
           | Dynamic_next f -> fun buf base -> f buf base - base
+        in
+        (* Sub-codec field readers, shifted by the embedded codec's offset
+           within the parent. Enables cross-codec Field.ref. *)
+        let nested_readers =
+          match field_off_static with
+          | Some fo ->
+              List.map
+                (fun (n, reader) -> (n, fun buf base -> reader buf (base + fo)))
+                codec_field_readers
+          | None ->
+              List.map
+                (fun (n, reader) ->
+                  ( n,
+                    fun buf base ->
+                      let fo = field_off_fn buf base in
+                      reader buf (base + fo) ))
+                codec_field_readers
         in
         match codec_fixed_size with
         | Some fsize ->
@@ -888,7 +913,9 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
                 | None -> r.r_field_actions_rev)
               ~bf:None
               ~field_access_rev:((name, fa) :: r.r_field_access_rev)
-              ~field_readers:((name, fun _buf _base -> 0) :: r.r_field_readers)
+              ~field_readers:
+                (nested_readers
+                @ ((name, fun _buf _base -> 0) :: r.r_field_readers))
         | None ->
             let field_off =
               match field_off_static with
@@ -931,7 +958,9 @@ let add_field : type a f r. (a -> f, r) record -> (a, r) field -> (f, r) record
                 | None -> r.r_field_actions_rev)
               ~bf:None
               ~field_access_rev:((name, fa) :: r.r_field_access_rev)
-              ~field_readers:((name, fun _buf _base -> 0) :: r.r_field_readers))
+              ~field_readers:
+                (nested_readers
+                @ ((name, fun _buf _base -> 0) :: r.r_field_readers)))
     | Optional { present; inner } -> (
         let field_off_static =
           match r.r_next_off with
@@ -1697,11 +1726,27 @@ let seal : type r. (r, r) record -> r t =
     t_id = codec_id;
     t_name = r.r_name;
     t_field_access = field_access;
+    t_field_readers = List.rev r.r_field_readers;
     t_field_actions = field_actions;
     t_decode =
       (fun buf off ->
         if off + min_size > Bytes.length buf then
           raise_eof ~expected:min_size ~got:(Bytes.length buf - off);
+        (* For variable-size codecs, validate the computed size against the
+           buffer to prevent out-of-bounds reads and negative-size attacks. *)
+        (match wire_size_info with
+        | Fixed _ -> ()
+        | Variable { compute; _ } ->
+            let end_off =
+              try compute buf off
+              with Invalid_argument _ ->
+                raise_eof ~expected:min_size ~got:(Bytes.length buf - off)
+            in
+            (* Negative computed size = adversarial underflow *)
+            if end_off < off + min_size then
+              raise_eof ~expected:min_size ~got:(Bytes.length buf - off);
+            if end_off > Bytes.length buf then
+              raise_eof ~expected:(end_off - off) ~got:(Bytes.length buf - off));
         raw_decode buf off);
     t_encode =
       (fun v buf off ->
@@ -2040,6 +2085,7 @@ let[@inline] set (type a r) (codec : r t) (f : (a, r) field) :
   Staged.stage (build_staged_writer f.typ access)
 
 let name t = t.t_name
+let field_readers t = t.t_field_readers
 let pp ppf t = Fmt.string ppf t.t_name
 let field_ref (type a r) (f : (a, r) field) : int expr = Ref f.name
 

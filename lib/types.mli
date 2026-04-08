@@ -126,6 +126,7 @@ and _ typ =
       codec_encode : 'r -> bytes -> int -> unit;
       codec_fixed_size : int option;
       codec_size_of : bytes -> int -> int;
+      codec_field_readers : (string * (bytes -> int -> int)) list;
     }
       -> 'r typ  (** Embedded sub-codec. *)
   | Optional : { present : bool expr; inner : 'a typ } -> 'a option typ
