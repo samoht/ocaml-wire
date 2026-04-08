@@ -34,6 +34,7 @@ let lookup = Types.cases
 let codec (c : 'r Codec_backend.t) : 'r typ =
   let codec_decode = Codec_backend.raw_decode c in
   let codec_encode = Codec_backend.raw_encode c in
+  let codec_field_readers = Codec_backend.field_readers c in
   match Codec_backend.wire_size_info c with
   | `Fixed n ->
       Codec
@@ -43,6 +44,7 @@ let codec (c : 'r Codec_backend.t) : 'r typ =
           codec_encode;
           codec_fixed_size = Some n;
           codec_size_of = (fun _buf _off -> n);
+          codec_field_readers;
         }
   | `Variable size_of ->
       Codec
@@ -52,6 +54,7 @@ let codec (c : 'r Codec_backend.t) : 'r typ =
           codec_encode;
           codec_fixed_size = None;
           codec_size_of = size_of;
+          codec_field_readers;
         }
 
 type ('elt, 'seq) seq_map = ('elt, 'seq) Types.seq_map =

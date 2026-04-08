@@ -101,6 +101,11 @@ val wire_size_info : 'r t -> [ `Fixed of int | `Variable of bytes -> int -> int 
 val name : 'r t -> string
 (** [name c] returns the codec's name. *)
 
+val field_readers : 'r t -> (string * (bytes -> int -> int)) list
+(** [field_readers c] returns the int-valued field readers of [c], indexed by
+    field name. Used for cross-codec name resolution when [c] is embedded as a
+    sub-codec via {!Wire.codec}. *)
+
 val pp : Format.formatter -> 'r t -> unit
 (** Pretty-print a codec (shows its name). *)
 
