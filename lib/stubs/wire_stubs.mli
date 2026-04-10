@@ -30,9 +30,22 @@ val of_structs :
     need them directly. *)
 
 val to_c_stubs : Wire.Everparse.Raw.struct_ list -> string
+
 val to_ml_stubs : Wire.Everparse.Raw.struct_ list -> string
+(** Generate OCaml external declarations and record types for all structs. *)
+
 val to_ml_stub : Wire.Everparse.Raw.struct_ -> string
+(** Generate a standalone OCaml module with parse and parse_k for one struct. *)
+
 val to_ml_stub_name : Wire.Everparse.Raw.struct_ -> string
+(** Derive the OCaml snake_case module name from a struct's CamelCase name. *)
+
 val to_external_typedefs : string -> string
+(** Generate the _ExternalTypedefs.h header defining the WIRECTX output struct.
+*)
+
 val everparse_name : string -> string
+(** Convert a Wire struct name to the EverParse CamelCase convention. *)
+
 val ml_type_of : 'a Wire.typ -> string
+(** Return the OCaml type name corresponding to a Wire type. *)

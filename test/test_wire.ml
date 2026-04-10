@@ -450,28 +450,21 @@ let test_bits_single_field_positions () =
   Alcotest.(check string) "lsb-first single field" "\x05" s_lsb
 
 let test_bits_roundtrip_all_combos () =
-  (* Property: for every (base, bit_order), encode then decode is identity.
-     Covers all five Wire bitfield bases crossed with both bit orders. *)
+  let check base width order expected =
+    let t = bits ~bit_order:order ~width base in
+    let s = encode_to_string t expected in
+    match decode_string t s with
+    | Ok got ->
+        Alcotest.(check int) (Fmt.str "roundtrip width=%d" width) expected got
+    | Error e -> Alcotest.failf "decode failed: %a" pp_parse_error e
+  in
   let bases = [ (U8, 4); (U16, 5); (U16be, 6); (U32, 7); (U32be, 3) ] in
   let orders = [ Msb_first; Lsb_first ] in
   List.iter
     (fun (base, width) ->
       let max_val = (1 lsl width) - 1 in
       let values = [ 0; 1; max_val; max_val / 2 ] in
-      List.iter
-        (fun order ->
-          let t = bits ~bit_order:order ~width base in
-          List.iter
-            (fun expected ->
-              let s = encode_to_string t expected in
-              match decode_string t s with
-              | Ok got ->
-                  Alcotest.(check int)
-                    (Fmt.str "roundtrip width=%d" width)
-                    expected got
-              | Error e -> Alcotest.failf "decode failed: %a" pp_parse_error e)
-            values)
-        orders)
+      List.iter (fun order -> List.iter (check base width order) values) orders)
     bases
 
 (* ── Roundtrip tests ── *)

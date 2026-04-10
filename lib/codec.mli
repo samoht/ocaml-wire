@@ -77,12 +77,11 @@ val validate : 'r t -> bytes -> int -> unit
 
 val get :
   ?env:Param.env -> 'r t -> ('a, 'r) field -> (bytes -> int -> 'a) Staged.t
-(** Staged zero-copy field getter. If the field has an [~action], the action
-    fires on every read. Pass [~env] to sync output parameters after each
-    action. Fields without actions have zero overhead regardless of [~env].
-
-    Does not check record-level [~where] clauses or other fields' [~constraint_]
-    checks — call {!validate} first on untrusted input. *)
+(** [get ?env c f] is a staged zero-copy getter for field [f] in codec [c]. If
+    [f] has an action, it fires on every read. [env] syncs output parameters
+    after each action; fields without actions have zero overhead regardless of
+    [env]. Does not check record-level where-clauses or other fields'
+    constraints — call {!validate} first on untrusted input. *)
 
 val set : 'r t -> ('a, 'r) field -> (bytes -> int -> 'a -> unit) Staged.t
 (** Staged zero-copy field setter. Does not check constraints or fire actions —
