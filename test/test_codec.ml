@@ -750,7 +750,7 @@ let test_view_shared_set_independent () =
 
 (* ── action semantics ── *)
 
-let test_action_fires_on_decode_with () =
+let test_action_fires_decode_with () =
   (* decode_with fires actions and syncs output params *)
   let env = Codec.env projection_codec |> Param.bind projection_limit 10 in
   let buf = Bytes.of_string "\x05" in
@@ -782,7 +782,7 @@ let test_action_fires_on_get () =
   | _ -> Alcotest.fail "expected action to reject odd value"
   | exception Validation_error (Constraint_failed _) -> ()
 
-let test_action_not_fired_by_validate () =
+let test_action_unfired_by_validate () =
   (* validate checks constraints + where, but does NOT fire actions. *)
   let action_out2 = Param.output "act_out2" uint8 in
   let f_ref2 = Field.v "v" uint8 in
@@ -802,7 +802,7 @@ let test_action_not_fired_by_validate () =
     "action not fired by validate" 0
     !(action_out2.Wire.Private.Types.ph_cell)
 
-let test_get_no_action_zero_overhead () =
+let test_get_noaction_zero_overhead () =
   (* get on a field without an action should not allocate.
      We just verify it works — allocation is checked by benchmarks. *)
   let cf_v = Codec.(Field.v "v" uint8 $ fun v -> v) in
@@ -830,7 +830,7 @@ let test_get_with_env () =
   Alcotest.(check int) "get returns value" 0x42 v;
   Alcotest.(check int) "output param synced" 0x42 (Param.get env out)
 
-let test_get_action_field_two_codecs () =
+let test_get_action_field_twocodecs () =
   (* Same action field in two codecs — each codec gets its own action runner *)
   let out1 = Param.output "out1" uint8 in
   let out2 = Param.output "out2" uint16be in
@@ -900,7 +900,7 @@ let test_get_action_abort_field () =
   | _ -> Alcotest.fail "expected abort"
   | exception Validation_error (Constraint_failed _) -> ()
 
-let test_get_no_action_ignores_env () =
+let test_get_noaction_ignores_env () =
   (* Passing ~env to get on a field without action is harmless *)
   let cf_v = Codec.(Field.v "v" uint8 $ fun v -> v) in
   let codec = Codec.v "NoActEnv" (fun v -> v) [ cf_v ] in
@@ -929,7 +929,7 @@ let test_get_action_multiple_calls () =
   ignore (get_v (Bytes.of_string "\x20") 0);
   Alcotest.(check int) "after second" 0x20 (Param.get env out)
 
-let test_get_action_with_input_param () =
+let test_get_action_with_inputparam () =
   (* Action references an input param — get ~env must blit it into the
      scratch array so the action sees the bound value. *)
   let limit = Param.input "limit" uint8 in
@@ -960,7 +960,7 @@ let test_get_action_with_input_param () =
   | _ -> Alcotest.fail "expected rejection from input param check"
   | exception Validation_error (Constraint_failed _) -> ()
 
-let test_get_action_input_param_no_env () =
+let test_get_action_inputparam_noenv () =
   (* Action references an input param but no env passed — param reads as 0 *)
   let limit = Param.input "lim2" uint8 in
   let f_ref = Field.v "v" uint8 in
@@ -1003,7 +1003,7 @@ let test_get_action_output_only () =
   Alcotest.(check int) "get 0x00" 0x00 (get_v (Bytes.of_string "\x00") 0);
   Alcotest.(check int) "output 0x00" 0x00 (Param.get env out)
 
-let test_get_action_var_then_assign () =
+let test_get_action_varthen_assign () =
   (* Action with local var computation then assign to output *)
   let out = Param.output "doubled" uint8 in
   let f_ref = Field.v "v" uint8 in
@@ -1025,7 +1025,7 @@ let test_get_action_var_then_assign () =
   Alcotest.(check int) "get value" 21 (get_v (Bytes.of_string "\x15") 0);
   Alcotest.(check int) "doubled output" 42 (Param.get env out)
 
-let test_get_action_cross_field_ref () =
+let test_get_action_crossfield_ref () =
   (* Action on field y references field x's value *)
   let f_x = Field.v "x" uint8 in
   let out = Param.output "sum" uint8 in
@@ -1080,7 +1080,7 @@ let test_validate_where_only () =
   | () -> Alcotest.fail "expected where failure"
   | exception Validation_error (Constraint_failed _) -> ()
 
-let test_get_two_staged_same_field () =
+let test_get_twostaged_same_field () =
   (* Two staged getters from the same codec+field with different envs *)
   let out = Param.output "out_two" uint8 in
   let f_ref = Field.v "v" uint8 in
@@ -1126,7 +1126,7 @@ let test_encode_shared_bitfield () =
 
 (* ── API misuse / safety tests ── *)
 
-let test_get_field_not_in_codec () =
+let test_get_field_notin_codec () =
   (* get with a field that was never added to this codec raises Not_found
      at staging time *)
   let cf_x = Codec.(Field.v "x" uint8 $ fun v -> v) in
@@ -1142,7 +1142,7 @@ let test_get_field_not_in_codec () =
         "mentions codec name" true
         (Re.execp (Re.compile (Re.str "OnlyX")) msg)
 
-let test_set_field_not_in_codec () =
+let test_set_field_notin_codec () =
   (* set with a field not in the codec raises Invalid_argument at staging *)
   let cf_x = Codec.(Field.v "x" uint8 $ fun v -> v) in
   let cf_y = Codec.(Field.v "y" uint8 $ fun v -> v) in
@@ -1181,7 +1181,7 @@ let test_env_from_wrong_codec () =
     "wrong env ignored" 0x42
     (get_v2 (Bytes.of_string "\x42") 0)
 
-let test_env_wrong_codec_with_action () =
+let test_env_wrongcodec_with_action () =
   (* Using env from a different codec with an action field.
      The env has too few param slots — get raises Invalid_argument
      at staging time. *)
@@ -1257,7 +1257,7 @@ let test_same_field_two_codecs () =
     "codec2 get x" 0xBBBB
     ((Staged.unstage (Codec.get codec2 cf_x)) buf 0)
 
-let test_same_field_two_codecs_set () =
+let test_samefield_twocodecs_set () =
   (* Same field in two codecs: set via each must write to the correct offset. *)
   let f_v = Field.v "v" uint8 in
   let cf_v = Codec.(f_v $ fun v -> v) in
@@ -1282,7 +1282,7 @@ let test_same_field_two_codecs_set () =
     "codec2 set -> byte 0 untouched" 0 (Bytes.get_uint8 buf 0);
   Alcotest.(check int) "codec2 set -> byte 1" 0xBB (Bytes.get_uint8 buf 1)
 
-let test_same_field_two_codecs_decode () =
+let test_samefield_twocodecs_decode () =
   (* Decode via the first codec after sealing both.
      The second seal clobbers f_reader, so decode uses the wrong offset. *)
   let f_x = Field.v "x" uint16be in
@@ -1305,7 +1305,7 @@ let test_same_field_two_codecs_decode () =
   | Ok v -> Alcotest.(check int) "decoded x" 0x1234 v
   | Error e -> Alcotest.failf "%a" pp_parse_error e
 
-let test_same_field_two_codecs_encode () =
+let test_samefield_twocodecs_encode () =
   (* Encode via the first codec after sealing both.
      The second seal clobbers f_writer, so encode writes to the wrong offset. *)
   let f_v = Field.v "v" uint8 in
@@ -1353,7 +1353,7 @@ let test_same_bitfield_two_codecs () =
     "codec2 get a (bottom)" 3
     ((Staged.unstage (Codec.get codec2 cf_a)) buf 0)
 
-let test_same_field_staged_before_second_seal () =
+let test_samefield_staged_before_secondseal () =
   (* Stage get from codec1 BEFORE sealing codec2.
      The staged function captures f_reader at staging time. If f_reader
      is a mutable slot, the staged function sees the clobbered value
@@ -2273,7 +2273,7 @@ let test_codec_cross_field_ref () =
   Alcotest.(check string) "data" "HELLO" r.tc_data;
   Alcotest.(check int) "check" 0xCC r.tc_check
 
-let test_codec_cross_field_ref_varying () =
+let test_codec_crossref_field_varying () =
   (* frame_len=5 -> data is 2 bytes *)
   let buf = Bytes.create 5 in
   Bytes.set_uint8 buf 0 2;
@@ -2290,7 +2290,7 @@ let test_codec_cross_field_ref_varying () =
 (* Attacker sets frame_len=255 in a 5-byte buffer. The data field's computed
    size (255-3=252) exceeds available bytes — must report Unexpected_eof,
    not crash or silently truncate. *)
-let test_codec_cross_field_ref_oversized () =
+let test_codec_crossref_field_oversized () =
   let buf = Bytes.create 5 in
   Bytes.set_uint8 buf 0 1;
   Bytes.set_uint8 buf 1 0xFF;
@@ -2303,7 +2303,7 @@ let test_codec_cross_field_ref_oversized () =
   | Error e -> Alcotest.failf "wrong error: %a" pp_parse_error e
 
 (* Attacker sets frame_len=2 -> data size = 2-3 = -1. Must error, not crash. *)
-let test_codec_cross_field_ref_underflow () =
+let test_codec_crossref_field_underflow () =
   let buf = Bytes.create 4 in
   Bytes.set_uint8 buf 0 1;
   Bytes.set_uint8 buf 1 2;
@@ -2320,7 +2320,7 @@ let test_codec_cross_field_ref_underflow () =
   | Error _ -> ()
 
 (* frame_len=3 -> data size = 0. Boundary case: empty data. *)
-let test_codec_cross_field_ref_zero_data () =
+let test_codec_crossref_field_zerodata () =
   let buf = Bytes.create 3 in
   Bytes.set_uint8 buf 0 1;
   Bytes.set_uint8 buf 1 3;
@@ -2410,7 +2410,7 @@ let outer_l3_codec =
           r.ol3_data );
       ]
 
-let test_codec_cross_field_ref_two_levels () =
+let test_codec_crossref_field_twolevels () =
   let buf = Bytes.create 6 in
   Bytes.set_uint8 buf 0 4;
   (* DeepLen at l1 *)
@@ -2447,7 +2447,7 @@ let bf_frame_codec =
           r.bff_data );
       ]
 
-let test_codec_cross_field_ref_bitfield () =
+let test_codec_crossref_field_bitfield () =
   (* Default [bit_order = Msb_first]: [BfLen] (first declared) is the top
      nibble, [BfFlags] is the bottom nibble. len=3, flags=0xA -> byte = 0x3A. *)
   let buf = Bytes.create 4 in
@@ -2981,7 +2981,7 @@ let ipv4_vihl_codec =
       (Field.v "IHL" (bits ~width:4 U8) $ fun p -> p.ihl);
     ]
 
-let test_bit_order_ipv4_vihl_decode () =
+let test_bitorder_ipv4_vihl_decode () =
   (* RFC 791: first byte of an IPv4 header with Version=4, IHL=5 is 0x45,
      Version in the top nibble, IHL in the bottom nibble. *)
   let buf = Bytes.of_string "\x45" in
@@ -2989,7 +2989,7 @@ let test_bit_order_ipv4_vihl_decode () =
   Alcotest.(check int) "Version = 4 (top nibble)" 4 r.v;
   Alcotest.(check int) "IHL = 5 (bottom nibble)" 5 r.ihl
 
-let test_bit_order_ipv4_vihl_encode_roundtrip () =
+let test_bitorder_ipv4vihl_encode_roundtrip () =
   let original = { v = 4; ihl = 5 } in
   let buf = Bytes.create 1 in
   Codec.encode ipv4_vihl_codec original buf 0;
@@ -3009,7 +3009,7 @@ let ipv4_flags_frag_codec =
       (Field.v "FragmentOffset" (bits ~width:13 U16be) $ fun p -> p.frag);
     ]
 
-let test_bit_order_ipv4_flags_frag () =
+let test_bitorder_ipv4_flags_frag () =
   (* RFC 791: Flags (3 bits) then Fragment Offset (13 bits), MSB-first.
      Flags = 0b010 (DF set), FragOffset = 0 -> 0x4000. *)
   let buf = Bytes.of_string "\x40\x00" in
@@ -3028,7 +3028,7 @@ let mcu_reg_codec =
       (Field.v "hi" (bits ~bit_order:Lsb_first ~width:4 U8) $ fun r -> r.hi);
     ]
 
-let test_bit_order_lsb_first_opt_in () =
+let test_bitorder_lsbfirst_opt_in () =
   (* MSVC-style C struct: first declared field in the low bits. *)
   let buf = Bytes.of_string "\xA5" in
   let r = decode_ok (Codec.decode mcu_reg_codec buf 0) in
@@ -3046,7 +3046,7 @@ let bit_order_split_codec =
       (Field.v "y" (bits ~bit_order:Lsb_first ~width:4 U8) $ fun r -> r.bos_y);
     ]
 
-let test_bit_order_different_start_new_word () =
+let test_bitorder_diff_start_newword () =
   (* Two fields with the same base but different [bit_order] must NOT share
      a base word — the codec allocates a fresh byte for each. Catches any
      regression that would let mismatched bit orders silently collide. *)
@@ -3115,50 +3115,50 @@ let suite =
         test_codec_bitfield_overflow_1bit;
       (* action semantics *)
       Alcotest.test_case "action: fires on decode_with" `Quick
-        test_action_fires_on_decode_with;
+        test_action_fires_decode_with;
       Alcotest.test_case "action: fires on get" `Quick test_action_fires_on_get;
       Alcotest.test_case "action: not fired by validate" `Quick
-        test_action_not_fired_by_validate;
+        test_action_unfired_by_validate;
       Alcotest.test_case "action: no action zero overhead" `Quick
-        test_get_no_action_zero_overhead;
+        test_get_noaction_zero_overhead;
       Alcotest.test_case "action: get with env" `Quick test_get_with_env;
       Alcotest.test_case "action: field in two codecs" `Quick
-        test_get_action_field_two_codecs;
+        test_get_action_field_twocodecs;
       Alcotest.test_case "action: get without env" `Quick test_get_action_no_env;
       Alcotest.test_case "action: abort on get" `Quick
         test_get_action_abort_field;
       Alcotest.test_case "action: no action ignores env" `Quick
-        test_get_no_action_ignores_env;
+        test_get_noaction_ignores_env;
       Alcotest.test_case "action: multiple calls update env" `Quick
         test_get_action_multiple_calls;
       Alcotest.test_case "action: with input param" `Quick
-        test_get_action_with_input_param;
+        test_get_action_with_inputparam;
       Alcotest.test_case "action: input param no env" `Quick
-        test_get_action_input_param_no_env;
+        test_get_action_inputparam_noenv;
       Alcotest.test_case "action: output only" `Quick
         test_get_action_output_only;
       Alcotest.test_case "action: var then assign" `Quick
-        test_get_action_var_then_assign;
+        test_get_action_varthen_assign;
       Alcotest.test_case "action: cross-field ref" `Quick
-        test_get_action_cross_field_ref;
+        test_get_action_crossfield_ref;
       Alcotest.test_case "validate: constraint only" `Quick
         test_validate_constraint_only;
       Alcotest.test_case "validate: where only" `Quick test_validate_where_only;
       Alcotest.test_case "action: two staged same field" `Quick
-        test_get_two_staged_same_field;
+        test_get_twostaged_same_field;
       Alcotest.test_case "shared: encode bitfield" `Quick
         test_encode_shared_bitfield;
       (* API misuse *)
       Alcotest.test_case "misuse: get field not in codec" `Quick
-        test_get_field_not_in_codec;
+        test_get_field_notin_codec;
       Alcotest.test_case "misuse: set field not in codec" `Quick
-        test_set_field_not_in_codec;
+        test_set_field_notin_codec;
       Alcotest.test_case "misuse: bitfield on non-bitfield" `Quick
         test_bitfield_on_non_bitfield;
       Alcotest.test_case "misuse: env from wrong codec" `Quick
         test_env_from_wrong_codec;
       Alcotest.test_case "misuse: wrong env with action" `Quick
-        test_env_wrong_codec_with_action;
+        test_env_wrongcodec_with_action;
       Alcotest.test_case "misuse: decode short buffer" `Quick
         test_decode_short_buffer;
       Alcotest.test_case "misuse: encode short buffer" `Quick
@@ -3167,15 +3167,15 @@ let suite =
       Alcotest.test_case "shared: same field two codecs get" `Quick
         test_same_field_two_codecs;
       Alcotest.test_case "shared: same field two codecs set" `Quick
-        test_same_field_two_codecs_set;
+        test_samefield_twocodecs_set;
       Alcotest.test_case "shared: same field two codecs decode" `Quick
-        test_same_field_two_codecs_decode;
+        test_samefield_twocodecs_decode;
       Alcotest.test_case "shared: same field two codecs encode" `Quick
-        test_same_field_two_codecs_encode;
+        test_samefield_twocodecs_encode;
       Alcotest.test_case "shared: same bitfield two codecs" `Quick
         test_same_bitfield_two_codecs;
       Alcotest.test_case "shared: staged before second seal" `Quick
-        test_same_field_staged_before_second_seal;
+        test_samefield_staged_before_secondseal;
       (* zero-copy view *)
       Alcotest.test_case "view: get uint" `Quick test_view_get_uint;
       Alcotest.test_case "view: get bitfield" `Quick test_view_get_bitfield;
@@ -3194,15 +3194,15 @@ let suite =
         test_view_shared_set_independent;
       (* bit_order adversarial tests *)
       Alcotest.test_case "bit_order: IPv4 Version/IHL decode" `Quick
-        test_bit_order_ipv4_vihl_decode;
+        test_bitorder_ipv4_vihl_decode;
       Alcotest.test_case "bit_order: IPv4 Version/IHL roundtrip" `Quick
-        test_bit_order_ipv4_vihl_encode_roundtrip;
+        test_bitorder_ipv4vihl_encode_roundtrip;
       Alcotest.test_case "bit_order: IPv4 Flags/FragOffset" `Quick
-        test_bit_order_ipv4_flags_frag;
+        test_bitorder_ipv4_flags_frag;
       Alcotest.test_case "bit_order: Lsb_first opt-in" `Quick
-        test_bit_order_lsb_first_opt_in;
+        test_bitorder_lsbfirst_opt_in;
       Alcotest.test_case "bit_order: different orders separate words" `Quick
-        test_bit_order_different_start_new_word;
+        test_bitorder_diff_start_newword;
       (* byte_slice *)
       Alcotest.test_case "view: byte_slice get" `Quick test_view_byte_slice_get;
       Alcotest.test_case "view: byte_slice decode" `Quick
@@ -3286,19 +3286,19 @@ let suite =
       Alcotest.test_case "embed: cross field ref" `Quick
         test_codec_cross_field_ref;
       Alcotest.test_case "embed: cross field ref varying" `Quick
-        test_codec_cross_field_ref_varying;
+        test_codec_crossref_field_varying;
       Alcotest.test_case "embed: cross field ref oversized" `Quick
-        test_codec_cross_field_ref_oversized;
+        test_codec_crossref_field_oversized;
       Alcotest.test_case "embed: cross field ref underflow" `Quick
-        test_codec_cross_field_ref_underflow;
+        test_codec_crossref_field_underflow;
       Alcotest.test_case "embed: cross field ref zero data" `Quick
-        test_codec_cross_field_ref_zero_data;
+        test_codec_crossref_field_zerodata;
       Alcotest.test_case "embed: cross field ref shadow" `Quick
         test_codec_field_shadow;
       Alcotest.test_case "embed: cross field ref two levels" `Quick
-        test_codec_cross_field_ref_two_levels;
+        test_codec_crossref_field_twolevels;
       Alcotest.test_case "embed: cross field ref bitfield" `Quick
-        test_codec_cross_field_ref_bitfield;
+        test_codec_crossref_field_bitfield;
       (* optional *)
       Alcotest.test_case "optional: present decode" `Quick
         test_optional_present_decode;

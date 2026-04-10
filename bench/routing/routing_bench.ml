@@ -78,16 +78,16 @@ let pp_counts ppf (hk, sci, diag, idle) =
 
 let[@inline] route_of_apid apid = Iarray.unsafe_get routing_table apid
 let hdr = Wire.Codec.wire_size Space.packet_codec
-let get_apid = Wire.Staged.unstage (C.get Space.packet_codec cf_sp_apid)
-let get_dlen = Wire.Staged.unstage (C.get Space.packet_codec cf_sp_data_len)
+let read_apid = Wire.Staged.unstage (C.get Space.packet_codec cf_sp_apid)
+let read_dlen = Wire.Staged.unstage (C.get Space.packet_codec cf_sp_data_len)
 
 type state = { off : int ref; handler_counts : int array }
 
 let step ~buf ~total_bytes state () =
   if !(state.off) + hdr > total_bytes then state.off := 0;
   let o = !(state.off) in
-  let apid = get_apid buf o in
-  let dlen = get_dlen buf o in
+  let apid = read_apid buf o in
+  let dlen = read_dlen buf o in
   let route = route_of_apid apid in
   Array.unsafe_set state.handler_counts route
     (Array.unsafe_get state.handler_counts route + 1);

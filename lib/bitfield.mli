@@ -33,6 +33,6 @@ val extract :
   width:int ->
   int ->
   int
-(** Extract bits from a word. [bit_order] is independent of the base's byte
-    order: [Msb_first] places the first declared field at the most significant
-    bit, [Lsb_first] at the least. *)
+(** Extract bits from a word. Bit order is independent of the base's byte order:
+    {!Types.Msb_first} places the first declared field at the most significant
+    bit, {!Types.Lsb_first} at the least. *)

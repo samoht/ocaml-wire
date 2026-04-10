@@ -28,40 +28,8 @@ let struct_size s =
 
 let projection_structs = Demo_bench_cases.projection_structs
 
-let generate_ml oc =
-  output_string oc (Wire_stubs.to_ml_stubs structs);
-  let ppf = Format.formatter_of_out_channel oc in
+let generate_stub_registry ppf structs projection_structs =
   let pr fmt = Fmt.pf ppf fmt in
-  List.iter
-    (fun s ->
-      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
-      pr "external %s_check : bytes -> bool = \"caml_wire_%s_check\"\n\n" lower
-        lower)
-    structs;
-  pr "(* Timed C benchmark loops *)\n\n";
-  List.iter
-    (fun s ->
-      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
-      pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
-        lower lower)
-    structs;
-  (* Projected field extraction for single-output projection structs.
-     _parse_k Fun.id returns the raw field value directly — no record alloc. *)
-  pr "(* ── Projected field extraction ── *)\n\n";
-  List.iter
-    (fun s ->
-      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
-      match Wire.Everparse.Raw.field_kinds s with
-      | [ (_, kind) ] ->
-          let suffix =
-            match kind with
-            | Wire.Everparse.Raw.K_int64 -> "_int64"
-            | _ -> "_int"
-          in
-          pr "let %s_projected%s = %s_parse_k Fun.id\n\n" lower suffix lower
-      | _ -> ())
-    projection_structs;
-  pr "\n(* ── Per-schema stub registry ── *)\n\n";
   pr "type stubs = {\n";
   pr "  check : bytes -> bool;\n";
   pr "  ffi_parse : bytes -> int -> unit;\n";
@@ -94,7 +62,41 @@ let generate_ml oc =
          projected_int64 = %s }\n"
         name lower lower lower proj_int proj_int64)
     structs;
-  pr "  | name -> failwith (\"C_stubs: unknown schema \" ^ name)\n";
+  pr "  | name -> failwith (\"C_stubs: unknown schema \" ^ name)\n"
+
+let generate_ml oc =
+  output_string oc (Wire_stubs.to_ml_stubs structs);
+  let ppf = Format.formatter_of_out_channel oc in
+  let pr fmt = Fmt.pf ppf fmt in
+  List.iter
+    (fun s ->
+      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
+      pr "external %s_check : bytes -> bool = \"caml_wire_%s_check\"\n\n" lower
+        lower)
+    structs;
+  pr "(* Timed C benchmark loops *)\n\n";
+  List.iter
+    (fun s ->
+      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
+      pr "external %s_loop : bytes -> int -> int -> int = \"ep_loop_%s\"\n\n"
+        lower lower)
+    structs;
+  pr "(* Projected field extraction *)\n\n";
+  List.iter
+    (fun s ->
+      let lower = String.lowercase_ascii (Wire.Everparse.Raw.struct_name s) in
+      match Wire.Everparse.Raw.field_kinds s with
+      | [ (_, kind) ] ->
+          let suffix =
+            match kind with
+            | Wire.Everparse.Raw.K_int64 -> "_int64"
+            | _ -> "_int"
+          in
+          pr "let %s_projected%s = %s_parse_k Fun.id\n\n" lower suffix lower
+      | _ -> ())
+    projection_structs;
+  pr "\n(* Per-schema stub registry *)\n\n";
+  generate_stub_registry ppf structs projection_structs;
   Format.pp_print_flush ppf ()
 
 let generate_c oc =

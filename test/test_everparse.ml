@@ -313,7 +313,7 @@ let index_of ~sub s =
   let re = Re.compile (Re.str sub) in
   match Re.exec_opt re s with Some g -> Re.Group.start g 0 | None -> -1
 
-let test_3d_bit_order_u8_msb_first_reorder () =
+let test_3d_bitorder_u8msb_reorder () =
   (* Non-native: (U8, Msb_first). EverParse native for UINT8 is LSB-first,
      so the projection reverses [a; b] to [b; a] in the emitted 3D text.
      Widths sum to 8 -> no padding. *)
@@ -334,7 +334,7 @@ let test_3d_bit_order_u8_msb_first_reorder () =
   Alcotest.(check bool) "b found" true (ib >= 0);
   Alcotest.(check bool) "reordered: b before a" true (ib < ia)
 
-let test_3d_bit_order_u8_msb_first_padding () =
+let test_3d_bitorder_u8msb_padding () =
   (* Non-native and incomplete: two 3-bit fields in (U8, Msb_first).
      Reversal alone would place the 6 bits at LSB-first positions 0..5;
      the projection prepends 2 bits of anonymous padding so the user's
@@ -355,7 +355,7 @@ let test_3d_bit_order_u8_msb_first_padding () =
     (contains ~sub:"UINT8 _anon_" s);
   Alcotest.(check bool) "padding width = 2" true (contains ~sub:": 2" s)
 
-let test_3d_bit_order_constraint_collapse () =
+let test_3d_bitorder_constraint_collapse () =
   (* Non-native: (U8, Msb_first) with a backward-reference constraint.
      Original order [a {a<=5}; b {a+b<=10}]. After reversal to [b; a],
      a constraint [a+b<=10] attached to b would fire before [a] was
@@ -393,7 +393,7 @@ let test_3d_bit_order_constraint_collapse () =
     "b still referenced in combined constraint" true
     (contains ~sub:"(a + b) <= 10" s)
 
-let test_3d_bit_order_native_no_reorder () =
+let test_3d_bitorder_native_noreorder () =
   (* Native: (U32be, Msb_first). Fields stay in declared order, no padding. *)
   let codec =
     let open Codec in
@@ -429,11 +429,11 @@ let suite =
       Alcotest.test_case "3d: repeat" `Quick test_3d_repeat;
       Alcotest.test_case "3d: tm-like" `Quick test_3d_tm_like;
       Alcotest.test_case "3d: bit_order U8 Msb_first reorder" `Quick
-        test_3d_bit_order_u8_msb_first_reorder;
+        test_3d_bitorder_u8msb_reorder;
       Alcotest.test_case "3d: bit_order U8 Msb_first padding" `Quick
-        test_3d_bit_order_u8_msb_first_padding;
+        test_3d_bitorder_u8msb_padding;
       Alcotest.test_case "3d: bit_order native no reorder" `Quick
-        test_3d_bit_order_native_no_reorder;
+        test_3d_bitorder_native_noreorder;
       Alcotest.test_case "3d: bit_order constraint collapse" `Quick
-        test_3d_bit_order_constraint_collapse;
+        test_3d_bitorder_constraint_collapse;
     ] )

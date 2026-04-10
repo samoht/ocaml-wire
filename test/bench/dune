@@ -4,7 +4,7 @@
  (libraries bench_lib demo_bench_cases alcotest unix))
 
 (executable
- (name test_app)
+ (name bench)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
  (libraries
@@ -22,6 +22,6 @@
  (alias runtest)
  (enabled_if
   (= %{env:BUILD_EVERPARSE=} "1"))
- (deps test_app.exe)
+ (deps bench.exe)
  (action
-  (run ./test_app.exe)))
+  (run ./bench.exe)))
