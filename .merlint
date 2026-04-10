@@ -1,12 +1,4 @@
 rules:
-  # GADT function with existential types — cannot be split further
-  - files: lib/codec.ml
-    exclude: [E005]
-
-  # Bench accessors wrap Codec.get — get_ prefix is semantically correct
-  - files: bench/demo/bench.ml
-    exclude: [E331]
-
   # TCP has 9 flag bits — positional constructor imposed by Codec.view
   - files: examples/net/net.ml
     exclude: [E350]
