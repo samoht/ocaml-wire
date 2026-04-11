@@ -736,26 +736,29 @@ let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
       let ctx' = Stdlib.ref ctx in
       seq.iter (fun elem_v -> ctx' := encode_with_ctx !ctx' elem elem_v enc) v;
       !ctx'
-  | Casetype { tag; cases; _ } ->
-      let rec find_case = function
-        | [] -> failwith "casetype encoding: no matching case"
-        | Case_branch { cb_tag; cb_inner; cb_project; _ } :: rest -> (
-            match cb_project v with
-            | Some body ->
-                let ctx' =
-                  match cb_tag with
-                  | Some t -> encode_with_ctx ctx tag t enc
-                  | None ->
-                      failwith "casetype encoding: cannot encode default case"
-                in
-                encode_with_ctx ctx' cb_inner body enc
-            | None -> find_case rest)
-      in
-      find_case cases
+  | Casetype { tag; cases; _ } -> encode_casetype ctx tag cases v enc
   | Struct _ -> failwith "struct encoding: use Record module"
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
+
+and encode_casetype : type a.
+    ctx -> int typ -> a case_branch list -> a -> encoder -> ctx =
+ fun ctx tag cases v enc ->
+  let rec find_case = function
+    | [] -> failwith "casetype encoding: no matching case"
+    | Case_branch { cb_tag; cb_inner; cb_project; _ } :: rest -> (
+        match cb_project v with
+        | Some body ->
+            let ctx' =
+              match cb_tag with
+              | Some t -> encode_with_ctx ctx tag t enc
+              | None -> failwith "casetype encoding: cannot encode default case"
+            in
+            encode_with_ctx ctx' cb_inner body enc
+        | None -> find_case rest)
+  in
+  find_case cases
 
 let encode typ v writer =
   let enc = encoder writer in

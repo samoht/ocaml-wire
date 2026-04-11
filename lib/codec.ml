@@ -124,6 +124,11 @@ let rec build_populate : type a.
   | Uint32 _ -> fun arr buf base -> arr.(idx) <- UInt32.to_int (reader buf base)
   | Uint63 _ -> fun arr buf base -> arr.(idx) <- UInt63.to_int (reader buf base)
   | Bits _ -> fun arr buf base -> arr.(idx) <- reader buf base
+  | Uint64 _ -> (
+      fun arr buf base ->
+        match Int64.unsigned_to_int (reader buf base) with
+        | Some v -> arr.(idx) <- v
+        | None -> ())
   | Where { inner; _ } -> build_populate inner idx reader
   | Enum { base; _ } -> build_populate base idx reader
   | Map { inner; encode; _ } ->

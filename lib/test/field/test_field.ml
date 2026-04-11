@@ -56,6 +56,33 @@ let test_no_constraint () =
   | None -> ()
   | Some _ -> Alcotest.fail "expected no constraint"
 
+(* ref on non-int fields: bool, mapped, uint64. The expression is always
+   Ref name — the type system no longer restricts the field's OCaml type. *)
+
+let test_ref_bool_field () =
+  let f = Field.v "Flag" (Types.bool Types.uint8) in
+  match Field.ref f with
+  | Types.Ref name -> Alcotest.(check string) "ref name" "Flag" name
+  | _ -> Alcotest.fail "expected Ref"
+
+let test_ref_mapped_field () =
+  let f =
+    Field.v "Code"
+      (Types.map
+         (fun n -> string_of_int n)
+         (fun s -> int_of_string s)
+         Types.uint8)
+  in
+  match Field.ref f with
+  | Types.Ref name -> Alcotest.(check string) "ref name" "Code" name
+  | _ -> Alcotest.fail "expected Ref"
+
+let test_ref_uint64_field () =
+  let f = Field.v "Timestamp" (Types.Uint64 Types.Big) in
+  match Field.ref f with
+  | Types.Ref name -> Alcotest.(check string) "ref name" "Timestamp" name
+  | _ -> Alcotest.fail "expected Ref"
+
 let suite =
   ( "field",
     [
@@ -64,6 +91,9 @@ let suite =
       Alcotest.test_case "name returns name" `Quick test_name_returns_name;
       Alcotest.test_case "anon" `Quick test_anon;
       Alcotest.test_case "ref returns Ref expr" `Quick test_ref_returns_ref_expr;
+      Alcotest.test_case "ref on bool field" `Quick test_ref_bool_field;
+      Alcotest.test_case "ref on mapped field" `Quick test_ref_mapped_field;
+      Alcotest.test_case "ref on uint64 field" `Quick test_ref_uint64_field;
       Alcotest.test_case "pp prints name" `Quick test_pp_prints_name;
       Alcotest.test_case "to_decl named" `Quick test_to_decl_named;
       Alcotest.test_case "to_decl anon" `Quick test_to_decl_anon;
