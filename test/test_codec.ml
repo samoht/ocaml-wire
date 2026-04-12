@@ -2695,6 +2695,75 @@ let test_dyn_opt_get_trail () =
   Bytes.set_uint8 buf2 1 0xBB;
   Alcotest.(check int) "trail (absent)" 0xBB (get_trail buf2 0)
 
+(* Dynamic optional via Field.ref on a bool field — the TM frame pattern.
+   Field.ref now accepts 'a t, so a bool field created with [bit] can be
+   referenced directly in expressions. *)
+
+type tm_opt = {
+  to_ocf_flag : bool;
+  to_data : int;
+  to_ocf : int option;
+  to_trail : int;
+}
+
+let f_to_ocf_flag = Field.v "OCFFlag" (bit (bits ~width:1 U8))
+
+let tm_opt_codec =
+  Codec.v "TmOpt"
+    (fun ocf_flag _pad data ocf trail ->
+      { to_ocf_flag = ocf_flag; to_data = data; to_ocf = ocf; to_trail = trail })
+    Codec.
+      [
+        (f_to_ocf_flag $ fun r -> r.to_ocf_flag);
+        (Field.v "Pad" (bits ~width:7 U8) $ fun _ -> 0);
+        (Field.v "Data" uint16be $ fun r -> r.to_data);
+        ( Field.v "OCF"
+            (optional Expr.(Field.ref f_to_ocf_flag <> int 0) uint32be)
+        $ fun r -> r.to_ocf );
+        (Field.v "Trail" uint8 $ fun r -> r.to_trail);
+      ]
+
+let test_dyn_opt_anyref_present () =
+  let buf = Bytes.create 8 in
+  Bytes.set_uint8 buf 0 0x80;
+  Bytes.set_uint16_be buf 1 0x1234;
+  Bytes.set_int32_be buf 3 0xDEADBEEFl;
+  Bytes.set_uint8 buf 7 0xFF;
+  let r = decode_ok (Codec.decode tm_opt_codec buf 0) in
+  Alcotest.(check bool) "ocf_flag" true r.to_ocf_flag;
+  Alcotest.(check int) "data" 0x1234 r.to_data;
+  Alcotest.(check (option int)) "ocf" (Some 0xDEADBEEF) r.to_ocf;
+  Alcotest.(check int) "trail" 0xFF r.to_trail
+
+let test_dyn_opt_anyref_absent () =
+  let buf = Bytes.create 4 in
+  Bytes.set_uint8 buf 0 0x00;
+  Bytes.set_uint16_be buf 1 0x1234;
+  Bytes.set_uint8 buf 3 0xFF;
+  let r = decode_ok (Codec.decode tm_opt_codec buf 0) in
+  Alcotest.(check bool) "ocf_flag" false r.to_ocf_flag;
+  Alcotest.(check int) "data" 0x1234 r.to_data;
+  Alcotest.(check (option int)) "ocf" None r.to_ocf;
+  Alcotest.(check int) "trail" 0xFF r.to_trail
+
+let test_uint64_ref_in_size () =
+  let f_len = Field.v "Len" uint64be in
+  let codec =
+    let open Codec in
+    v "U64Ref"
+      (fun len data -> (len, data))
+      [
+        (f_len $ fun (l, _) -> l);
+        (Field.v "Data" (byte_array ~size:(Field.ref f_len)) $ fun (_, d) -> d);
+      ]
+  in
+  let buf = Bytes.create 11 in
+  Bytes.set_int64_be buf 0 3L;
+  Bytes.blit_string "ABC" 0 buf 8 3;
+  let len, data = decode_ok (Codec.decode codec buf 0) in
+  Alcotest.(check int64) "len" 3L len;
+  Alcotest.(check string) "data" "ABC" data
+
 (* ── Nested: Repeat typ: parse elements until byte budget exhausted ── *)
 
 type container = { cnt_length : int; cnt_items : inner list }
@@ -3516,6 +3585,12 @@ let suite =
       Alcotest.test_case "optional: dynamic absent" `Quick test_dyn_opt_absent;
       Alcotest.test_case "optional: dynamic get trail" `Quick
         test_dyn_opt_get_trail;
+      Alcotest.test_case "optional: bool ref present" `Quick
+        test_dyn_opt_anyref_present;
+      Alcotest.test_case "optional: bool ref absent" `Quick
+        test_dyn_opt_anyref_absent;
+      Alcotest.test_case "ref: uint64 in size expr" `Quick
+        test_uint64_ref_in_size;
       (* repeat *)
       Alcotest.test_case "repeat: decode empty" `Quick test_repeat_decode_empty;
       Alcotest.test_case "repeat: decode one" `Quick test_repeat_decode_one;
