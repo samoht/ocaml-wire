@@ -43,6 +43,10 @@ let rec build_field_encoder : type a. a typ -> bytes -> int -> a -> int =
       fun buf off v ->
         Bytes.set_int64_be buf off v;
         off + 8
+  | Uint_var { size = Int n; endian } ->
+      fun buf off v ->
+        Uint_var.write endian buf off n v;
+        off + n
   | Byte_array { size = Int n } ->
       fun buf off v ->
         let len = min n (String.length v) in
@@ -98,6 +102,8 @@ let rec build_field_reader : type a. a typ -> int -> bytes -> int -> a =
   | Uint63 Big -> fun buf base -> UInt63.be buf (base + field_off)
   | Uint64 Little -> fun buf base -> Bytes.get_int64_le buf (base + field_off)
   | Uint64 Big -> fun buf base -> Bytes.get_int64_be buf (base + field_off)
+  | Uint_var { size = Int n; endian } ->
+      fun buf base -> Uint_var.read endian buf (base + field_off) n
   | Byte_array { size = Int n } ->
       fun buf base -> Bytes.sub_string buf (base + field_off) n
   | Byte_slice { size = Int n } ->
@@ -121,6 +127,7 @@ let rec build_populate : type a.
   match typ with
   | Uint8 -> fun arr buf base -> arr.(idx) <- reader buf base
   | Uint16 _ -> fun arr buf base -> arr.(idx) <- reader buf base
+  | Uint_var _ -> fun arr buf base -> arr.(idx) <- reader buf base
   | Uint32 _ -> fun arr buf base -> arr.(idx) <- UInt32.to_int (reader buf base)
   | Uint63 _ -> fun arr buf base -> arr.(idx) <- UInt63.to_int (reader buf base)
   | Bits _ -> fun arr buf base -> arr.(idx) <- reader buf base
@@ -767,6 +774,7 @@ let rec read_elem : type a. a typ -> bytes -> int -> a =
   | Uint63 Big -> UInt63.be buf off
   | Uint64 Little -> Bytes.get_int64_le buf off
   | Uint64 Big -> Bytes.get_int64_be buf off
+  | Uint_var { size = Int n; endian } -> Uint_var.read endian buf off n
   | Codec { codec_decode; _ } -> codec_decode buf off
   | Map { inner; decode; _ } -> decode (read_elem inner buf off)
   | Where { inner; _ } -> read_elem inner buf off
@@ -786,6 +794,7 @@ let rec write_elem : type a. a typ -> bytes -> int -> a -> unit =
   | Uint63 Big -> UInt63.set_be buf off v
   | Uint64 Little -> Bytes.set_int64_le buf off v
   | Uint64 Big -> Bytes.set_int64_be buf off v
+  | Uint_var { size = Int n; endian } -> Uint_var.write endian buf off n v
   | Codec { codec_encode; _ } -> codec_encode v buf off
   | Map { inner; encode; _ } -> write_elem inner buf off (encode v)
   | Where { inner; _ } -> write_elem inner buf off v
@@ -1373,6 +1382,7 @@ and compile_var_bytes : type a r.
     match typ with
     | Byte_slice { size } -> size
     | Byte_array { size } -> size
+    | Uint_var { size; _ } -> size
     | _ -> invalid_arg "add_field: unsupported variable-size field type"
   in
   let size_fn = compile_expr ctx.lc_field_readers size_expr in
@@ -1386,12 +1396,33 @@ and compile_var_bytes : type a r.
         let off_fn buf base = prev_end buf base - base in
         (off_fn, Variable_dynamic { off_fn; size_fn }, -1)
   in
-  let raw_reader = var_bytes_reader typ off_fn size_fn in
-  let raw_writer = var_bytes_writer typ fld.get off_fn in
-  let int_reader buf base =
-    match int_of_typ_value typ (raw_reader buf base) with
-    | Some v -> v
-    | None -> 0
+  let raw_reader, raw_writer, int_reader =
+    match typ with
+    | Uint_var { endian; _ } ->
+        let get = fld.get in
+        let raw_reader : bytes -> int -> a =
+         fun buf base ->
+          let fo = off_fn buf base in
+          let sz = size_fn buf base in
+          Uint_var.read endian buf (base + fo) sz
+        in
+        let raw_writer : r -> bytes -> int -> unit =
+         fun v buf off ->
+          let fo = off_fn buf off in
+          let sz = size_fn buf off in
+          Uint_var.write endian buf (off + fo) sz (get v)
+        in
+        let int_reader : bytes -> int -> int = raw_reader in
+        (raw_reader, raw_writer, int_reader)
+    | _ ->
+        let raw_reader = var_bytes_reader typ off_fn size_fn in
+        let raw_writer = var_bytes_writer typ fld.get off_fn in
+        let int_reader buf base =
+          match int_of_typ_value typ (raw_reader buf base) with
+          | Some v -> v
+          | None -> 0
+        in
+        (raw_reader, raw_writer, int_reader)
   in
   let populate = build_populate typ ctx.lc_n_fields raw_reader in
   {

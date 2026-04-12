@@ -16,6 +16,7 @@ let rec int_of : type a. a typ -> a -> int option =
   match typ with
   | Uint8 -> Some v
   | Uint16 _ -> Some v
+  | Uint_var _ -> Some v
   | Uint32 _ -> Some (UInt32.to_int v)
   | Uint63 _ -> Some (UInt63.to_int v)
   | Uint64 _ -> Int64.unsigned_to_int v

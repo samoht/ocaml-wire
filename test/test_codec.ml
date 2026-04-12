@@ -3219,6 +3219,80 @@ let test_multi_var_fixed_after () =
   Alcotest.(check string) "tx" "\xBB\xCC" tx;
   Alcotest.(check int) "trail" 0xBEEF trail
 
+(* ── uint: variable-width unsigned integer ── *)
+
+type uint_rec = { tag : int; value : int }
+
+let test_uint_3byte_be () =
+  let codec =
+    let open Codec in
+    v "U3BE"
+      (fun tag value -> { tag; value })
+      [
+        (Field.v "Tag" uint8 $ fun r -> r.tag);
+        (Field.v "Value" (uint (Wire.int 3)) $ fun r -> r.value);
+      ]
+  in
+  let original = { tag = 0x42; value = 0x1A2B3C } in
+  let buf = Bytes.create 4 in
+  Codec.encode codec original buf 0;
+  Alcotest.(check int) "tag byte" 0x42 (Bytes.get_uint8 buf 0);
+  Alcotest.(check int) "be byte 0" 0x1A (Bytes.get_uint8 buf 1);
+  Alcotest.(check int) "be byte 1" 0x2B (Bytes.get_uint8 buf 2);
+  Alcotest.(check int) "be byte 2" 0x3C (Bytes.get_uint8 buf 3);
+  let decoded = decode_ok (Codec.decode codec buf 0) in
+  Alcotest.(check int) "tag" original.tag decoded.tag;
+  Alcotest.(check int) "value" original.value decoded.value
+
+let test_uint_1byte () =
+  let codec =
+    let open Codec in
+    v "U1" (fun v -> v) [ (Field.v "V" (uint (Wire.int 1)) $ fun v -> v) ]
+  in
+  let buf = Bytes.create 1 in
+  Codec.encode codec 0xAB buf 0;
+  Alcotest.(check int) "byte" 0xAB (Bytes.get_uint8 buf 0);
+  let decoded = decode_ok (Codec.decode codec buf 0) in
+  Alcotest.(check int) "roundtrip" 0xAB decoded
+
+let test_uint_5byte_le () =
+  let codec =
+    let open Codec in
+    v "U5LE"
+      (fun v -> v)
+      [ (Field.v "V" (uint ~endian:Wire.Little (Wire.int 5)) $ fun v -> v) ]
+  in
+  let value = 0x01_02_03_04_05 in
+  let buf = Bytes.create 5 in
+  Codec.encode codec value buf 0;
+  Alcotest.(check int) "le byte 0" 0x05 (Bytes.get_uint8 buf 0);
+  Alcotest.(check int) "le byte 1" 0x04 (Bytes.get_uint8 buf 1);
+  Alcotest.(check int) "le byte 2" 0x03 (Bytes.get_uint8 buf 2);
+  Alcotest.(check int) "le byte 3" 0x02 (Bytes.get_uint8 buf 3);
+  Alcotest.(check int) "le byte 4" 0x01 (Bytes.get_uint8 buf 4);
+  let decoded = decode_ok (Codec.decode codec buf 0) in
+  Alcotest.(check int) "roundtrip" value decoded
+
+let test_uint_dynamic () =
+  let f_n = Field.v "N" uint8 in
+  let codec =
+    let open Codec in
+    v "UDyn"
+      (fun n value -> (n, value))
+      [
+        (f_n $ fun (n, _) -> n);
+        (Field.v "Value" (uint (Field.ref f_n)) $ fun (_, v) -> v);
+      ]
+  in
+  (* n=2 -> 2-byte BE uint = 0x1234, layout: [02] [12 34] *)
+  let buf = Bytes.create 3 in
+  Bytes.set_uint8 buf 0 2;
+  Bytes.set_uint8 buf 1 0x12;
+  Bytes.set_uint8 buf 2 0x34;
+  let n, value = decode_ok (Codec.decode codec buf 0) in
+  Alcotest.(check int) "n" 2 n;
+  Alcotest.(check int) "value" 0x1234 value
+
 (* ── Adversarial bit-order tests ──
 
    These pin the default [bit_order = Msb_first] against real protocol
@@ -3614,4 +3688,9 @@ let suite =
       Alcotest.test_case "multi-var: get" `Quick test_multi_var_get;
       Alcotest.test_case "multi-var: fixed after" `Quick
         test_multi_var_fixed_after;
+      (* uint: variable-width unsigned integer *)
+      Alcotest.test_case "uint: 3-byte BE roundtrip" `Quick test_uint_3byte_be;
+      Alcotest.test_case "uint: 1-byte like uint8" `Quick test_uint_1byte;
+      Alcotest.test_case "uint: 5-byte LE roundtrip" `Quick test_uint_5byte_le;
+      Alcotest.test_case "uint: dynamic size" `Quick test_uint_dynamic;
     ] )

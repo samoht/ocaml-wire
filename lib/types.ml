@@ -70,6 +70,7 @@ and _ typ =
   | Uint32 : endian -> UInt32.t typ
   | Uint63 : endian -> UInt63.t typ
   | Uint64 : endian -> int64 typ (* boxed, for full 64-bit *)
+  | Uint_var : { size : int expr; endian : endian } -> int typ
   | Bits : {
       width : int;
       base : bitfield_base;
@@ -222,6 +223,13 @@ let uint63 = Uint63 Little
 let uint63be = Uint63 Big
 let uint64 = Uint64 Little
 let uint64be = Uint64 Big
+
+let uint ?(endian = Big) size =
+  (match size with
+  | Int n when n < 1 || n > 7 ->
+      Fmt.invalid_arg "uint: size must be 1–7, got %d" n
+  | _ -> ());
+  Uint_var { size; endian }
 
 (* Bitfield bases *)
 let bf_uint8 = BF_U8
@@ -400,7 +408,7 @@ let struct_project s ~name ~keep =
 type ocaml_kind = K_int | K_int64 | K_bool | K_string | K_unit
 
 let rec ocaml_kind_of : type a. a typ -> ocaml_kind = function
-  | Uint8 | Uint16 _ | Uint32 _ | Uint63 _ -> K_int
+  | Uint8 | Uint16 _ | Uint32 _ | Uint63 _ | Uint_var _ -> K_int
   | Uint64 _ -> K_int64
   | Bits _ -> K_int
   | Map { inner = Bits _; decode = _; encode = _ } ->
@@ -609,6 +617,8 @@ and pp_typ : type a. a typ Fmt.t =
   | Uint32 e -> Fmt.pf ppf "UINT32%a" pp_endian e
   | Uint63 e -> Fmt.pf ppf "UINT63%a" pp_endian e
   | Uint64 e -> Fmt.pf ppf "UINT64%a" pp_endian e
+  | Uint_var { size; endian } ->
+      Fmt.pf ppf "UINT%a(%a)" pp_endian endian pp_expr size
   | Bits { base; _ } -> pp_bitfield_base ppf base
   | Unit -> Fmt.string ppf "unit"
   | All_bytes -> Fmt.string ppf "all_bytes"
@@ -683,6 +693,7 @@ let rec field_suffix : type a.
   match typ with
   | Bits { width; base; _ } ->
       (Bitwidth width, fun ppf -> pp_bitfield_base ppf base)
+  | Uint_var { size; _ } -> (Byte_array size, fun ppf -> Fmt.string ppf "UINT8")
   | Byte_array { size } | Byte_slice { size } ->
       (Byte_array size, fun ppf -> Fmt.string ppf "UINT8")
   | Single_elem { size; elem; at_most } ->
@@ -849,6 +860,8 @@ let rec field_wire_size : type a. a typ -> int option = function
   | Uint16 _ -> Some 2
   | Uint32 _ -> Some 4
   | Uint64 _ -> Some 8
+  | Uint_var { size = Int n; _ } -> Some n
+  | Uint_var _ -> None
   | Bits { base; _ } -> (
       match base with
       | BF_U8 -> Some 1
@@ -874,10 +887,11 @@ let c_type_of : type a. a typ -> string = function
   | Uint16 _ | Bits { base = BF_U16 _; _ } -> "uint16_t"
   | Uint32 _ | Uint63 _ | Bits { base = BF_U32 _; _ } -> "uint32_t"
   | Uint64 _ -> "uint64_t"
+  | Uint_var _ -> "uint32_t"
   | _ -> "uint32_t"
 
 let ml_type_of : type a. a typ -> string = function
-  | Uint8 | Uint16 _ | Bits _ -> "int"
+  | Uint8 | Uint16 _ | Uint_var _ | Bits _ -> "int"
   | Uint32 _ | Uint63 _ -> "int"
   | Uint64 _ -> "int64"
   | _ -> "int"

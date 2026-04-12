@@ -322,6 +322,17 @@ let parse_all_zeros dec =
   in
   check 0
 
+let parse_codec dec ~codec_decode ~codec_fixed_size ~codec_size_of =
+  let sz =
+    match codec_fixed_size with
+    | Some n -> n
+    | None ->
+        if available dec = 0 then refill dec;
+        codec_size_of dec.i dec.i_next
+  in
+  let buf = read_bytes dec sz in
+  codec_decode buf 0
+
 let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
  fun dec ctx typ ->
   match typ with
@@ -334,6 +345,10 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
   | Uint63 Big -> (parse_int dec 8 UInt63.be, ctx)
   | Uint64 Little -> (parse_int dec 8 Bytes.get_int64_le, ctx)
   | Uint64 Big -> (parse_int dec 8 Bytes.get_int64_be, ctx)
+  | Uint_var { size; endian } ->
+      let n = eval_expr ctx size in
+      let off = read_small dec n in
+      (Uint_var.read endian dec.i off n, ctx)
   | Bits { width; base; bit_order } -> (parse_bits dec base bit_order width, ctx)
   | Unit -> ((), ctx)
   | All_bytes -> (read_all dec, ctx)
@@ -393,17 +408,7 @@ let rec parse_with : type a. decoder -> ctx -> a typ -> a * ctx =
       | r -> (r, ctx')
       | exception Parse_error e -> raise (Parse_exn e))
   | Codec { codec_decode; codec_fixed_size; codec_size_of; _ } ->
-      (* Buffer enough bytes for the sub-codec, then decode from a flat buffer *)
-      let sz =
-        match codec_fixed_size with
-        | Some n -> n
-        | None ->
-            (* For variable-size: peek at available data to determine size *)
-            if available dec = 0 then refill dec;
-            codec_size_of dec.i dec.i_next
-      in
-      let buf = read_bytes dec sz in
-      let v = codec_decode buf 0 in
+      let v = parse_codec dec ~codec_decode ~codec_fixed_size ~codec_size_of in
       (v, ctx)
   | Optional { present; inner } ->
       if Eval.expr ctx present then
@@ -517,6 +522,10 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a =
   | Uint64 Big ->
       check_eof len (off + 8);
       Bytes.get_int64_be buf off
+  | Uint_var { size = Int n; endian } ->
+      check_eof len (off + n);
+      Uint_var.read endian buf off n
+  | Uint_var _ -> failwith "parse_direct: Uint_var with dynamic size"
   | Bits { width; base; bit_order } ->
       check_eof len (off + Bitfield.byte_size base);
       let total = Bitfield.total_bits base in
@@ -690,6 +699,12 @@ let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
   | Uint64 Big ->
       write_int64_be enc v;
       ctx
+  | Uint_var { size; endian } ->
+      let n = eval_expr ctx size in
+      ensure enc n;
+      Uint_var.write endian enc.o enc.o_next n v;
+      enc.o_next <- enc.o_next + n;
+      ctx
   | Bits { width; base; bit_order } ->
       let mask = (1 lsl width) - 1 in
       let total = Bitfield.total_bits base in
@@ -800,6 +815,10 @@ let rec encode_direct : type a. a typ -> bytes -> int -> a -> int =
   | Uint64 Big ->
       Bytes.set_int64_be buf off v;
       off + 8
+  | Uint_var { size = Int n; endian } ->
+      Uint_var.write endian buf off n v;
+      off + n
+  | Uint_var _ -> failwith "encode_direct: Uint_var with dynamic size"
   | Bits { width; base; bit_order } -> (
       let mask = (1 lsl width) - 1 in
       let total = Bitfield.total_bits base in
