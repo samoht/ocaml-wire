@@ -76,6 +76,10 @@ type bit_order = Types.bit_order =
           necessary so that every pairing emits a valid 3D schema with identical
           byte layout. *)
 
+type endian = Types.endian =
+  | Little
+  | Big  (** Byte order for multi-byte integers. *)
+
 type 'a typ
 
 type param
@@ -379,6 +383,11 @@ val uint64 : int64 typ
 val uint64be : int64 typ
 (** [uint64be] is an unsigned 64-bit big-endian integer represented as [int64].
 *)
+
+val uint : ?endian:endian -> int expr -> int typ
+(** [uint size] is an unsigned integer of [size] bytes (1–7) with the given byte
+    order (default {!Big}). The size may be a dynamic expression for
+    parameter-driven widths. *)
 
 val bits : ?bit_order:bit_order -> width:int -> bitfield -> int typ
 (** [bits ~width base] declares a bitfield of [width] bits inside [base].

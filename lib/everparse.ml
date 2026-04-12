@@ -12,7 +12,7 @@ let rec is_bitfield : type a. a Types.typ -> bool = function
   | _ -> false
 
 let rec is_byte_field : type a. a Types.typ -> bool = function
-  | Types.Byte_array _ | Types.Byte_slice _ -> true
+  | Types.Byte_array _ | Types.Byte_slice _ | Types.Uint_var _ -> true
   | Types.Map { inner; _ } -> is_byte_field inner
   | _ -> false
 

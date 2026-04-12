@@ -7,6 +7,7 @@ let rec to_int : type a. a Types.typ -> a -> int =
   match typ with
   | Uint8 -> v
   | Uint16 _ -> v
+  | Uint_var _ -> v
   | Uint32 _ -> UInt32.to_int v
   | Uint63 _ -> UInt63.to_int v
   | Uint64 _ -> Int64.unsigned_to_int v |> Option.value ~default:max_int
@@ -26,6 +27,7 @@ let rec of_int : type a. a Types.typ -> int -> a =
   match typ with
   | Uint8 -> v
   | Uint16 _ -> v
+  | Uint_var _ -> v
   | Uint32 _ -> UInt32.of_int v
   | Uint63 _ -> UInt63.of_int v
   | Uint64 _ -> Int64.of_int v
@@ -41,8 +43,8 @@ let rec of_int : type a. a Types.typ -> int -> a =
       invalid_arg "Param: unsupported parameter type"
 
 let rec is_int_representable : type a. a Types.typ -> bool = function
-  | Types.Uint8 | Types.Uint16 _ | Types.Uint32 _ | Types.Uint63 _
-  | Types.Uint64 _ | Types.Bits _ ->
+  | Types.Uint8 | Types.Uint16 _ | Types.Uint_var _ | Types.Uint32 _
+  | Types.Uint63 _ | Types.Uint64 _ | Types.Bits _ ->
       true
   | Types.Enum { base; _ } -> is_int_representable base
   | Types.Map { inner; _ } -> is_int_representable inner
