@@ -413,6 +413,47 @@ let test_3d_bitorder_native_noreorder () =
   Alcotest.(check bool) "x before y (no reorder)" true (ix < iy);
   Alcotest.(check bool) "no padding" false (contains ~sub:"_anon_" s)
 
+(* ── Variable-size schema projection ── *)
+
+type dep_frame = { frame_length : int; data : string }
+
+let f_frame_length = Field.v "FrameLength" uint16be
+let header_size = 2
+
+let dep_frame_codec =
+  Codec.v "DepFrame"
+    (fun frame_length data -> { frame_length; data })
+    Codec.
+      [
+        (f_frame_length $ fun r -> r.frame_length);
+        ( Field.v "Data"
+            (byte_array ~size:Expr.(Field.ref f_frame_length - int header_size))
+        $ fun r -> r.data );
+      ]
+
+let test_3d_dep_size_schema () =
+  let schema = Everparse.schema dep_frame_codec in
+  Alcotest.(check bool) "variable wire_size" true (schema.wire_size = None);
+  let s = Wire.Everparse.Raw.to_3d schema.module_ in
+  Alcotest.(check bool)
+    "contains FrameLength" true
+    (contains ~sub:"FrameLength" s);
+  Alcotest.(check bool) "contains Data" true (contains ~sub:"Data" s);
+  Alcotest.(check bool)
+    "contains byte-size expr" true
+    (contains ~sub:":byte-size (FrameLength - 2)" s)
+
+let test_3d_dep_size_roundtrip () =
+  let original = { frame_length = 7; data = "HELLO" } in
+  let buf = Bytes.create 7 in
+  Codec.encode dep_frame_codec original buf 0;
+  let decoded = Codec.decode dep_frame_codec buf 0 in
+  match decoded with
+  | Ok v ->
+      Alcotest.(check int) "frame_length" 7 v.frame_length;
+      Alcotest.(check string) "data" "HELLO" v.data
+  | Error e -> Alcotest.failf "%a" pp_parse_error e
+
 let suite =
   ( "everparse",
     [
@@ -436,4 +477,7 @@ let suite =
         test_3d_bitorder_native_noreorder;
       Alcotest.test_case "3d: bit_order constraint collapse" `Quick
         test_3d_bitorder_constraint_collapse;
+      Alcotest.test_case "3d: dep-size schema" `Quick test_3d_dep_size_schema;
+      Alcotest.test_case "3d: dep-size roundtrip" `Quick
+        test_3d_dep_size_roundtrip;
     ] )

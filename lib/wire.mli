@@ -757,8 +757,9 @@ module Everparse : sig
   type module_
   (** A 3D module. *)
 
-  type t = { name : string; module_ : module_; wire_size : int }
-  (** A named 3D schema with its module and wire size. *)
+  type t = { name : string; module_ : module_; wire_size : int option }
+  (** A named 3D schema with its module and wire size ([None] for variable-size
+      schemas). *)
 
   val struct_of_codec : 'r Codec.t -> struct_
   (** Projects a record codec to a 3D struct. *)
