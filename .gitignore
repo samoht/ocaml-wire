@@ -17,3 +17,5 @@ schemas/
 AGENTS.md
 .agents/
 .crush/
+.claude/
+_opam/
