@@ -6,7 +6,7 @@
 type schema = Wire.Everparse.t = {
   name : string;
   module_ : Wire.Everparse.Raw.module_;
-  wire_size : int;
+  wire_size : int option;
 }
 
 let schema ~name ~struct_ ~module_ =
@@ -86,8 +86,9 @@ let generate_test_runner ~outdir ?(num_values = 1000) schemas =
   List.iter
     (fun s ->
       let lower = String.lowercase_ascii s.name in
+      let ws = Option.get s.wire_size in
       pr "  { name = %S; wire_size = %d; c_check = Stubs.%s_check };\n" s.name
-        s.wire_size lower)
+        ws lower)
     schemas;
   pr "]\n\n";
   pr "let () =\n";

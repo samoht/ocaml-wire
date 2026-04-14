@@ -3,8 +3,9 @@
     The main path is {!struct_of_codec}, {!schema}, and {!write_3d}. For unusual
     3D constructs that have no codec equivalent yet, use {!Raw}. *)
 
-type t = { name : string; module_ : Types.module_; wire_size : int }
-(** A named 3D schema with its module and wire size. *)
+type t = { name : string; module_ : Types.module_; wire_size : int option }
+(** A named 3D schema with its module and wire size ([None] for variable-size
+    schemas). *)
 
 val pp : Format.formatter -> t -> unit
 

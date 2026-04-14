@@ -1,8 +1,11 @@
 (** 3D code generation from Wire codecs. *)
 
-type t = { name : string; module_ : Types.module_; wire_size : int }
+type t = { name : string; module_ : Types.module_; wire_size : int option }
 
-let pp ppf t = Fmt.pf ppf "%s(%d)" t.name t.wire_size
+let pp ppf t =
+  match t.wire_size with
+  | Some n -> Fmt.pf ppf "%s(%d)" t.name n
+  | None -> Fmt.pf ppf "%s(var)" t.name
 
 let rec is_bitfield : type a. a Types.typ -> bool = function
   | Types.Bits _ -> true
@@ -243,9 +246,6 @@ let schema_of_struct (s : Types.struct_) : t =
         | Some a, Some b -> Some (a + b)
         | _ -> None)
       (Some 0) s.fields
-    |> function
-    | Some n -> n
-    | None -> Fmt.failwith "schema %s has variable-length fields" name
   in
   let decls = with_output s in
   let m = Types.module_ decls in
@@ -336,5 +336,6 @@ module Raw = struct
         | _ -> None)
       (Some 0) s.fields
 
-  let of_module ~name ~module_ ~wire_size = { name; module_; wire_size }
+  let of_module ~name ~module_ ~wire_size =
+    { name; module_; wire_size = Some wire_size }
 end
