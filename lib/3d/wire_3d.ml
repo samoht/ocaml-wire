@@ -115,39 +115,42 @@ let emit_schema_test ppf s wire_size =
   let pr fmt = Fmt.pf ppf fmt in
   let ep = everparse_name s.name in
   let lower = String.lowercase_ascii s.name in
+  (* Schemas using WireCtx have an extra [WIRECTX *Ctx] parameter first. *)
+  let ctx_arg = if Wire.Everparse.uses_wire_ctx s then "NULL, " else "" in
   pr "\n  /* %s (%d bytes) */\n" s.name wire_size;
   pr "  {\n";
   pr "    int pass = 0, fail = 0;\n";
   pr "    uint8_t buf[%d];\n" wire_size;
   pr "    uint64_t r;\n\n";
   pr "    memset(buf, 0, %d);\n" wire_size;
-  pr "    r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep ep
-    wire_size;
+  pr "    r = %sValidate%s(%sNULL, counting_error_handler, buf, %d, 0);\n" ep ep
+    ctx_arg wire_size;
   pr "    CHECK(\"zero buffer validates\", EverParseIsSuccess(r));\n";
   pr "    CHECK(\"position advanced to %d\", r == %d);\n" wire_size wire_size;
   pr "\n";
-  pr "    r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep ep
-    (wire_size * 2);
+  pr "    r = %sValidate%s(%sNULL, counting_error_handler, buf, %d, 0);\n" ep ep
+    ctx_arg (wire_size * 2);
   pr "    CHECK(\"larger buffer validates\", EverParseIsSuccess(r));\n";
   pr "    CHECK(\"position is %d not %d\", r == %d);\n" wire_size
     (wire_size * 2) wire_size;
   pr "\n";
   pr "    for (uint64_t len = 0; len < %d; len++) {\n" wire_size;
   pr "      error_count = 0;\n";
-  pr "      r = %sValidate%s(NULL, counting_error_handler, buf, len, 0);\n" ep
-    ep;
+  pr "      r = %sValidate%s(%sNULL, counting_error_handler, buf, len, 0);\n" ep
+    ep ctx_arg;
   pr "      CHECK(\"truncated to len fails\", EverParseIsError(r));\n";
   pr "    }\n";
   pr "\n";
-  pr "    r = %sValidate%s(NULL, counting_error_handler, buf, 0, 0);\n" ep ep;
+  pr "    r = %sValidate%s(%sNULL, counting_error_handler, buf, 0, 0);\n" ep ep
+    ctx_arg;
   pr "    CHECK(\"empty input fails\", EverParseIsError(r));\n";
   pr "\n";
   pr "    srand(42);\n";
   pr "    for (int i = 0; i < 1000; i++) {\n";
   pr "      for (int j = 0; j < %d; j++)\n" wire_size;
   pr "        buf[j] = (uint8_t)(rand() & 0xff);\n";
-  pr "      r = %sValidate%s(NULL, counting_error_handler, buf, %d, 0);\n" ep ep
-    wire_size;
+  pr "      r = %sValidate%s(%sNULL, counting_error_handler, buf, %d, 0);\n" ep
+    ep ctx_arg wire_size;
   pr "      CHECK(\"random buffer validates\", EverParseIsSuccess(r));\n";
   pr "      CHECK(\"random position correct\", r == %d);\n" wire_size;
   pr "    }\n";
