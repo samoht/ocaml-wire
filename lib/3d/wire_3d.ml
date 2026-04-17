@@ -72,11 +72,26 @@ let write_external_typedefs ~outdir schemas =
       end)
     schemas
 
-let external_typedefs_files schemas =
-  List.filter_map
+(* Extra headers and wrapper files emitted by EverParse when a schema uses the
+   WireCtx extern typedef. The ExternalTypedefs header is written by
+   {!write_external_typedefs}; the other three are produced by 3d.exe itself. *)
+let wire_ctx_files schemas =
+  List.concat_map
     (fun s ->
       if Wire.Everparse.uses_wire_ctx s then
-        Some (s.name ^ "_ExternalTypedefs.h")
+        [
+          s.name ^ "_ExternalTypedefs.h";
+          s.name ^ "_ExternalAPI.h";
+          s.name ^ "Wrapper.c";
+          s.name ^ "Wrapper.h";
+        ]
+      else [])
+    schemas
+
+let wrapper_c_files schemas =
+  List.filter_map
+    (fun s ->
+      if Wire.Everparse.uses_wire_ctx s then Some (s.name ^ "Wrapper.c")
       else None)
     schemas
 
@@ -207,7 +222,8 @@ let generate_dune ~outdir ~package schemas =
   let pr fmt = Fmt.pf ppf fmt in
   let names = List.map (fun s -> s.name) schemas in
   let c_files = List.concat_map (fun n -> [ n ^ ".h"; n ^ ".c" ]) names in
-  let ext_files = external_typedefs_files schemas in
+  let ctx_files = wire_ctx_files schemas in
+  let wrapper_srcs = wrapper_c_files schemas in
   let three_d_files = List.map (fun n -> n ^ ".3d") names in
   let test_bin =
     "test_" ^ String.map (fun c -> if c = '-' then '_' else c) package
@@ -223,14 +239,14 @@ let generate_dune ~outdir ~package schemas =
   pr " (alias gen)\n";
   pr " (mode fallback)\n";
   pr " (targets EverParse.h EverParseEndianness.h %s test.c)\n"
-    (String.concat " " (c_files @ ext_files));
+    (String.concat " " (c_files @ ctx_files));
   pr " (deps gen.exe %s)\n" (String.concat " " three_d_files);
   pr " (action\n";
   pr "  (run ./gen.exe c)))\n\n";
   let all_deps =
-    [ "test.c"; "EverParse.h"; "EverParseEndianness.h" ] @ c_files @ ext_files
+    [ "test.c"; "EverParse.h"; "EverParseEndianness.h" ] @ c_files @ ctx_files
   in
-  let c_srcs = List.map (fun n -> n ^ ".c") names in
+  let c_srcs = List.map (fun n -> n ^ ".c") names @ wrapper_srcs in
   pr "(rule\n";
   pr " (alias runtest)\n";
   pr " (deps %s)\n" (String.concat " " all_deps);
@@ -244,7 +260,7 @@ let generate_dune ~outdir ~package schemas =
   pr " (files\n";
   List.iter (fun f -> pr "  (%s as c/%s)\n" f f) three_d_files;
   List.iter (fun f -> pr "  (%s as c/%s)\n" f f) c_files;
-  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) ext_files;
+  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) ctx_files;
   pr "  (EverParse.h as c/EverParse.h)\n";
   pr "  (EverParseEndianness.h as c/EverParseEndianness.h)))\n";
   Format.pp_print_flush ppf ();
