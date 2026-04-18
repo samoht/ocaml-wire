@@ -361,10 +361,53 @@ let run ?(quiet = true) ~outdir schemas =
   generate_3d ~outdir schemas;
   generate_c ~quiet ~outdir schemas
 
+let strict_cc_flags =
+  "-std=c99 -Wall -Wextra -Werror -Wpedantic -Wstrict-prototypes \
+   -Wmissing-prototypes -Wshadow -Wcast-qual"
+
+let emit_gen_rules ppf three_d_files c_files ctx_files =
+  Fmt.pf ppf
+    "(rule\n\
+    \ (alias gen)\n\
+    \ (mode promote)\n\
+    \ (targets %s)\n\
+    \ (deps gen.exe)\n\
+    \ (action\n\
+    \  (run ./gen.exe 3d)))\n\n\
+     (rule\n\
+    \ (alias gen)\n\
+    \ (mode fallback)\n\
+    \ (targets EverParse.h EverParseEndianness.h %s test.c)\n\
+    \ (deps gen.exe %s)\n\
+    \ (action\n\
+    \  (run ./gen.exe c)))\n\n"
+    (String.concat " " three_d_files)
+    (String.concat " " (c_files @ ctx_files))
+    (String.concat " " three_d_files)
+
+let emit_runtest_rule ppf ~test_bin ~all_deps ~c_srcs =
+  Fmt.pf ppf
+    "(rule\n\
+    \ (alias runtest)\n\
+    \ (deps %s)\n\
+    \ (action\n\
+    \  (system\n\
+    \   \"cc %s -o %s test.c %s && ./%s\")))\n\n"
+    (String.concat " " all_deps)
+    strict_cc_flags test_bin (String.concat " " c_srcs) test_bin
+
+let emit_install_stanza ppf ~package ~three_d_files ~c_files ~ctx_files =
+  let pr fmt = Fmt.pf ppf fmt in
+  pr "(install\n (package %s)\n (section lib)\n (files\n" package;
+  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) three_d_files;
+  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) c_files;
+  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) ctx_files;
+  pr "  (EverParse.h as c/EverParse.h)\n";
+  pr "  (EverParseEndianness.h as c/EverParseEndianness.h)))\n"
+
 let generate_dune ~outdir ~package schemas =
   let oc = open_out (Filename.concat outdir "dune.inc") in
   let ppf = Format.formatter_of_out_channel oc in
-  let pr fmt = Fmt.pf ppf fmt in
   let names = List.map (fun s -> s.name) schemas in
   let c_files = List.concat_map (fun n -> [ n ^ ".h"; n ^ ".c" ]) names in
   let ctx_files = wire_ctx_files schemas in
@@ -373,43 +416,13 @@ let generate_dune ~outdir ~package schemas =
   let test_bin =
     "test_" ^ String.map (fun c -> if c = '-' then '_' else c) package
   in
-  pr "(rule\n";
-  pr " (alias gen)\n";
-  pr " (mode promote)\n";
-  pr " (targets %s)\n" (String.concat " " three_d_files);
-  pr " (deps gen.exe)\n";
-  pr " (action\n";
-  pr "  (run ./gen.exe 3d)))\n\n";
-  pr "(rule\n";
-  pr " (alias gen)\n";
-  pr " (mode fallback)\n";
-  pr " (targets EverParse.h EverParseEndianness.h %s test.c)\n"
-    (String.concat " " (c_files @ ctx_files));
-  pr " (deps gen.exe %s)\n" (String.concat " " three_d_files);
-  pr " (action\n";
-  pr "  (run ./gen.exe c)))\n\n";
   let all_deps =
     [ "test.c"; "EverParse.h"; "EverParseEndianness.h" ] @ c_files @ ctx_files
   in
   let c_srcs = List.map (fun n -> n ^ ".c") names @ fields_srcs in
-  pr "(rule\n";
-  pr " (alias runtest)\n";
-  pr " (deps %s)\n" (String.concat " " all_deps);
-  pr " (action\n";
-  pr "  (system\n";
-  pr
-    "   \"cc -std=c99 -Wall -Wextra -Werror -Wpedantic -Wstrict-prototypes \
-     -Wmissing-prototypes -Wshadow -Wcast-qual -o %s test.c %s && ./%s\")))\n\n"
-    test_bin (String.concat " " c_srcs) test_bin;
-  pr "(install\n";
-  pr " (package %s)\n" package;
-  pr " (section lib)\n";
-  pr " (files\n";
-  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) three_d_files;
-  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) c_files;
-  List.iter (fun f -> pr "  (%s as c/%s)\n" f f) ctx_files;
-  pr "  (EverParse.h as c/EverParse.h)\n";
-  pr "  (EverParseEndianness.h as c/EverParseEndianness.h)))\n";
+  emit_gen_rules ppf three_d_files c_files ctx_files;
+  emit_runtest_rule ppf ~test_bin ~all_deps ~c_srcs;
+  emit_install_stanza ppf ~package ~three_d_files ~c_files ~ctx_files;
   Format.pp_print_flush ppf ();
   close_out oc
 
