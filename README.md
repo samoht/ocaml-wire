@@ -80,8 +80,10 @@ let schema = Everparse.schema codec
 let () = Everparse.write_3d ~outdir:"schemas" [ schema ]
 ```
 
-The generated 3D uses the EverParse output-types pattern, where the generated C
-validates AND extracts all field values via extern callbacks (`WireSet*`).
+The generated 3D uses the EverParse output-types pattern: the generated C
+validates AND extracts every field via schema-prefixed extern callbacks
+(`<Name>SetU8`, `<Name>SetU16be`, …). See [Consuming from C](#consuming-from-c)
+for what that means at the C level.
 
 To turn those schemas into EverParse-generated C:
 

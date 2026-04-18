@@ -2,9 +2,10 @@
 
     Usage: gen_stubs.exe <schema_dir>
 
-    1. Generates .3d files with output pattern (extern callbacks) 2. Runs
-    EverParse to produce C validators 3. Generates WireSet* implementations +
-    parse stubs + timed C loops *)
+    1. Generates .3d files with output pattern (extern callbacks). 2. Runs
+    EverParse to produce C validators. 3. Writes the default [<Name>_Fields]
+    plug (typed struct + switch dispatchers) and the FFI parse / timed-loop C
+    stubs that consume it. *)
 
 let ml_only = Array.length Sys.argv > 1 && Sys.argv.(1) = "--ml-only"
 let schema_dir = if Array.length Sys.argv > 1 then Sys.argv.(1) else "schemas"

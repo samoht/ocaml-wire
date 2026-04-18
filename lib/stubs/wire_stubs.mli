@@ -1,10 +1,10 @@
 (** OCaml FFI stub generation for EverParse-produced C validators.
 
     [Wire_stubs] generates C stubs and matching OCaml [external] declarations so
-    OCaml code can call EverParse-generated validators. The generated stubs call
-    a validator that fills an output struct (from {!Wire.Everparse.schema}),
-    returning field values as an OCaml record via continuation callbacks
-    ([WireSet*]). On validation failure, [Failure] is raised.
+    OCaml code can call EverParse-generated validators. Each stub stack-
+    allocates the schema's default plug struct ([<Name>Fields] from {!Wire_3d}),
+    runs the EverParse validator against it, then marshals the populated struct
+    members into an OCaml record. On validation failure, [Failure] is raised.
 
     {b Typical usage} (in a code-generation executable):
     {[
@@ -13,9 +13,8 @@
     ]}
 
     This writes [wire_ffi.c] + [stubs.ml] into [outdir]. The [WIRECTX] socket
-    and the default [<Name>_Fields] plug come from {!Wire_3d}; the FFI stubs
-    stack-allocate a [<Name>Fields] struct, run the EverParse validator against
-    it, then marshal the populated members to OCaml values. *)
+    and the [<Name>_Fields] plug come from {!Wire_3d}; this module is just one
+    particular consumer of that plug. *)
 
 type packed_codec = C : _ Wire.Codec.t -> packed_codec
 

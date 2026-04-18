@@ -51,7 +51,7 @@ val write_external_typedefs : outdir:string -> Wire.Everparse.t list -> unit
 val write_fields : outdir:string -> Wire.Everparse.t list -> unit
 (** Write the default [<Name>_Fields.{c,h}] plug for each schema that uses the
     WireCtx contract: a typed struct (one member per named field) and the
-    [WireSet*] switch dispatchers that populate it. *)
+    [<Name>Set*] switch dispatchers that populate it. *)
 
 val generate_c : ?quiet:bool -> outdir:string -> Wire.Everparse.t list -> unit
 (** [generate_c ?quiet ~outdir schemas] invokes EverParse on existing [.3d]

@@ -779,7 +779,7 @@ module Everparse : sig
   val schema : 'r Codec.t -> t
   (** [schema codec] builds a schema from a codec. The resulting module uses the
       EverParse output-types pattern: the generated C validates AND extracts all
-      field values via extern callbacks ([WireSet*]). *)
+      field values via schema-prefixed extern callbacks ([<Name>Set*]). *)
 
   val filename : t -> string
   (** [filename s] is the [.3d] output filename for schema [s]. *)
@@ -797,7 +797,7 @@ module Everparse : sig
     pf_setter : string;
     pf_val_c_type : string;
   }
-  (** Plug info: the data needed to materialise a typed struct and [WireSet*]
+  (** Plug info: the data needed to materialise a typed struct and [<Name>Set*]
       dispatchers for a schema. See {!Everparse.plug_field}. *)
 
   val plug_fields : t -> plug_field list

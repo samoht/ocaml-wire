@@ -6,8 +6,13 @@
     {2 3D projection rules}
 
     Wire types project to EverParse 3D struct fields. Each named field gets a
-    [WireSet*] callback that extracts its value into a flat array during
-    validation. Three EverParse limitations shape the projection:
+    [<Name>Set*] callback (schema-prefixed per type family: [<Name>SetU8],
+    [<Name>SetU16be], …) that extracts its value during validation. The default
+    plug {!Wire_3d} ships, [<Name>_Fields.c], switches on the field index to
+    populate a typed [<Name>Fields] struct; consumers that want a different
+    layout supply their own plug.
+
+    Three EverParse limitations shape the projection:
 
     + The 3D parser rejects [field_pos] inside actions on [[:byte-size]] fields,
       so byte-field callbacks receive a static byte offset precomputed at schema
@@ -22,15 +27,16 @@
 
     {b Scalar fields} ([uint8], [uint16be], ...) project to their 3D equivalents
     ([UINT8], [UINT16BE], ...) with an [:on-success] action:
-    [{:on-success WireSet*(ctx, idx, Name); return true; }].
+    [{:on-success <Name>Set*(ctx, idx, Name); return true; }].
 
     {b Bitfields} ([bits ~width:n base]) project to [BASE Name : n] with an
-    [:act] action: [{:act WireSet*(ctx, idx, Name); }].
+    [:act] action: [{:act <Name>Set*(ctx, idx, Name); }].
 
     {b Byte-size fields} ([byte_array], [byte_slice], [repeat], and dynamic
     [optional]) project to [UINT8 Name[:byte-size expr]] with an [:on-success]
-    action: [{:on-success WireSetBytes(ctx, idx, (UINT32) off); return true; }]
-    where [off] is the static byte offset.
+    action:
+    [{:on-success <Name>SetBytes(ctx, idx, (UINT32) off); return true; }] where
+    [off] is the static byte offset.
 
     {b Dynamic optional} ([optional cond inner]) where [cond] is not a literal
     bool projects to [TYPE Name[:byte-size ((cond) ? inner_size : 0)]] where
