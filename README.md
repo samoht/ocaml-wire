@@ -107,19 +107,14 @@ After `Wire_3d.run`, each schema ships a small set of files:
 |------|------|
 | `<Name>.h`, `<Name>.c` | Verified validator. Do not edit. |
 | `<Name>_ExternalAPI.h` | Declares the extern `<Name>Set*` callbacks. |
-| `<Name>_ExternalTypedefs.h` | Declares `WIRECTX` (forward decl). |
+| `<Name>_ExternalTypedefs.h` | Declares `WIRECTX`. |
 | `<Name>Wrapper.{c,h}` | Convenience `<Name>Check<Name>` entry point + error plumbing. |
 | `<Name>_Fields.h` | `<Name>Fields` struct (one typed member per named field) and `<NAME>_IDX_<FIELD>` constants. |
 | `<Name>_Fields.c` | Default plug: `<Name>Set*` callbacks that populate `<Name>Fields`. |
 
-The validator invokes extern `<Name>Set*` callbacks that write field values
-into a caller-supplied `WIRECTX *` — the "socket" for field extraction. The
-shipped `<Name>_Fields` pair is the default plug; you can swap in your own.
-
-### Validate only
-
-Does the buffer conform? Link `<Name>_Fields.c` and pass a stack `<Name>Fields`.
-The fields get populated and ignored.
+Default workflow: link `<Name>_Fields.c`, pass a stack-allocated
+`<Name>Fields` as the context, read the members you care about. The
+setter cost is negligible; don't think about it.
 
 ```c
 #include "SpacePacket.h"
@@ -128,19 +123,6 @@ The fields get populated and ignored.
 static void err(const char *t, const char *f, const char *r,
                 uint64_t c, uint8_t *ctx, uint8_t *i, uint64_t p) { (void)0; }
 
-int accept(uint8_t *buf, uint32_t len) {
-  SpacePacketFields fields = {0};
-  uint64_t r = SpacePacketValidateSpacePacket(
-      (WIRECTX *)&fields, NULL, err, buf, len, 0);
-  return EverParseIsSuccess(r);
-}
-```
-
-### Capture every field
-
-Same link, read struct members:
-
-```c
 SpacePacketFields p = {0};
 if (EverParseIsSuccess(SpacePacketValidateSpacePacket(
         (WIRECTX *)&p, NULL, err, buf, len, 0))) {
@@ -148,32 +130,39 @@ if (EverParseIsSuccess(SpacePacketValidateSpacePacket(
 }
 ```
 
-### Capture only the fields you want
+### Custom plug (hot-path optimization)
 
-Replace `<Name>_ExternalTypedefs.h` and `<Name>_Fields.c` with your own. The
-indices live in `<Name>_Fields.h` as `<NAME>_IDX_<FIELD>` constants, so you
-don't have to count:
+If profiling says the field stores are hot, copy the shipped `<Name>_Fields.c`
+to your own `my_plug.c`, delete the `case`s for fields you don't need, and
+link your copy instead of the default. Override `<Name>_ExternalTypedefs.h`
+and `<Name>_Fields.h` in your include path if you also want a smaller
+`WIRECTX` struct; skip the override and the default struct just carries a
+few unused bytes.
 
 ```c
-/* your_ExternalTypedefs.h — overrides wire.3d's default */
-typedef struct { uint16_t apid; } WIRECTX;
-
-/* your_plug.c — overrides _Fields.c. Every SpacePacketSet* declared in
-   SpacePacket_ExternalAPI.h must be defined, but you can leave the ones you
-   don't care about empty. */
+/* my_plug.c — started from SpacePacket_Fields.c, trimmed to one field */
+#include <stdint.h>
+#include "SpacePacket_Fields.h"
+#include "SpacePacket_ExternalTypedefs.h"
 #include "SpacePacket_ExternalAPI.h"
-#include "SpacePacket_Fields.h"     /* for the IDX_* constants */
 
 void SpacePacketSetU16be(WIRECTX *ctx, uint32_t idx, uint16_t v) {
-  if (idx == SPACEPACKET_IDX_APID) ctx->apid = v;
+  SpacePacketFields *f = (SpacePacketFields *)ctx;
+  switch (idx) {
+    case SPACEPACKET_IDX_APID: f->APID = v; break;
+    default: (void)f; (void)v; break;
+  }
 }
-void SpacePacketSetU8(WIRECTX *ctx, uint32_t idx, uint8_t v) {
-  (void)ctx; (void)idx; (void)v;
-}
-/* stubs for any other SpacePacketSet* declared in _ExternalAPI.h */
 ```
 
-Same validator call, now only `apid` lands in your context struct.
+If your schema uses multiple setter type families (e.g. `u8` fields *and*
+`u16be` fields), the shipped `_Fields.c` defines one function per family.
+Your copy keeps all of those functions — delete `case`s, not whole
+functions. A family you don't care about reduces to a function whose
+`switch` has no real cases, just the `default`. Usually one or two
+short one-liners.
+
+No weak symbols, no linker magic: whichever plug `.c` you link gets used.
 
 ### ASCII diagrams
 

@@ -167,7 +167,8 @@ let write_fields_impl ~outdir s =
   let pr fmt = Fmt.pf ppf fmt in
   pr "#include <stdint.h>@\n";
   pr "#include \"%s_Fields.h\"@\n" s.name;
-  pr "#include \"%s_ExternalTypedefs.h\"@\n@\n" s.name;
+  pr "#include \"%s_ExternalTypedefs.h\"@\n" s.name;
+  pr "#include \"%s_ExternalAPI.h\"@\n@\n" s.name;
   (* Cast [WIRECTX *] to the schema's concrete struct type. In a translation
      unit that includes multiple schemas' [_Fields.c] files, only the first
      [_ExternalTypedefs.h] defines [WIRECTX]; subsequent headers are skipped
@@ -396,7 +397,9 @@ let generate_dune ~outdir ~package schemas =
   pr " (deps %s)\n" (String.concat " " all_deps);
   pr " (action\n";
   pr "  (system\n";
-  pr "   \"cc -std=c11 -Wall -Wextra -Werror -o %s test.c %s && ./%s\")))\n\n"
+  pr
+    "   \"cc -std=c99 -Wall -Wextra -Werror -Wpedantic -Wstrict-prototypes \
+     -Wmissing-prototypes -Wshadow -Wcast-qual -o %s test.c %s && ./%s\")))\n\n"
     test_bin (String.concat " " c_srcs) test_bin;
   pr "(install\n";
   pr " (package %s)\n" package;
