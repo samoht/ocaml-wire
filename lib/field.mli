@@ -28,9 +28,9 @@ val v :
     size-expression safe, e.g.:
 
     {[
-      let f_len =
-        Field.v "Length" uint16be ~self_constraint:(fun self ->
-            Expr.(self >= int 7))
+    let f_len =
+      Field.v "Length" uint16be ~self_constraint:(fun self ->
+          Expr.(self >= int 7))
     ]}
 
     projects to [UINT16BE Length {{ Length >= 7 }}], which EverParse's SMT can

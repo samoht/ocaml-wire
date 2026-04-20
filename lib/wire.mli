@@ -9,25 +9,25 @@
     - Constraint checking and dependent-size fields.
 
     {[
-      type header = { version : int; length : int }
+    type header = { version : int; length : int }
 
-      let f_version = Field.v "Version" (bits ~width:4 U8)
-      let f_length = Field.v "Length" uint16be
-      let bf_version = Codec.(f_version $ fun h -> h.version)
-      let bf_length = Codec.(f_length $ fun h -> h.length)
+    let f_version = Field.v "Version" (bits ~width:4 U8)
+    let f_length = Field.v "Length" uint16be
+    let bf_version = Codec.(f_version $ fun h -> h.version)
+    let bf_length = Codec.(f_length $ fun h -> h.length)
 
-      let codec =
-        Codec.v "Header"
-          (fun version length -> { version; length })
-          [ bf_version; bf_length ]
+    let codec =
+      Codec.v "Header"
+        (fun version length -> { version; length })
+        [ bf_version; bf_length ]
 
-      (* Staged zero-copy access *)
-      let get_version = Staged.unstage (Codec.get codec bf_version)
-      let v = get_version buf 0
+    (* Staged zero-copy access *)
+    let get_version = Staged.unstage (Codec.get codec bf_version)
+    let v = get_version buf 0
 
-      (* Full-record round-trip *)
-      let () = Codec.encode codec { version = 1; length = 42 } buf 0
-      let h = Codec.decode codec buf 0
+    (* Full-record round-trip *)
+    let () = Codec.encode codec { version = 1; length = 42 } buf 0
+    let h = Codec.decode codec buf 0
     ]}
 
     The same description can be projected to an EverParse 3D schema via
@@ -98,26 +98,26 @@ module Param : sig
       definition can be projected to EverParse 3D.
 
       {[
-        let max_len = Param.input "max_len" uint16be
-        let out_len = Param.output "out_len" uint16be
-        let f_length = Field.v "Length" uint16be
+      let max_len = Param.input "max_len" uint16be
+      let out_len = Param.output "out_len" uint16be
+      let f_length = Field.v "Length" uint16be
 
-        let f_data =
-          Field.v "Data"
-            ~action:
-              (Action.on_success [ Action.assign out_len (Field.ref f_length) ])
-            (byte_slice ~size:(Field.ref f_length))
+      let f_data =
+        Field.v "Data"
+          ~action:
+            (Action.on_success [ Action.assign out_len (Field.ref f_length) ])
+          (byte_slice ~size:(Field.ref f_length))
 
-        let codec =
-          let open Codec in
-          v "Bounded"
-            ~where:Expr.(Field.ref f_length <= Param.expr max_len)
-            (fun len data -> { len; data })
-            [ (f_length $ fun r -> r.len); (f_data $ fun r -> r.data) ]
+      let codec =
+        let open Codec in
+        v "Bounded"
+          ~where:Expr.(Field.ref f_length <= Param.expr max_len)
+          (fun len data -> { len; data })
+          [ (f_length $ fun r -> r.len); (f_data $ fun r -> r.data) ]
 
-        let env = Codec.env codec |> Param.bind max_len 1024
-        let _ = Codec.decode_with codec env buf 0
-        let len = Param.get env out_len
+      let env = Codec.env codec |> Param.bind max_len 1024
+      let _ = Codec.decode_with codec env buf 0
+      let len = Param.get env out_len
       ]}
 
       Do not share an {!env} across concurrent decodes. *)
@@ -317,9 +317,9 @@ end
     3D via {!Everparse.schema}.
 
     {[
-      let f_version = Field.v "Version" (bits ~width:4 U8)
-      let f_length = Field.v "Length" uint16be
-      let f_data = Field.v "Data" (byte_slice ~size:(Field.ref f_length))
+    let f_version = Field.v "Version" (bits ~width:4 U8)
+    let f_length = Field.v "Length" uint16be
+    let f_data = Field.v "Data" (byte_slice ~size:(Field.ref f_length))
     ]}
 
     Fields carry no buffer position -- that comes from the {!Codec} they are
@@ -632,13 +632,11 @@ module Codec : sig
   (** [v name constructor fields] seals a codec.
 
       {[
-        let codec =
-          Codec.v "Packet"
-            (fun version length -> { version; length })
-            Codec.
-              [
-                (f_version $ fun p -> p.version); (f_length $ fun p -> p.length);
-              ]
+      let codec =
+        Codec.v "Packet"
+          (fun version length -> { version; length })
+          Codec.
+            [ (f_version $ fun p -> p.version); (f_length $ fun p -> p.length) ]
       ]} *)
 
   val wire_size : 'r t -> int

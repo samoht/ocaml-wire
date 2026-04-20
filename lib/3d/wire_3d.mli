@@ -9,7 +9,7 @@
 
     {b Typical usage} ([gen.ml]):
     {[
-      let () = Wire_3d.main ~package:"clcw" [ Wire.Everparse.schema Clcw.codec ]
+    let () = Wire_3d.main ~package:"clcw" [ Wire.Everparse.schema Clcw.codec ]
     ]}
 
     With a minimal [dune] that includes the generated rules:
