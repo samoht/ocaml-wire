@@ -8,8 +8,8 @@
 
     {b Typical usage} (in a code-generation executable):
     {[
-      let () =
-        Wire_stubs.generate ~schema_dir:"schemas" ~outdir:"." [ C my_codec ]
+    let () =
+      Wire_stubs.generate ~schema_dir:"schemas" ~outdir:"." [ C my_codec ]
     ]}
 
     This writes [wire_ffi.c] + [stubs.ml] into [outdir]. The [WIRECTX] socket

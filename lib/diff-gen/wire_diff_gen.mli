@@ -6,15 +6,15 @@
 
     {b Typical usage:}
     {[
-      (* In gen_c.ml *)
-      let schemas =
-        [
-          Diff_gen.schema ~name:"MyFrame" ~struct_:My_3d.frame_struct
-            ~module_:My_3d.frame_module
-          |> Option.get;
-        ]
+    (* In gen_c.ml *)
+    let schemas =
+      [
+        Diff_gen.schema ~name:"MyFrame" ~struct_:My_3d.frame_struct
+          ~module_:My_3d.frame_module
+        |> Option.get;
+      ]
 
-      let () = Diff_gen.generate ~outdir:"schemas" ~outdir:"." schemas
+    let () = Diff_gen.generate ~outdir:"schemas" ~outdir:"." schemas
     ]} *)
 
 type schema = Wire.Everparse.t
