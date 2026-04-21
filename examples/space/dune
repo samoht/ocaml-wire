@@ -1,5 +1,4 @@
 (library
  (name space)
- (modules space)
  (wrapped false)
  (libraries wire))

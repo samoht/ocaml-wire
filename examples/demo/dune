@@ -1,5 +1,4 @@
 (library
  (name demo)
- (modules demo)
  (wrapped false)
  (libraries wire))
