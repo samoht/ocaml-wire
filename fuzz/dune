@@ -1,6 +1,5 @@
 (executable
  (name fuzz)
- (modules fuzz fuzz_wire fuzz_everparse fuzz_param)
  (libraries wire alcobar))
 
 (rule
@@ -15,8 +14,8 @@
  (alias fuzz)
  (enabled_if
   (= %{profile} afl))
- (deps
-  (source_tree corpus)
-  fuzz.exe)
+ (deps fuzz.exe)
  (action
-  (echo "AFL fuzzer built: %{exe:fuzz.exe}\n")))
+  (progn
+   (run %{exe:fuzz.exe} --gen-corpus corpus)
+   (echo "AFL fuzzer built: %{exe:fuzz.exe}\n"))))

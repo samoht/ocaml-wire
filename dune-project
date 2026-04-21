@@ -26,6 +26,6 @@
   (fmt (>= 0.9))
   (memtrace :with-test)
   (alcotest :with-test)
-  (crowbar :with-test)
+  (alcobar :with-test)
   (re :with-test)
   (odoc :with-doc)))
