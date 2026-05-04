@@ -2076,12 +2076,20 @@ type bitfield = bf_info
 let bitfield (type r) (codec : r t) (f : (int, r) field) : bitfield =
   match field_access codec f.name with
   | Bitfield { base; byte_off; shift; width } ->
-      let word_reader = Bitfield.read_word base in
+      (* Dispatch on [base] once at construction so the resulting closure
+         is a direct read of the right width with [byte_off] baked in.
+         Avoids the partial-application + runtime [match] that
+         [Bitfield.read_word base] would create. *)
+      let word_reader =
+        match base with
+        | BF_U8 -> fun buf off -> Bytes.get_uint8 buf (off + byte_off)
+        | BF_U16 Little -> fun buf off -> Bitfield.u16_le buf (off + byte_off)
+        | BF_U16 Big -> fun buf off -> Bitfield.u16_be buf (off + byte_off)
+        | BF_U32 Little -> fun buf off -> Bitfield.u32_le buf (off + byte_off)
+        | BF_U32 Big -> fun buf off -> Bitfield.u32_be buf (off + byte_off)
+      in
       let mask = (1 lsl width) - 1 in
-      {
-        bf_word_reader = (fun buf off -> word_reader buf (off + byte_off));
-        bf_packed = shift lor (mask lsl 8);
-      }
+      { bf_word_reader = word_reader; bf_packed = shift lor (mask lsl 8) }
   | _ -> Fmt.invalid_arg "Codec.bitfield: field %S is not a bitfield" f.name
 
 let load_word (bf : bitfield) : (bytes -> int -> int) Staged.t =
