@@ -196,14 +196,19 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a * int =
       in
       check_eof len (off + sz);
       (codec_decode buf off, off + sz)
-  | Struct s ->
+  | Struct s -> (
       (* Struct validation goes through the same int-array kernel as
-         [Codec.decode]. Returns [unit] -- the [Struct] result type. *)
+         [Codec.decode]. Returns [unit] -- the [Struct] result type.
+         [validate_struct] can raise [Parse_error] from constraint or
+         action failures; translate to [Parse_exn] for the outer
+         result-returning wrappers. *)
       let v = Codec_backend.validator_of_struct s in
       let sz = Codec_backend.struct_size_of v buf off in
       check_eof len (off + sz);
-      Codec_backend.validate_struct v buf off;
-      ((), off + sz)
+      try
+        Codec_backend.validate_struct v buf off;
+        ((), off + sz)
+      with Parse_error e -> raise (Parse_exn e))
   | Casetype { cases; tag; _ } ->
       let tag_val, off' = parse_direct tag buf off len in
       let rec find_case = function
