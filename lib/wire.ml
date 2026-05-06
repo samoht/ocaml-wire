@@ -95,16 +95,6 @@ end
 module Reader = Bytesrw.Bytes.Reader
 module Slice = Bytesrw.Bytes.Slice
 
-(* [ctx]/[eval_expr] are kept here because the legacy encode-side
-   ([encode_with_ctx], reachable via [Wire.encode] for variable-size types)
-   still threads an [Eval.ctx]. The decode side has been migrated off
-   [Eval.ctx] in favour of [Codec.validator_of_struct]; the encode side is
-   the next consolidation step. *)
-type ctx = Eval.ctx
-
-let empty_ctx = Eval.empty
-let eval_expr = Eval.expr
-
 exception Parse_exn of parse_error
 exception Validation_error = Parse_error
 
@@ -398,118 +388,87 @@ let encode_codec ~encode ~fixed_size ~size_of v enc =
   encode v tmp 0;
   write_string enc (Bytes.unsafe_to_string tmp)
 
-let rec encode_with_ctx : type a. ctx -> a typ -> a -> encoder -> ctx =
- fun ctx typ v enc ->
+(* The single encoder kernel. Writes [v] to [enc]. Top-level expressions
+   are evaluated in [Eval.empty]; [Struct] is rejected (encode goes
+   through [Codec.encode] for records). *)
+let rec encode_to_writer : type a. a typ -> a -> encoder -> unit =
+ fun typ v enc ->
   match typ with
-  | Uint8 ->
-      write_byte enc v;
-      ctx
-  | Uint16 Little ->
-      write_uint16_le enc v;
-      ctx
-  | Uint16 Big ->
-      write_uint16_be enc v;
-      ctx
-  | Uint32 Little ->
-      write_uint32_le enc v;
-      ctx
-  | Uint32 Big ->
-      write_uint32_be enc v;
-      ctx
-  | Uint63 Little ->
-      write_uint63_le enc v;
-      ctx
-  | Uint63 Big ->
-      write_uint63_be enc v;
-      ctx
-  | Uint64 Little ->
-      write_int64_le enc v;
-      ctx
-  | Uint64 Big ->
-      write_int64_be enc v;
-      ctx
+  | Uint8 -> write_byte enc v
+  | Uint16 Little -> write_uint16_le enc v
+  | Uint16 Big -> write_uint16_be enc v
+  | Uint32 Little -> write_uint32_le enc v
+  | Uint32 Big -> write_uint32_be enc v
+  | Uint63 Little -> write_uint63_le enc v
+  | Uint63 Big -> write_uint63_be enc v
+  | Uint64 Little -> write_int64_le enc v
+  | Uint64 Big -> write_int64_be enc v
   | Uint_var { size; endian } ->
-      let n = eval_expr ctx size in
+      let n = Eval.expr Eval.empty size in
       ensure enc n;
       Uint_var.write endian enc.o enc.o_next n v;
-      enc.o_next <- enc.o_next + n;
-      ctx
-  | Bits { width; base; bit_order } ->
+      enc.o_next <- enc.o_next + n
+  | Bits { width; base; bit_order } -> (
       let mask = (1 lsl width) - 1 in
       let total = Bitfield.total_bits base in
       let shift = Bitfield.shift ~bit_order ~total ~bits_used:0 ~width in
       let masked = (v land mask) lsl shift in
-      (match base with
+      match base with
       | BF_U8 -> write_byte enc masked
       | BF_U16 Little -> write_uint16_le enc masked
       | BF_U16 Big -> write_uint16_be enc masked
       | BF_U32 Little -> write_int32_le enc (Int32.of_int masked)
-      | BF_U32 Big -> write_int32_be enc (Int32.of_int masked));
-      ctx
-  | Unit -> ctx
-  | All_bytes ->
-      write_string enc v;
-      ctx
-  | All_zeros ->
-      write_string enc v;
-      ctx
-  | Where { inner; _ } -> encode_with_ctx ctx inner v enc
+      | BF_U32 Big -> write_int32_be enc (Int32.of_int masked))
+  | Unit -> ()
+  | All_bytes -> write_string enc v
+  | All_zeros -> write_string enc v
+  | Where { inner; _ } -> encode_to_writer inner v enc
   | Array { elem; seq = Seq_map seq; _ } ->
-      let ctx' = Stdlib.ref ctx in
-      seq.iter (fun elem_v -> ctx' := encode_with_ctx !ctx' elem elem_v enc) v;
-      !ctx'
-  | Byte_array _ ->
-      write_string enc v;
-      ctx
+      seq.iter (fun elem_v -> encode_to_writer elem elem_v enc) v
+  | Byte_array _ -> write_string enc v
   | Byte_slice _ ->
       let src = Slice.bytes v in
       let off = Slice.first v in
       let len = Slice.length v in
-      write_string enc (Bytes.sub_string src off len);
-      ctx
-  | Single_elem { elem; _ } -> encode_with_ctx ctx elem v enc
-  | Enum { base; _ } -> encode_with_ctx ctx base v enc
-  | Map { inner; encode; _ } -> encode_with_ctx ctx inner (encode v) enc
+      write_string enc (Bytes.sub_string src off len)
+  | Single_elem { elem; _ } -> encode_to_writer elem v enc
+  | Enum { base; _ } -> encode_to_writer base v enc
+  | Map { inner; encode; _ } -> encode_to_writer inner (encode v) enc
   | Codec { codec_encode; codec_fixed_size; codec_size_of; _ } ->
       encode_codec ~encode:codec_encode ~fixed_size:codec_fixed_size
-        ~size_of:codec_size_of v enc;
-      ctx
+        ~size_of:codec_size_of v enc
   | Optional { present; inner } ->
-      if Eval.expr ctx present then encode_with_ctx ctx inner (Option.get v) enc
-      else ctx
+      if Eval.expr Eval.empty present then
+        encode_to_writer inner (Option.get v) enc
   | Optional_or { present; inner; _ } ->
-      if Eval.expr ctx present then encode_with_ctx ctx inner v enc else ctx
+      if Eval.expr Eval.empty present then encode_to_writer inner v enc
   | Repeat { elem; seq = Seq_map seq; _ } ->
-      let ctx' = Stdlib.ref ctx in
-      seq.iter (fun elem_v -> ctx' := encode_with_ctx !ctx' elem elem_v enc) v;
-      !ctx'
-  | Casetype { tag; cases; _ } -> encode_casetype ctx tag cases v enc
-  | Struct _ -> failwith "struct encoding: use Record module"
+      seq.iter (fun elem_v -> encode_to_writer elem elem_v enc) v
+  | Casetype { tag; cases; _ } -> encode_casetype tag cases v enc
+  | Struct _ -> failwith "struct encoding: use Codec.encode"
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
 
 and encode_casetype : type a.
-    ctx -> int typ -> a case_branch list -> a -> encoder -> ctx =
- fun ctx tag cases v enc ->
+    int typ -> a case_branch list -> a -> encoder -> unit =
+ fun tag cases v enc ->
   let rec find_case = function
     | [] -> failwith "casetype encoding: no matching case"
     | Case_branch { cb_tag; cb_inner; cb_project; _ } :: rest -> (
         match cb_project v with
         | Some body ->
-            let ctx' =
-              match cb_tag with
-              | Some t -> encode_with_ctx ctx tag t enc
-              | None -> failwith "casetype encoding: cannot encode default case"
-            in
-            encode_with_ctx ctx' cb_inner body enc
+            (match cb_tag with
+            | Some t -> encode_to_writer tag t enc
+            | None -> failwith "casetype encoding: cannot encode default case");
+            encode_to_writer cb_inner body enc
         | None -> find_case rest)
   in
   find_case cases
 
 let encode typ v writer =
   let enc = encoder writer in
-  ignore (encode_with_ctx empty_ctx typ v enc);
+  encode_to_writer typ v enc;
   flush enc
 
 (* Direct-to-bytes encode: no Writer, no Buffer, no encoder.
@@ -611,11 +570,12 @@ let rec encode_direct : type a. a typ -> bytes -> int -> a -> int =
       in
       off + sz
   | _ ->
-      (* Variable-size: fall back to streaming encoder *)
+      (* Variable-size: encode through the unified writer kernel into a
+         Buffer, then blit. *)
       let tmp = Buffer.create 64 in
       let writer = Writer.of_buffer tmp in
       let enc = encoder writer in
-      ignore (encode_with_ctx empty_ctx typ v enc);
+      encode_to_writer typ v enc;
       flush enc;
       let s = Buffer.contents tmp in
       let len = String.length s in
