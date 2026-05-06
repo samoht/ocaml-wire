@@ -1139,21 +1139,43 @@ and compile_codec : type a r.
         populate = no_populate;
       }
   | None ->
-      let field_off = require_static_off ctx ~what:"variable-size codec" in
-      let size_fn buf base = codec_size_of buf (base + field_off) in
+      (* Variable-size sub-codec: dispatch on whether we sit at a static or
+         a dynamic running offset. Mirrors [compile_var_bytes] -- both
+         flavours produce a [Variable]/[Variable_dynamic] [field_access]
+         that downstream [build_staged_reader]/[build_staged_writer]
+         already know how to thread. Without the dynamic case, two
+         consecutive variable-size sub-codec fields trip
+         [require_static_off]. *)
+      let off_fn, (field_access : field_access), validator_off =
+        match ctx.lc_next_off with
+        | Static_next n ->
+            let size_fn buf base = codec_size_of buf (base + n) in
+            ((fun _buf _base -> n), Variable { off = n; size_fn }, n)
+        | Dynamic_next prev_end ->
+            let off_fn buf base = prev_end buf base - base in
+            let size_fn buf base = codec_size_of buf (base + off_fn buf base) in
+            (off_fn, Variable_dynamic { off_fn; size_fn }, -1)
+      in
+      let size_fn =
+        match field_access with
+        | Variable { size_fn; _ } -> size_fn
+        | Variable_dynamic { size_fn; _ } -> size_fn
+        | _ -> assert false
+      in
       {
-        raw_reader = (fun buf base -> codec_decode buf (base + field_off));
+        raw_reader = (fun buf base -> codec_decode buf (base + off_fn buf base));
         raw_writer =
-          (fun v buf off -> codec_encode (get v) buf (off + field_off));
+          (fun v buf off -> codec_encode (get v) buf (off + off_fn buf off));
         extra_writers = [];
-        field_access = Variable { off = field_off; size_fn };
+        field_access;
         size_delta = 0;
         next_off =
-          Dynamic_next (fun buf base -> base + field_off + size_fn buf base);
+          Dynamic_next
+            (fun buf base -> base + off_fn buf base + size_fn buf base);
         bf_after = None;
         int_reader = null_int_reader;
         nested_readers;
-        validator_off = field_off;
+        validator_off;
         populate = no_populate;
       }
 
@@ -1282,9 +1304,24 @@ and compile_repeat : type elt seq r.
     (elt, seq) seq_map ->
     (seq, r) compiled_field =
  fun ctx fld size_expr elem (Seq_map seq) ->
-  let field_off = require_static_off ctx ~what:"repeat" in
+  (* Same dynamic-offset dispatch as [compile_var_bytes] / [compile_codec]:
+     when a [Repeat] sits after a variable-size field, the running offset
+     is [Dynamic_next], which previously tripped [require_static_off]. *)
+  let off_fn, (field_access : field_access), validator_off =
+    let size_fn = compile_expr ctx.lc_field_readers size_expr in
+    match ctx.lc_next_off with
+    | Static_next n -> ((fun _buf _base -> n), Variable { off = n; size_fn }, n)
+    | Dynamic_next prev_end ->
+        let off_fn buf base = prev_end buf base - base in
+        (off_fn, Variable_dynamic { off_fn; size_fn }, -1)
+  in
+  let size_fn =
+    match field_access with
+    | Variable { size_fn; _ } -> size_fn
+    | Variable_dynamic { size_fn; _ } -> size_fn
+    | _ -> assert false
+  in
   let elem_size = field_wire_size elem in
-  let size_fn = compile_expr ctx.lc_field_readers size_expr in
   let raw_reader : bytes -> int -> seq =
     match elem_size with
     | Some esz ->
@@ -1292,7 +1329,7 @@ and compile_repeat : type elt seq r.
         fun buf base ->
           let budget = size_fn buf base in
           let n = if esz > 0 then budget / esz else 0 in
-          let start = base + field_off in
+          let start = base + off_fn buf base in
           let rec loop acc i =
             if i >= n then seq.finish acc
             else
@@ -1310,7 +1347,7 @@ and compile_repeat : type elt seq r.
               let esz = elem_size_of elem buf pos in
               loop (seq.add acc v) (pos + esz) (remaining - esz)
           in
-          loop seq.empty (base + field_off) budget
+          loop seq.empty (base + off_fn buf base) budget
   in
   let get = fld.get in
   let step =
@@ -1320,7 +1357,7 @@ and compile_repeat : type elt seq r.
   in
   let raw_writer v buf off =
     let items = get v in
-    let pos = Stdlib.ref (off + field_off) in
+    let pos = Stdlib.ref (off + off_fn buf off) in
     seq.iter
       (fun item ->
         write_elem elem buf !pos item;
@@ -1331,14 +1368,14 @@ and compile_repeat : type elt seq r.
     raw_reader;
     raw_writer;
     extra_writers = [];
-    field_access = Variable { off = field_off; size_fn };
+    field_access;
     size_delta = 0;
     next_off =
-      Dynamic_next (fun buf base -> base + field_off + size_fn buf base);
+      Dynamic_next (fun buf base -> base + off_fn buf base + size_fn buf base);
     bf_after = None;
     int_reader = null_int_reader;
     nested_readers = [];
-    validator_off = field_off;
+    validator_off;
     populate = no_populate;
   }
 
