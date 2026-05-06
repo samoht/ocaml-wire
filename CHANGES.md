@@ -60,6 +60,30 @@
   full chain drops from 8w/op to 0w/op. Type-restricted to
   `(Slice.t, _) field`, so passing a non-slice field is a compile-time
   error.
+- **Single C entry point per FFI schema.** `Wire_stubs` previously
+  emitted two C functions per schema: `caml_wire_<name>_parse`
+  (validate, build record in C) and `caml_wire_<name>_parse_k`
+  (validate, callback into OCaml continuation). Both did the same
+  validation; only the result delivery differed. Drop the non-CPS C
+  function -- only `_parse_k` is emitted now. The OCaml-side
+  record-returning `<name>_parse` becomes a thin wrapper that calls
+  `_parse_k` with a record-constructor continuation. Single C
+  codepath per schema; record / CPS ergonomics both preserved on the
+  OCaml side. Hot-loop callers should use `_parse_k` directly to
+  avoid the extra C-to-OCaml callback hop the wrapper pays.
+- `Codec.validator_of_struct`: now fires field actions (uses
+  `validate_arr` with a pre-allocated scratch int array) and handles
+  nested struct fields recursively. A `Struct`-typed field inside
+  another struct previously tripped `compile_var_bytes` because
+  `compile_field` doesn't accept `Struct` types directly; the
+  validator now recognises that case, builds a sub-validator
+  recursively, and inlines its `vt_validate` at the right offset.
+  Inner field references stay scoped to the inner struct.
+- Total demo-bench allocations on the consolidated FFI path drop from
+  ~3.7 GB to ~1.2 GB (-67%) over the standard 10M-iteration workload.
+  The remaining hits are the inherent OCaml `int64` box for `uint64`
+  fields (boxed at the Bytes-read site and at the C-to-OCaml callback
+  boundary).
 
 ## 0.9.0
 
