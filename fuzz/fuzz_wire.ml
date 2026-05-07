@@ -7,14 +7,14 @@ open Alcobar
 let _ = Wire.pp_parse_error
 
 (* Helper: encode record to string using Codec API *)
-let encode_record_to_string codec v =
+let string_of_record codec v =
   let ws = Wire.Codec.wire_size codec in
   let buf = Bytes.create ws in
   Wire.Codec.encode codec v buf 0;
   Ok (Bytes.unsafe_to_string buf)
 
 (* Helper: decode record from string using Codec API *)
-let decode_record_from_string codec s =
+let record_of_string codec s =
   let ws = Wire.Codec.wire_size codec in
   if String.length s < ws then
     Error (Wire.Unexpected_eof { expected = ws; got = String.length s })
@@ -235,13 +235,13 @@ let test_bf_encode_overflow a b c d =
   let fits_c = c lsr 10 = 0 && c >= 0 in
   let fits_d = d lsr 6 = 0 && d >= 0 in
   let all_fit = fits_a && fits_b && fits_c && fits_d in
-  match encode_record_to_string bf_codec v with
+  match string_of_record bf_codec v with
   | exception Invalid_argument _ ->
       if all_fit then fail "unexpected overflow for in-range values"
   | Error _ -> fail "unexpected encode error"
   | Ok encoded -> (
       if not all_fit then fail "expected overflow but encode succeeded";
-      match decode_record_from_string bf_codec encoded with
+      match record_of_string bf_codec encoded with
       | Ok decoded ->
           if v.bf_a <> decoded.bf_a then fail "bf_a mismatch";
           if v.bf_b <> decoded.bf_b then fail "bf_b mismatch";
@@ -435,10 +435,10 @@ let test_record_roundtrip x y z =
   let y = abs y mod 65536 in
   let z = z land 0xFFFFFFFF in
   let original = { x; y; z } in
-  match encode_record_to_string test_record_codec original with
+  match string_of_record test_record_codec original with
   | Error _ -> fail "record encode failed"
   | Ok encoded -> (
-      match decode_record_from_string test_record_codec encoded with
+      match record_of_string test_record_codec encoded with
       | Ok decoded ->
           if original.x <> decoded.x then fail "record x mismatch";
           if original.y <> decoded.y then fail "record y mismatch";
@@ -447,7 +447,7 @@ let test_record_roundtrip x y z =
 
 let test_record_decode_crash buf =
   let buf = truncate buf in
-  let _ = decode_record_from_string test_record_codec buf in
+  let _ = record_of_string test_record_codec buf in
   ()
 
 type be_record = { a : int; b : int }
@@ -466,10 +466,10 @@ let test_record_be_roundtrip a b =
   let a = abs a mod 65536 in
   let b = b land 0xFFFFFFFF in
   let original = { a; b } in
-  match encode_record_to_string be_record_codec original with
+  match string_of_record be_record_codec original with
   | Error _ -> fail "be record encode failed"
   | Ok encoded -> (
-      match decode_record_from_string be_record_codec encoded with
+      match record_of_string be_record_codec encoded with
       | Ok decoded ->
           if original.a <> decoded.a then fail "be record a mismatch";
           if original.b <> decoded.b then fail "be record b mismatch"
@@ -491,10 +491,10 @@ let test_record_bool_roundtrip n =
   let flag = n mod 2 = 0 in
   let value = abs n mod 65536 in
   let original = { flag; value } in
-  match encode_record_to_string bool_record_codec original with
+  match string_of_record bool_record_codec original with
   | Error _ -> fail "bool record encode failed"
   | Ok encoded -> (
-      match decode_record_from_string bool_record_codec encoded with
+      match record_of_string bool_record_codec encoded with
       | Ok decoded ->
           if original.flag <> decoded.flag then fail "bool record flag mismatch";
           if original.value <> decoded.value then
@@ -553,7 +553,7 @@ let test_stream_roundtrip_record x y z =
   let y = abs y mod 65536 in
   let z = z land ((1 lsl 32) - 1) in
   let original = { x; y; z } in
-  match encode_record_to_string test_record_codec original with
+  match string_of_record test_record_codec original with
   | Error _ -> fail "stream record encode failed"
   | Ok encoded -> (
       (* Parse individual fields through chunked reader *)
