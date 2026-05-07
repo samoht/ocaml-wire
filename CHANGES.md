@@ -8,6 +8,8 @@
 - `Codec.slice_offset` / `Codec.slice_length`: zero-allocation access to
   the offset/length of a `byte_slice` field, replacing the
   `Slice.first (Codec.get ...)` pattern (#37, @samoht)
+- `Wire.codec` type alias for `'r Codec.t`, and `Wire.pp_value` to
+  print a record field-by-field through its codec (@samoht)
 
 ### Changed
 

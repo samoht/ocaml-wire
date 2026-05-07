@@ -781,6 +781,15 @@ module Codec : sig
   (** Wire-size info for the validator. *)
 end
 
+type 'r codec = 'r Codec.t
+(** Convenience alias so callers can write [Wire.codec] instead of
+    [Wire.Codec.t]. *)
+
+val pp_value : 'r codec -> 'r Fmt.t
+(** [pp_value c] is a formatter that prints a record field-by-field through
+    codec [c]. Integer-valued fields show as [name = value]; non-integer fields
+    are skipped. Use with [%a]: [Fmt.pr "%a@." (Wire.pp_value c) v]. *)
+
 (** {1 Nested Codec Combinators}
 
     These combinators extend the type language with structured sub-codecs,

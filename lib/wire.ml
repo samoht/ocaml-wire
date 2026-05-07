@@ -435,7 +435,7 @@ let encode_codec ~encode ~fixed_size ~size_of v enc =
 (* The single encoder kernel. Writes [v] to [enc]. Top-level expressions
    are evaluated in [Eval.empty]; [Struct] is rejected (encode goes
    through [Codec.encode] for records). *)
-let rec encode_to_writer : type a. a typ -> a -> encoder -> unit =
+let rec encode_into : type a. a typ -> a -> encoder -> unit =
  fun typ v enc ->
   match typ with
   | Uint8 -> write_byte enc v
@@ -466,28 +466,27 @@ let rec encode_to_writer : type a. a typ -> a -> encoder -> unit =
   | Unit -> ()
   | All_bytes -> write_string enc v
   | All_zeros -> write_string enc v
-  | Where { inner; _ } -> encode_to_writer inner v enc
+  | Where { inner; _ } -> encode_into inner v enc
   | Array { elem; seq = Seq_map seq; _ } ->
-      seq.iter (fun elem_v -> encode_to_writer elem elem_v enc) v
+      seq.iter (fun elem_v -> encode_into elem elem_v enc) v
   | Byte_array _ -> write_string enc v
   | Byte_slice _ ->
       let src = Slice.bytes v in
       let off = Slice.first v in
       let len = Slice.length v in
       write_string enc (Bytes.sub_string src off len)
-  | Single_elem { elem; _ } -> encode_to_writer elem v enc
-  | Enum { base; _ } -> encode_to_writer base v enc
-  | Map { inner; encode; _ } -> encode_to_writer inner (encode v) enc
+  | Single_elem { elem; _ } -> encode_into elem v enc
+  | Enum { base; _ } -> encode_into base v enc
+  | Map { inner; encode; _ } -> encode_into inner (encode v) enc
   | Codec { codec_encode; codec_fixed_size; codec_size_of; _ } ->
       encode_codec ~encode:codec_encode ~fixed_size:codec_fixed_size
         ~size_of:codec_size_of v enc
   | Optional { present; inner } ->
-      if Eval.expr Eval.empty present then
-        encode_to_writer inner (Option.get v) enc
+      if Eval.expr Eval.empty present then encode_into inner (Option.get v) enc
   | Optional_or { present; inner; _ } ->
-      if Eval.expr Eval.empty present then encode_to_writer inner v enc
+      if Eval.expr Eval.empty present then encode_into inner v enc
   | Repeat { elem; seq = Seq_map seq; _ } ->
-      seq.iter (fun elem_v -> encode_to_writer elem elem_v enc) v
+      seq.iter (fun elem_v -> encode_into elem elem_v enc) v
   | Casetype { tag; cases; _ } -> encode_casetype tag cases v enc
   | Struct _ -> failwith "struct encoding: use Codec.encode"
   | Type_ref _ -> failwith "type_ref requires a type registry"
@@ -503,16 +502,16 @@ and encode_casetype : type a.
         match cb_project v with
         | Some body ->
             (match cb_tag with
-            | Some t -> encode_to_writer tag t enc
+            | Some t -> encode_into tag t enc
             | None -> failwith "casetype encoding: cannot encode default case");
-            encode_to_writer cb_inner body enc
+            encode_into cb_inner body enc
         | None -> find_case rest)
   in
   find_case cases
 
 let to_writer typ v writer =
   let enc = encoder writer in
-  encode_to_writer typ v enc;
+  encode_into typ v enc;
   flush enc
 
 (* Direct-to-bytes encode: no Writer, no Buffer, no encoder.
@@ -559,7 +558,7 @@ let encode_via_writer typ buf off v =
   let tmp = Buffer.create 64 in
   let writer = Writer.of_buffer tmp in
   let enc = encoder writer in
-  encode_to_writer typ v enc;
+  encode_into typ v enc;
   flush enc;
   let s = Buffer.contents tmp in
   let n = String.length s in
@@ -653,6 +652,17 @@ let to_string typ v =
       let writer = Writer.of_buffer buf in
       to_writer typ v writer;
       Buffer.contents buf
+
+type 'r codec = 'r Codec.t
+
+let pp_value (type r) (c : r Codec.t) ppf (v : r) =
+  let buf = to_bytes (codec c) v in
+  let readers = Codec.field_readers c in
+  Fmt.pf ppf "@[<hv 2>%s {" (Codec.name c);
+  List.iter
+    (fun (name, reader) -> Fmt.pf ppf "@ %s = %d;" name (reader buf 0))
+    readers;
+  Fmt.pf ppf "@ }@]"
 
 module Ascii = Ascii
 

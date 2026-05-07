@@ -70,7 +70,7 @@ let test_record_roundtrip () =
           Alcotest.(check int) "c roundtrip" original.c decoded.c
       | Error e -> Alcotest.failf "%a" pp_parse_error e)
 
-let test_record_to_struct () =
+let test_struct_of_record () =
   let s = Everparse.struct_of_codec simple_record_codec in
   let m = module_ [ typedef s ] in
   let output = to_3d m in
@@ -199,7 +199,7 @@ let test_validate_then_get () =
   let get_x = Staged.unstage (Codec.get validate_codec validate_cf_x) in
   Alcotest.(check int) "validate then get" 8 (get_x buf 0)
 
-let test_codec_metadata_to_struct () =
+let test_struct_of_codec_metadata () =
   let s = Everparse.struct_of_codec projection_codec in
   let m = module_ [ typedef s ] in
   let output = to_3d m in
@@ -452,7 +452,7 @@ let test_codec_bitfield_overflow_1bit () =
   Codec.encode codec 0 buf 0;
   Codec.encode codec 1 buf 0
 
-let test_codec_bitfield_to_struct () =
+let test_struct_of_codec_bitfield () =
   let s = Everparse.struct_of_codec bf32_codec in
   let m = module_ [ typedef s ] in
   let output = to_3d m in
@@ -1920,7 +1920,7 @@ let test_dep_ref_size_eval () =
 
 (* -- struct_of_codec for variable-size codecs -- *)
 
-let test_dep_to_struct () =
+let test_struct_of_dep () =
   (* struct_of_codec should produce a valid struct for variable-size codecs *)
   let s = Everparse.struct_of_codec dep_slice_codec in
   let m = module_ [ typedef s ] in
@@ -1931,7 +1931,7 @@ let test_dep_to_struct () =
   Alcotest.(check bool) "contains Length" true (contains ~sub:"Length" output);
   Alcotest.(check bool) "contains Payload" true (contains ~sub:"Payload" output)
 
-let test_dep_trailer_to_struct () =
+let test_struct_of_dep_trailer () =
   let s = Everparse.struct_of_codec trailer_codec in
   let m = module_ [ typedef s ] in
   let output = to_3d m in
@@ -3395,7 +3395,7 @@ let suite =
       Alcotest.test_case "record: encode" `Quick test_record_encode;
       Alcotest.test_case "record: decode" `Quick test_record_decode;
       Alcotest.test_case "record: roundtrip" `Quick test_record_roundtrip;
-      Alcotest.test_case "record: struct_of_codec" `Quick test_record_to_struct;
+      Alcotest.test_case "record: struct_of_codec" `Quick test_struct_of_record;
       Alcotest.test_case "record: metadata decode ok" `Quick
         test_codec_metadata_decode_ok;
       Alcotest.test_case "record: metadata constraint fail" `Quick
@@ -3407,7 +3407,7 @@ let suite =
       Alcotest.test_case "record: metadata where fail" `Quick
         test_metadata_where_fail;
       Alcotest.test_case "record: metadata struct_of_codec" `Quick
-        test_codec_metadata_to_struct;
+        test_struct_of_codec_metadata;
       Alcotest.test_case "validate: rejects bad where" `Quick
         test_validate_rejects_bad_where;
       Alcotest.test_case "validate: rejects bad constraint" `Quick
@@ -3430,7 +3430,7 @@ let suite =
       Alcotest.test_case "codec bitfield: multi group" `Quick
         test_codec_bitfield_multi_group;
       Alcotest.test_case "codec bitfield: struct_of_codec" `Quick
-        test_codec_bitfield_to_struct;
+        test_struct_of_codec_bitfield;
       Alcotest.test_case "codec bitfield: overflow u8" `Quick
         test_codec_bitfield_overflow_u8;
       Alcotest.test_case "codec bitfield: overflow u16" `Quick
@@ -3587,9 +3587,9 @@ let suite =
       Alcotest.test_case "dep: codec ref size eval" `Quick
         test_dep_ref_size_eval;
       (* struct_of_codec for variable-size codecs *)
-      Alcotest.test_case "dep: struct_of_codec" `Quick test_dep_to_struct;
+      Alcotest.test_case "dep: struct_of_codec" `Quick test_struct_of_dep;
       Alcotest.test_case "dep: trailer struct_of_codec" `Quick
-        test_dep_trailer_to_struct;
+        test_struct_of_dep_trailer;
       (* sizeof_this / field_pos *)
       Alcotest.test_case "codec: sizeof_this" `Quick test_codec_sizeof_this;
       Alcotest.test_case "codec: field_pos" `Quick test_codec_field_pos;
