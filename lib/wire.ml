@@ -107,6 +107,29 @@ let[@inline] check_eof len need =
    [Eval.empty] (no field bindings); types using [Ref]/[Sizeof_this]/
    [Field_pos] only make sense inside a [Struct], which goes through
    [Codec.validator_of_struct] where the int-array context is wired up. *)
+(* Helpers extracted from [parse_direct] to keep the dispatch readable
+   and short. Each handles one composite case. *)
+
+let parse_all_zeros buf off len =
+  let n = len - off in
+  let s = Bytes.sub_string buf off n in
+  let rec check i =
+    if i >= n then s
+    else if s.[i] <> '\000' then
+      raise (Parse_exn (All_zeros_failed { offset = off + i }))
+    else check (i + 1)
+  in
+  (check 0, len)
+
+let parse_struct_typ s buf off len =
+  let v = Codec_backend.validator_of_struct s in
+  let sz = Codec_backend.struct_size_of v buf off in
+  check_eof len (off + sz);
+  try
+    Codec_backend.validate_struct v buf off;
+    ((), off + sz)
+  with Parse_error e -> raise (Parse_exn e)
+
 let rec parse_direct : type a. a typ -> bytes -> int -> int -> a * int =
  fun typ buf off len ->
   match typ with
@@ -148,19 +171,8 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a * int =
       let word = Bitfield.read_word base buf off in
       (Bitfield.extract ~bit_order ~total ~bits_used:0 ~width word, off + sz)
   | Unit -> ((), off)
-  | All_bytes ->
-      let n = len - off in
-      (Bytes.sub_string buf off n, len)
-  | All_zeros ->
-      let n = len - off in
-      let s = Bytes.sub_string buf off n in
-      let rec check i =
-        if i >= n then s
-        else if s.[i] <> '\000' then
-          raise (Parse_exn (All_zeros_failed { offset = off + i }))
-        else check (i + 1)
-      in
-      (check 0, len)
+  | All_bytes -> (Bytes.sub_string buf off (len - off), len)
+  | All_zeros -> parse_all_zeros buf off len
   | Byte_array { size } ->
       let n = Eval.expr Eval.empty size in
       check_eof len (off + n);
@@ -196,34 +208,8 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a * int =
       in
       check_eof len (off + sz);
       (codec_decode buf off, off + sz)
-  | Struct s -> (
-      (* Struct validation goes through the same int-array kernel as
-         [Codec.decode]. Returns [unit] -- the [Struct] result type.
-         [validate_struct] can raise [Parse_error] from constraint or
-         action failures; translate to [Parse_exn] for the outer
-         result-returning wrappers. *)
-      let v = Codec_backend.validator_of_struct s in
-      let sz = Codec_backend.struct_size_of v buf off in
-      check_eof len (off + sz);
-      try
-        Codec_backend.validate_struct v buf off;
-        ((), off + sz)
-      with Parse_error e -> raise (Parse_exn e))
-  | Casetype { cases; tag; _ } ->
-      let tag_val, off' = parse_direct tag buf off len in
-      let rec find_case = function
-        | [] -> raise (Parse_exn (Invalid_tag tag_val))
-        | Case_branch { cb_tag = Some expected; cb_inner; cb_inject; _ } :: rest
-          ->
-            if expected = tag_val then
-              let body, off'' = parse_direct cb_inner buf off' len in
-              (cb_inject body, off'')
-            else find_case rest
-        | Case_branch { cb_tag = None; cb_inner; cb_inject; _ } :: _ ->
-            let body, off'' = parse_direct cb_inner buf off' len in
-            (cb_inject body, off'')
-      in
-      find_case cases
+  | Struct s -> parse_struct_typ s buf off len
+  | Casetype { cases; tag; _ } -> parse_casetype tag cases buf off len
   | Optional { present; inner } ->
       if Eval.expr Eval.empty present then
         let v, off' = parse_direct inner buf off len in
@@ -232,28 +218,67 @@ let rec parse_direct : type a. a typ -> bytes -> int -> int -> a * int =
   | Optional_or { present; inner; default } ->
       if Eval.expr Eval.empty present then parse_direct inner buf off len
       else (default, off)
-  | Array { len = len_expr; elem; seq = Seq_map seq } ->
+  | Array { len = len_expr; elem; seq } ->
       let n = Eval.expr Eval.empty len_expr in
-      let rec loop acc off' i =
-        if i >= n then (seq.finish acc, off')
-        else
-          let v, off'' = parse_direct elem buf off' len in
-          loop (seq.add acc v) off'' (i + 1)
-      in
-      loop seq.empty off 0
-  | Repeat { size; elem; seq = Seq_map seq } ->
+      parse_array_loop ~elem ~seq buf off len ~n
+  | Repeat { size; elem; seq } ->
       let budget = Eval.expr Eval.empty size in
-      let start = off in
-      let rec loop acc off' =
-        if off' - start >= budget then (seq.finish acc, off')
-        else
-          let v, off'' = parse_direct elem buf off' len in
-          loop (seq.add acc v) off''
-      in
-      loop seq.empty off
+      parse_repeat_loop ~elem ~seq buf off len ~budget
   | Type_ref _ -> failwith "type_ref requires a type registry"
   | Qualified_ref _ -> failwith "qualified_ref requires a type registry"
   | Apply _ -> failwith "apply requires a type registry"
+
+and parse_casetype : type a.
+    int typ -> a case_branch list -> bytes -> int -> int -> a * int =
+ fun tag cases buf off len ->
+  let tag_val, off' = parse_direct tag buf off len in
+  let rec find_case = function
+    | [] -> raise (Parse_exn (Invalid_tag tag_val))
+    | Case_branch { cb_tag = Some expected; cb_inner; cb_inject; _ } :: rest ->
+        if expected = tag_val then
+          let body, off'' = parse_direct cb_inner buf off' len in
+          (cb_inject body, off'')
+        else find_case rest
+    | Case_branch { cb_tag = None; cb_inner; cb_inject; _ } :: _ ->
+        let body, off'' = parse_direct cb_inner buf off' len in
+        (cb_inject body, off'')
+  in
+  find_case cases
+
+and parse_array_loop : type elt seq.
+    elem:elt typ ->
+    seq:(elt, seq) seq_map ->
+    bytes ->
+    int ->
+    int ->
+    n:int ->
+    seq * int =
+ fun ~elem ~seq:(Seq_map s) buf off len ~n ->
+  let rec loop acc off' i =
+    if i >= n then (s.finish acc, off')
+    else
+      let v, off'' = parse_direct elem buf off' len in
+      loop (s.add acc v) off'' (i + 1)
+  in
+  loop s.empty off 0
+
+and parse_repeat_loop : type elt seq.
+    elem:elt typ ->
+    seq:(elt, seq) seq_map ->
+    bytes ->
+    int ->
+    int ->
+    budget:int ->
+    seq * int =
+ fun ~elem ~seq:(Seq_map s) buf off len ~budget ->
+  let start = off in
+  let rec loop acc off' =
+    if off' - start >= budget then (s.finish acc, off')
+    else
+      let v, off'' = parse_direct elem buf off' len in
+      loop (s.add acc v) off''
+  in
+  loop s.empty off
 
 let decode_string typ s =
   let buf = Bytes.unsafe_of_string s in
@@ -478,6 +503,55 @@ let encode typ v writer =
 
 (* Direct-to-bytes encode: no Writer, no Buffer, no encoder.
    For fixed-size types, allocates only the output bytes. *)
+(* Helpers extracted from [encode_direct] to keep the dispatch readable. *)
+
+let encode_bits buf off v width base bit_order =
+  let mask = (1 lsl width) - 1 in
+  let total = Bitfield.total_bits base in
+  let shift = Bitfield.shift ~bit_order ~total ~bits_used:0 ~width in
+  let masked = (v land mask) lsl shift in
+  match base with
+  | BF_U8 ->
+      Bytes.set_uint8 buf off masked;
+      off + 1
+  | BF_U16 Little ->
+      Bytes.set_uint16_le buf off masked;
+      off + 2
+  | BF_U16 Big ->
+      Bytes.set_uint16_be buf off masked;
+      off + 2
+  | BF_U32 Little ->
+      Bytes.set_int32_le buf off (Int32.of_int masked);
+      off + 4
+  | BF_U32 Big ->
+      Bytes.set_int32_be buf off (Int32.of_int masked);
+      off + 4
+
+let encode_padded_string buf off n s =
+  let len = min n (String.length s) in
+  Bytes.blit_string s 0 buf off len;
+  if len < n then Bytes.fill buf (off + len) (n - len) '\x00';
+  off + n
+
+let encode_padded_slice buf off n src =
+  let len = min n (Slice.length src) in
+  Bytes.blit (Slice.bytes src) (Slice.first src) buf off len;
+  if len < n then Bytes.fill buf (off + len) (n - len) '\x00';
+  off + n
+
+(* Variable-size fallback: encode via the writer kernel into a Buffer,
+   then blit. Used by [encode_direct]'s catch-all. *)
+let encode_via_writer typ buf off v =
+  let tmp = Buffer.create 64 in
+  let writer = Writer.of_buffer tmp in
+  let enc = encoder writer in
+  encode_to_writer typ v enc;
+  flush enc;
+  let s = Buffer.contents tmp in
+  let n = String.length s in
+  Bytes.blit_string s 0 buf off n;
+  off + n
+
 let rec encode_direct : type a. a typ -> bytes -> int -> a -> int =
  fun typ buf off v ->
   match typ with
@@ -512,53 +586,21 @@ let rec encode_direct : type a. a typ -> bytes -> int -> a -> int =
       Uint_var.write endian buf off n v;
       off + n
   | Uint_var _ -> failwith "encode_direct: Uint_var with dynamic size"
-  | Bits { width; base; bit_order } -> (
-      let mask = (1 lsl width) - 1 in
-      let total = Bitfield.total_bits base in
-      let shift = Bitfield.shift ~bit_order ~total ~bits_used:0 ~width in
-      let masked = (v land mask) lsl shift in
-      match base with
-      | BF_U8 ->
-          Bytes.set_uint8 buf off masked;
-          off + 1
-      | BF_U16 Little ->
-          Bytes.set_uint16_le buf off masked;
-          off + 2
-      | BF_U16 Big ->
-          Bytes.set_uint16_be buf off masked;
-          off + 2
-      | BF_U32 Little ->
-          Bytes.set_int32_le buf off (Int32.of_int masked);
-          off + 4
-      | BF_U32 Big ->
-          Bytes.set_int32_be buf off (Int32.of_int masked);
-          off + 4)
+  | Bits { width; base; bit_order } ->
+      encode_bits buf off v width base bit_order
   | Unit -> off
   | All_bytes ->
-      let s = (v : string) in
-      let n = String.length s in
-      Bytes.blit_string s 0 buf off n;
+      let n = String.length v in
+      Bytes.blit_string v 0 buf off n;
       off + n
   | All_zeros ->
-      let s = (v : string) in
-      let n = String.length s in
-      Bytes.blit_string s 0 buf off n;
+      let n = String.length v in
+      Bytes.blit_string v 0 buf off n;
       off + n
-  | Byte_array { size = Int n } ->
-      let s = (v : string) in
-      let len = min n (String.length s) in
-      Bytes.blit_string s 0 buf off len;
-      if len < n then Bytes.fill buf (off + len) (n - len) '\x00';
-      off + n
-  | Byte_slice { size = Int n } ->
-      let src = (v : Slice.t) in
-      let len = min n (Slice.length src) in
-      Bytes.blit (Slice.bytes src) (Slice.first src) buf off len;
-      if len < n then Bytes.fill buf (off + len) (n - len) '\x00';
-      off + n
+  | Byte_array { size = Int n } -> encode_padded_string buf off n v
+  | Byte_slice { size = Int n } -> encode_padded_slice buf off n v
   | Single_elem { size = Int n; elem; at_most = _ } ->
       let off' = encode_direct elem buf off v in
-      (* Pad up to [n] if the inner write was shorter. *)
       if off' < off + n then Bytes.fill buf off' (off + n - off') '\x00';
       off + n
   | Map { inner; encode; _ } -> encode_direct inner buf off (encode v)
@@ -566,26 +608,13 @@ let rec encode_direct : type a. a typ -> bytes -> int -> a -> int =
   | Enum { base; _ } -> encode_direct base buf off v
   | Codec { codec_encode; _ } ->
       codec_encode v buf off;
-      (* Codecs are responsible for advancing through the full struct.
-         The wire size determines how many bytes they wrote. *)
       let sz =
         match field_wire_size typ with
         | Some n -> n
         | None -> failwith "encode_direct: Codec without static wire size"
       in
       off + sz
-  | _ ->
-      (* Variable-size: encode through the unified writer kernel into a
-         Buffer, then blit. *)
-      let tmp = Buffer.create 64 in
-      let writer = Writer.of_buffer tmp in
-      let enc = encoder writer in
-      encode_to_writer typ v enc;
-      flush enc;
-      let s = Buffer.contents tmp in
-      let len = String.length s in
-      Bytes.blit_string s 0 buf off len;
-      off + len
+  | _ -> encode_via_writer typ buf off v
 
 let encode_to_bytes typ v =
   match field_wire_size typ with

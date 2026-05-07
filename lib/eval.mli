@@ -19,5 +19,6 @@ val int_of : 'a Types.typ -> 'a -> int option
     that don't fit in OCaml int (uint64 > 2^62, non-numeric). *)
 
 val expr : ctx -> 'a Types.expr -> 'a
-(** Evaluate a top-level expression. Raises on [Ref] (cross-field references are
-    only valid inside a struct). [Sizeof_this] and [Field_pos] return 0. *)
+(** [expr ctx e] evaluates a top-level expression. Raises on [Ref] (cross-field
+    references are only valid inside a struct). [Sizeof_this] and [Field_pos]
+    return 0. *)

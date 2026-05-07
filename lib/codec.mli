@@ -153,8 +153,9 @@ val validate_struct : validator -> bytes -> int -> unit
     on failure. *)
 
 val struct_size_of : validator -> bytes -> int -> int
-(** Byte size of the struct starting at [off]. Independent of [buf] for
-    fixed-size structs; inspects the buffer otherwise. *)
+(** [struct_size_of v buf off] is the byte size of the struct starting at [off].
+    Independent of [buf] for fixed-size structs; inspects the buffer otherwise.
+*)
 
 val struct_min_size : validator -> int
 (** Minimum byte size accepted. *)
